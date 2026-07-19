@@ -1,0 +1,14 @@
+{
+  "name": "crucible-v2",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Crucible — humans approve artifacts, not code. Monorepo root (workspaces added in P0-02).",
+  "devDependencies": {
+    "@fission-ai/openspec": "1.6.0"
+  },
+  "openspec": {
+    "testedVersion": "1.6.0",
+    "expectedCompatibleRange": "1.6.x",
+    "policy": "Exact pin; schema commands are experimental upstream. Bump deliberately: re-run docs/design/spike-notes.md §Repro, then crucible doctor (P2+)."
+  }
+}

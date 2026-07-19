@@ -31,7 +31,7 @@ Thin versions of: `propose`, `approve`, `implement`, `verify`, `status`, one Git
 
 ## §3 Artifact operations
 
-- Bundle layout (from spike; amend if spike disagrees): `openspec/changes/<name>/` containing `proposal.md`, `design.md`, `oracles.md`, `specs/**` (deltas), plus Crucible-owned `approval.yaml`, `state.yaml`, later `escalation.yaml`.
+- Bundle layout (confirmed by P0-01 spike, two additions): `openspec/changes/<name>/` containing `proposal.md`, `design.md`, `oracles.md`, `specs/**` (deltas), plus Crucible-owned `approval.yaml`, `state.yaml`, later `escalation.yaml`. *(Amended P0-01: OpenSpec's `new change` also creates `.openspec.yaml` (schema pin + created date) and `README.md` in the change dir — OpenSpec-owned metadata, outside the approval hash scope. Spec deltas must additionally satisfy OpenSpec's delta grammar — `## ADDED/MODIFIED/REMOVED/RENAMED Requirements` headers and ≥1 `#### Scenario:` block per requirement — or `openspec validate`/`archive` fail; the bracketed `[REQ-*]` heading form is compatible with it.)*
 - **Oracle parser:** per charter grammar — `^## (ORC-[a-z0-9-]+-\d{3}):` heading; exactly one ` ```yaml crucible-binding ` fence before next `##`; zod-validate binding fields (`requirement`, `kind ∈ unit|property|contract|integration`, `runner`, `target | targets[]`). Any structural violation → exit 3 with heading/line named.
 - **Spec-delta extractor:** headings matching `### Requirement: .* \[REQ-[a-z0-9-]+-\d+\]` → ordered list of REQ IDs (+ heading text for display).
 - **approval.yaml schema:** `{version, change, approved_by, approved_at, files: {<relpath>: sha256}, amendments: [{at, files}]}` (amendments array present but unused until P2).
@@ -61,7 +61,7 @@ interface AgentSubstrate {
 
 ## §6 propose / approve / implement (thin)
 
-- **propose:** args = change name + intent text. Scaffolds the OpenSpec change (via spike-determined mechanism), invokes substrate role=propose with `.crucible/context/propose.md` (P1 version of the prompt: emit valid bundle incl. oracles per grammar + bound test files in the toy repo's convention; include Unspecified/Seams sections). Then validates the bundle (parsers §3) and runs lint (§8) + adapter resolve; red → exit 1 with report (agent output is judged, not trusted).
+- **propose:** args = change name + intent text. Scaffolds the OpenSpec change (spike-determined: `openspec new change <name> --schema crucible --json`; change names are lowercase kebab-case, no leading digit — propose validates the same rule), invokes substrate role=propose with `.crucible/context/propose.md` (P1 version of the prompt: emit valid bundle incl. oracles per grammar + bound test files in the toy repo's convention; include Unspecified/Seams sections). Then validates the bundle (parsers §3) and runs lint (§8) + adapter resolve; red → exit 1 with report (agent output is judged, not trusted).
 - **approve:** renders scenarios + binding table in terminal, confirms, writes approval.yaml (hash scope §4), appends state event. Refuses (exit 2) if bundle invalid or lint red.
 - **implement:** preconditions: approval.yaml valid (§4) else exit 2. Generates `tasks.md` via substrate (role=implement, first action) then runs the implement session; afterwards runs local verify and reports. Does not loop in P1 (single session; iteration budget is P2).
 
