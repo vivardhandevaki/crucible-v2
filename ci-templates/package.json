@@ -1,0 +1,11 @@
+{
+  "name": "@crucible/ci-templates",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reusable CI templates (e.g. crucible.yml) that enforce verify on the target branch. Shipped as data, validated by tests.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  }
+}

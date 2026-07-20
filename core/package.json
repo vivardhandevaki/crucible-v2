@@ -1,0 +1,13 @@
+{
+  "name": "@crucible/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Crucible framework core: artifacts, hashing, lint, tier, verify, substrate, adapters client.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  }
+}

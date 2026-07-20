@@ -1,0 +1,12 @@
+**/dist/**
+**/coverage/**
+node_modules/**
+package-lock.json
+site/**
+.old/**
+
+# Prose docs are hand-authored project law (charter/design/tasks) and are
+# formatted by their authors, not Prettier. Keep them out of the code formatter.
+**/*.md
+docs/**
+.claude/**

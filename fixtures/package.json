@@ -1,0 +1,11 @@
+{
+  "name": "@crucible/fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Test fixtures: toy repo, change bundles, adapter conformance data. Consumed by core integration tests.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  }
+}
