@@ -12,7 +12,16 @@ import globals from 'globals';
 // hardened into the core `lint/` module during Phase 1. See LAYERING.md.
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/coverage/**', 'node_modules/**', 'site/**', '.old/**'],
+    // fixtures/toy-repo is author-controlled data sealed by the approval hash;
+    // linting/reformatting it would break hash-stability tests (see its README).
+    ignores: [
+      '**/dist/**',
+      '**/coverage/**',
+      'node_modules/**',
+      'site/**',
+      '.old/**',
+      'fixtures/toy-repo/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

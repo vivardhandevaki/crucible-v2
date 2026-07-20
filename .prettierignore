@@ -5,6 +5,10 @@ package-lock.json
 site/**
 .old/**
 
+# Fixture data is author-controlled and sealed by the approval hash; Prettier
+# must not reformat it (see fixtures/toy-repo/README.md).
+fixtures/toy-repo/**
+
 # Prose docs are hand-authored project law (charter/design/tasks) and are
 # formatted by their authors, not Prettier. Keep them out of the code formatter.
 **/*.md

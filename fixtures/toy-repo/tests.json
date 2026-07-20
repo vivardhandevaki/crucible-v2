@@ -1,0 +1,29 @@
+[
+  {
+    "id": "greeting::returns_hello_for_a_name",
+    "file": "tests/greeting.test.ts",
+    "status": "pass"
+  },
+  {
+    "id": "greeting::defaults_to_world_when_empty",
+    "file": "tests/greeting.test.ts",
+    "status": "pass"
+  },
+  {
+    "id": "greeting::rejects_null_bytes",
+    "file": "tests/greeting_extra.test.ts",
+    "status": "fail",
+    "message": "expected 'Hello, ab!' but got 'Hello, a\\u0000b!'"
+  },
+  {
+    "id": "greeting::is_localized",
+    "file": "tests/greeting_extra.test.ts",
+    "status": "skip",
+    "message": "localization not implemented; skipped"
+  },
+  {
+    "id": "greeting::streams_large_input",
+    "file": "tests/greeting_streaming.test.ts",
+    "status": "missing"
+  }
+]
