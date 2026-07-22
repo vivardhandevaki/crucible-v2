@@ -22,6 +22,19 @@ export const TESTS_JSON_PATH = join(TOY_REPO_ROOT, 'tests.json');
 /** Pre-written *valid* change bundle (an OpenSpec change directory). */
 export const VALID_BUNDLE_DIR = join(TOY_REPO_ROOT, 'openspec', 'changes', 'add-greeting');
 
+/**
+ * Root from which enforcement config is resolved (`crucible.yaml` lives here).
+ * For the toy repo this is the repo root; in CI the target-branch checkout root
+ * is passed via `--config-from` instead (charter §The Target-Branch Rule).
+ */
+export const CONFIG_ROOT = TOY_REPO_ROOT;
+
+/** Valid enforcement config fixture (charter §crucible.yaml — Reference Shape). */
+export const CRUCIBLE_YAML_PATH = join(TOY_REPO_ROOT, 'crucible.yaml');
+
+/** Valid team-convenience config fixture (`models` + `notify` only). */
+export const SETTINGS_YAML_PATH = join(TOY_REPO_ROOT, '.crucible', 'settings.yaml');
+
 /** Deliberately-invalid fixtures for parser tests, one defect per file. */
 export const INVALID_FIXTURES_DIR = join(TOY_REPO_ROOT, 'bundles', 'invalid');
 

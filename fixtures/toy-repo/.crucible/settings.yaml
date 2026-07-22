@@ -1,0 +1,8 @@
+# Team convenience config (committed). Never read by enforcement code paths —
+# only model routing and team notify channels. Charter: convenience never
+# enforces, so nothing here can change what merges.
+models:
+  propose: claude-opus-4-8
+  review: claude-opus-4-8
+notify:
+  slack: "#team-crucible"

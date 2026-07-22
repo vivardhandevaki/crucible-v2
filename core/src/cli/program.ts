@@ -5,7 +5,7 @@
 // must fail closed rather than pretend success (invariant 3).
 
 import { Command } from 'commander';
-import { internalError } from './errors.js';
+import { internalError } from '../util/errors.js';
 
 // Placeholder until the version is sourced from package metadata in a later
 // task; kept off package.json imports because that file sits outside rootDir.
@@ -32,7 +32,16 @@ export function buildProgram(): Command {
     .version(CRUCIBLE_VERSION, '-v, --version')
     // --json plumbing: parseable everywhere; consumed by status/verify and by
     // the runner's error formatter (runner.ts).
-    .option('--json', 'emit machine-readable JSON output');
+    .option('--json', 'emit machine-readable JSON output')
+    // --config-from: read enforcement config (crucible.yaml) from this directory
+    // instead of the working tree. The CI template points this at the
+    // target-branch checkout so the rules that judge a PR are main's rules, never
+    // the PR's (charter §The Target-Branch Rule). Convenience config is always
+    // read from the working tree and is unaffected. Consumed by verify (P1-12).
+    .option(
+      '--config-from <dir>',
+      'read crucible.yaml from this directory (CI target-branch rule)',
+    );
 
   for (const verb of P1_VERBS) {
     program

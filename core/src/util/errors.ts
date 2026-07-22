@@ -1,9 +1,12 @@
 // Error taxonomy — the spine of every exit-code decision (architecture.md §3).
 //
-// Everything thrown from below `commands/` is a `CrucibleError` carrying the
-// exit code it maps to plus a teaching `hint` ("run X"). The shared runner
-// (runner.ts) is the only place these become process exit codes. Bare
-// strings/Errors below `commands/` are a bug (invariant: fail-closed).
+// Lives in `util/` (the lowest layer) so every layer above may throw it without
+// an upward import — the dependency direction in architecture.md §1 forbids
+// lower layers importing toward `cli/`, and every layer must be able to raise a
+// `CrucibleError`. Each error carries the exit code it maps to plus a teaching
+// `hint` ("run X"). The shared runner (cli/runner.ts) is the only place these
+// become process exit codes. Bare strings/Errors below `commands/` are a bug
+// (invariant: fail-closed).
 
 /** The non-success exit codes a CrucibleError may carry (architecture.md §2). */
 export type ExitCode = 2 | 3 | 4;

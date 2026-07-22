@@ -1,0 +1,29 @@
+# Enforcement config for the toy repo (charter §Configuration & Reviewer Law).
+# Enforcement only: risk globs, tiers, adapters, suites, trajectory, audit.
+# In CI this file is read from the *target* branch, never the PR branch.
+risk:
+  critical:
+    - "src/**/auth/**"
+    - ".crucible/**" # harness is TCB (settings.yaml carved out below)
+    - "crucible.yaml" # this file governs itself
+  exempt:
+    - ".crucible/settings.yaml"
+    - ".crucible/local.yaml"
+
+tiers:
+  trivial: { diff_cap: 150 }
+  standard: { diff_cap: 400 }
+  critical: { diff_cap: 400, mutation: blocking }
+
+adapters:
+  stub: { runners: [stub], paths: ["**/*.ts"] }
+
+suites:
+  unit: "npm test"
+
+trajectory:
+  require_local_verify: true
+  iteration_budget: 12
+
+audit:
+  sample_rate: 0.1

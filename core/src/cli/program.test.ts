@@ -52,4 +52,25 @@ describe('buildProgram', () => {
     expect(code).toBe(0);
     expect(cap.out().trim().length).toBeGreaterThan(0);
   });
+
+  it('parses --config-from into the program options (target-branch seam)', () => {
+    const program = buildProgram();
+    program.exitOverride();
+    program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+    // Global options are recorded before the subcommand's action runs; the
+    // stub action throws (NOT_IMPLEMENTED), which we swallow — we only assert
+    // the option was captured.
+    try {
+      program.parse(['--config-from', '/tmp/target', 'status'], { from: 'user' });
+    } catch {
+      /* stub verb throws by design */
+    }
+    expect(program.opts().configFrom).toBe('/tmp/target');
+  });
+
+  it('advertises --config-from in help', async () => {
+    const cap = captureIO();
+    await runProgram(buildProgram(), ['--help'], cap.io);
+    expect(cap.out()).toContain('--config-from');
+  });
 });

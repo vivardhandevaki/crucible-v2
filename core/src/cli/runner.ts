@@ -6,7 +6,7 @@
 
 import { CommanderError } from 'commander';
 import type { Command } from 'commander';
-import { CrucibleError, isCrucibleError, preconditionError } from './errors.js';
+import { CrucibleError, isCrucibleError, preconditionError } from '../util/errors.js';
 
 /** Injectable output sink so the runner never touches process streams directly. */
 export interface RunnerIO {

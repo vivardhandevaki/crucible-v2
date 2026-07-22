@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
-import { internalError, invalidInputError, preconditionError } from './errors.js';
+import { internalError, invalidInputError, preconditionError } from '../util/errors.js';
 import { type RunnerIO, runProgram } from './runner.js';
 
 // Capturing IO so the runner can be exercised without touching process
