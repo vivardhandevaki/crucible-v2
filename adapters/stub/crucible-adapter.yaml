@@ -1,0 +1,16 @@
+# Stub adapter manifest (charter §"Adapter Manifest & Transport").
+# The core adapter client (P1-11) loads this file and spawns the invocation
+# strings below, one process per verb, feeding JSON on stdin.
+#
+# `--tests <path>` names the declarative inventory the stub reads. The invocation
+# strings below leave it at the default (`./tests.json`, resolved from the
+# adapter's working directory); the client sets cwd / passes `--tests` when it
+# points the stub at a specific fixture. No `scope` verb — the stub omits it
+# (optional in the protocol; local verify runs the full suite instead).
+name: stub
+version: 0.0.0
+runners: [stub]
+capabilities: [unit]
+invocations:
+  resolve: 'crucible-adapter-stub resolve'
+  run: 'crucible-adapter-stub run'

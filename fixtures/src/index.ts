@@ -41,6 +41,12 @@ export const INVALID_FIXTURES_DIR = join(TOY_REPO_ROOT, 'bundles', 'invalid');
 /** Machine-readable catalogue of every invalid fixture and its expected error. */
 export const INVALID_EXPECTED_ERRORS_PATH = join(INVALID_FIXTURES_DIR, 'expected-errors.json');
 
+/** Seed of the adapter conformance suite (P1-10): the golden-cases directory. */
+export const CONFORMANCE_DIR = join(workspaceRoot, 'conformance');
+
+/** Machine-readable catalogue of adapter conformance cases (verb+input→output). */
+export const CONFORMANCE_CASES_PATH = join(CONFORMANCE_DIR, 'cases.json');
+
 /** Normalized-result statuses the stub adapter can report (charter schema). */
 export type TestStatus = 'pass' | 'fail' | 'skip' | 'missing';
 
@@ -153,4 +159,67 @@ export async function loadExpectedErrors(
     throw new Error(`${path}: expected-errors.json must have an \`errors\` array`);
   }
   return parsed.errors.map((entry, index) => parseExpectedError(entry, index, path));
+}
+
+/** The two verbs every adapter honors (charter §Bindings & the Adapter Protocol). */
+export type AdapterVerb = 'resolve' | 'run';
+
+/** A `resolve` result: `found` (with the resolved file) or `missing`. */
+export interface ResolveResult {
+  target: string;
+  status: 'found' | 'missing';
+  /** Set only when `found`: the file component of the target (design §4/§7). */
+  targetFile?: string;
+}
+
+/** A `run` result — the charter's normalized result schema, the only shape core parses. */
+export interface RunResult {
+  target: string;
+  status: 'pass' | 'fail' | 'error' | 'skip';
+  message?: string;
+  location?: string;
+  duration_ms?: number;
+}
+
+/** One golden conformance case: a verb + its stdin targets → expected results. */
+export interface ConformanceCase {
+  name: string;
+  verb: AdapterVerb;
+  targets: string[];
+  /** Expected normalized output for `run`, or resolve output for `resolve`. */
+  expected: (ResolveResult | RunResult)[];
+}
+
+function parseConformanceCase(value: unknown, index: number, source: string): ConformanceCase {
+  if (!isRecord(value)) {
+    throw new Error(`${source}: case ${index} is not an object`);
+  }
+  const { name, verb, targets, expected } = value;
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new Error(`${source}: case ${index} has no string \`name\``);
+  }
+  if (verb !== 'resolve' && verb !== 'run') {
+    throw new Error(
+      `${source}: case ${index} (${name}) has invalid \`verb\`: ${JSON.stringify(verb)}`,
+    );
+  }
+  if (!Array.isArray(targets) || !targets.every((t) => typeof t === 'string')) {
+    throw new Error(`${source}: case ${index} (${name}) has invalid \`targets\``);
+  }
+  if (!Array.isArray(expected) || !expected.every(isRecord)) {
+    throw new Error(`${source}: case ${index} (${name}) has invalid \`expected\``);
+  }
+  return { name, verb, targets, expected: expected as unknown as (ResolveResult | RunResult)[] };
+}
+
+/** Load and fail-closed validate the adapter conformance-case catalogue. */
+export async function loadConformanceCases(
+  path: string = CONFORMANCE_CASES_PATH,
+): Promise<ConformanceCase[]> {
+  const raw = await readFile(path, 'utf8');
+  const parsed: unknown = JSON.parse(raw);
+  if (!isRecord(parsed) || !Array.isArray(parsed.cases)) {
+    throw new Error(`${path}: cases.json must have a \`cases\` array`);
+  }
+  return parsed.cases.map((entry, index) => parseConformanceCase(entry, index, path));
 }
