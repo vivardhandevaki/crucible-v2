@@ -90,3 +90,19 @@ npx openspec validate add-greeting --strict --json # valid (parse JSON, not exit
 git add -A && git commit -m pre-update && npx openspec update --force && git status  # clean
 npx openspec archive add-greeting --yes            # merges deltas into openspec/specs/
 ```
+
+## Re-verification (P0-03 validation, 2026-07-22)
+
+The §Repro sequence was re-run against the pinned `@fission-ai/openspec@1.6.0`,
+this time populating the change with the **committed P0-03 toy fixture bundle**
+(`fixtures/toy-repo/openspec/changes/add-greeting/`) rather than hand-authored
+scratch artifacts. Confirmed independently:
+
+- Custom schema (with the `oracles` artifact, `requires: [design]`) → `schema validate` passes.
+- Fixture bundle → `status` reports 5/5 artifacts done, and `validate --strict --json` returns `valid` (1 passed, 0 failed).
+- `archive` merges both requirements into `openspec/specs/greeting/spec.md` with the `[REQ-greeting-basic-1]` / `[REQ-greeting-default-2]` bracketed headings preserved.
+
+So the toy fixture is validated against OpenSpec's *real* delta grammar, not
+just Crucible's own regexes — the end-to-end spike claim holds on checked-in
+artifacts. The scratch project remains disposable (built in `/tmp`, not part of
+this repo).
