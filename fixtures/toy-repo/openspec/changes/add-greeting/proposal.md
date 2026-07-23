@@ -17,3 +17,13 @@ seal, and judge.
 - New capability: `greeting`.
 - New requirements: `REQ-greeting-basic-1`, `REQ-greeting-default-2`.
 - Judged by: `ORC-greeting-001`, `ORC-greeting-002`.
+
+## Unspecified
+
+- Localization / non-English greetings are out of scope.
+- Whitespace-only names: behavior is deliberately undecided in this change.
+
+## Seams
+
+- None known: `greet` is a new pure function; no external systems touched, no
+  existing contracts crossed, no concurrent changes in flight.
