@@ -13,8 +13,28 @@ import { fileURLToPath } from 'node:url';
 // src/index.ts (or dist/index.js) → workspace root → toy-repo.
 const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
+// The monorepo root: one level above the fixtures workspace. Used to reach the
+// stub adapter, which lives in the sibling `adapters/stub` workspace.
+const monorepoRoot = dirname(workspaceRoot);
+
 /** Absolute path to the toy fixture repo root. */
 export const TOY_REPO_ROOT = join(workspaceRoot, 'toy-repo');
+
+/** The stub adapter's workspace root (P1-10). */
+export const STUB_ADAPTER_ROOT = join(monorepoRoot, 'adapters', 'stub');
+
+/**
+ * The stub adapter's manifest (`crucible-adapter.yaml`) — the P1-11 adapter
+ * client loads this to learn the invocation strings it must spawn.
+ */
+export const STUB_ADAPTER_MANIFEST_PATH = join(STUB_ADAPTER_ROOT, 'crucible-adapter.yaml');
+
+/**
+ * The stub adapter's built executable (`dist/cli.js`). The manifest names
+ * `crucible-adapter-stub`; tests spawn this file via `node <bin>` so the suite
+ * needs no global install of the adapter bin.
+ */
+export const STUB_ADAPTER_BIN_PATH = join(STUB_ADAPTER_ROOT, 'dist', 'cli.js');
 
 /** The stub adapter's declarative test inventory (design phase-0-1.md §7). */
 export const TESTS_JSON_PATH = join(TOY_REPO_ROOT, 'tests.json');
