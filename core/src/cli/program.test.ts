@@ -31,8 +31,9 @@ describe('buildProgram', () => {
     );
   });
 
-  // approve is implemented (P1-07); the remaining verbs are still stubs.
-  const STUB_VERBS = P1_VERBS.filter((v) => v !== 'approve');
+  // approve (P1-07) and verify (P1-12) are implemented; the rest are still stubs.
+  const REAL_VERBS = ['approve', 'verify'];
+  const STUB_VERBS = P1_VERBS.filter((v) => !REAL_VERBS.includes(v));
 
   it.each(STUB_VERBS)('stub verb `%s` fails closed with exit 4', async (verb) => {
     const cap = captureIO();
@@ -41,12 +42,15 @@ describe('buildProgram', () => {
     expect(code).toBe(4);
   });
 
-  it('`approve` is a real verb: no <change> arg → usage error (exit 2), not stub exit 4', async () => {
-    const cap = captureIO();
-    const code = await runProgram(buildProgram(), ['approve'], cap.io);
-    // A missing required argument is a usage/precondition failure, never exit 4.
-    expect(code).toBe(2);
-  });
+  it.each(REAL_VERBS)(
+    'real verb `%s`: no <change> arg → usage error (exit 2), not stub exit 4',
+    async (verb) => {
+      const cap = captureIO();
+      const code = await runProgram(buildProgram(), [verb], cap.io);
+      // A missing required argument is a usage/precondition failure, never exit 4.
+      expect(code).toBe(2);
+    },
+  );
 
   it('unknown command against the real program → exit 2 with help + hint', async () => {
     const cap = captureIO();

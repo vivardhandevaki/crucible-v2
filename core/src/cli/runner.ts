@@ -6,7 +6,12 @@
 
 import { CommanderError } from 'commander';
 import type { Command } from 'commander';
-import { CrucibleError, isCrucibleError, preconditionError } from '../util/errors.js';
+import {
+  CrucibleError,
+  isCheckFailure,
+  isCrucibleError,
+  preconditionError,
+} from '../util/errors.js';
 
 /** Injectable output sink so the runner never touches process streams directly. */
 export interface RunnerIO {
@@ -55,6 +60,11 @@ function configureTree(command: Command, io: RunnerIO): void {
 function handleError(err: unknown, io: RunnerIO, json: boolean, program: Command): number {
   if (err instanceof CommanderError) {
     return handleCommanderError(err, io, json, program);
+  }
+  // A red verify verdict: the command already rendered its report (to stdout, or
+  // as JSON), so map to exit 1 and print nothing extra. Not a CrucibleError.
+  if (isCheckFailure(err)) {
+    return err.exit;
   }
   if (isCrucibleError(err)) {
     emitError(err, io, json);
