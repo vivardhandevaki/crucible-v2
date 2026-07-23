@@ -54,11 +54,18 @@ The taxonomy lives in `util/errors.ts` (the lowest layer), not in `cli/`, so eve
 - Artifact IDs per charter grammar: `REQ-<domain>-<slug>-<n>`, `ORC-<slug>-<seq>`, rubric `R-###`, tasks `P<phase>-##`.
 - Command modules named exactly as the CLI verb (`commands/approve.ts`).
 
-## 6. AgentSubstrate interface `[SETTLES: P1]`
+## 6. AgentSubstrate interface (frozen; settled P1-08)
 
-Shape to be frozen in Phase 1 (see phase-0-1.md §5 for the working draft). Contract intent, stable now:
+Contract intent, unchanged since seed:
 - Input: role (propose|implement|review), prompt/context payload, working dir, model id.
 - Output: exit status, path to the session transcript (trajectory artifact), and nothing else — substrate output is never parsed for "did it succeed"; success is judged from artifacts it produced.
+
+**Frozen shape (P1-08):** canonical machine form in `core/src/substrate/types.ts`.
+
+- **Request:** `{ role, rolePromptPath, taskPayload, cwd, model, transcriptPath, timeoutMs? }`. The **caller mints `transcriptPath`** (convention `.crucible/transcripts/<change>/<role>-<ts>.jsonl`, owned by `commands/`): the substrate never invents paths, knows nothing of "changes", and holds no wall-clock naming — the audit-trail timestamp stays in the layer that already owns audit concerns. *(Amends the phase-0-1 §5 draft, which had the substrate computing this path.)*
+- **Result:** `{ exitCode, transcriptPath }` — exactly two fields. Invariant 2 is enforced structurally: no success flag, no message, nothing parsed, nothing to trust. On every returned result the transcript file exists (possibly truncated if the run died mid-stream).
+- **Returned vs thrown:** every outcome of a *started* run is **returned**, never thrown — non-zero exit, agent-side crash, `timeoutMs` expiry (kill → non-zero `exitCode`, transcript preserved). A dead author simply produced no artifacts; the caller's artifact validation fails closed. Thrown `CrucibleError { SUBSTRATE_UNAVAILABLE, exit: 3 }` is reserved for inability to start: missing/unspawnable `claude` binary, unreadable role prompt. (Contrast §7: a broken *judge* is exit 3 because it must never report green; a broken *author* has nothing to report.)
+- **Implementations:** `ClaudeCodeSubstrate` — spawns headless `claude -p`; every CLI-flag specific is isolated in this one class; nothing outside `substrate/` references the `claude` binary (enforced by a dependency test). `FakeSubstrate` — test double that writes scripted files under `cwd` plus a canned transcript and returns a scripted exit code; backs command tests without network. Only `AgentSubstrate` and the request/result types are frozen; the Fake's scripting shape is a test-infrastructure detail.
 
 ## 7. Adapter wire contract (frozen by charter; settled P1-11)
 

@@ -44,19 +44,10 @@ Thin versions of: `propose`, `approve`, `implement`, `verify`, `status`, one Git
 
 ## §5 AgentSubstrate
 
-```ts
-interface AgentSubstrate {
-  run(req: {
-    role: "propose" | "implement" | "review";
-    rolePromptPath: string;        // .crucible/context/<role>.md
-    taskPayload: string;           // distilled intent / work order text
-    cwd: string;
-    model: string;
-  }): Promise<{ exitCode: number; transcriptPath: string }>;
-}
-```
+**Settled by P1-08** — frozen shape in architecture.md §6, canonical types in `core/src/substrate/types.ts`. *(Amendment: the working draft here had the substrate computing the transcript path `.crucible/transcripts/<change>/<role>-<ts>.jsonl`; frozen contract has the caller mint it and pass `transcriptPath` in the request, so the substrate holds no change-awareness or wall-clock naming.)* Phase-1-specific notes that remain here:
 
-- `ClaudeCodeSubstrate`: spawns `claude -p` headless with role prompt + payload, captures the session transcript to `.crucible/transcripts/<change>/<role>-<ts>.jsonl`. Verify P0-style against the currently installed Claude Code version; isolate all CLI-flag specifics inside this one class. A `FakeSubstrate` (writes pre-canned artifacts) backs unit/integration tests so the suite runs without network.
+- `ClaudeCodeSubstrate` is verified P0-style against the currently installed Claude Code version (documented in a spike-notes addendum); all CLI-flag specifics live inside that one class.
+- `FakeSubstrate` (writes pre-canned artifacts + transcript) backs unit/integration tests so the suite runs without network.
 - Success is never read from exitCode alone: after any substrate run, the calling command validates the artifacts the role was required to produce (invariant #2).
 
 ## §6 propose / approve / implement (thin)
