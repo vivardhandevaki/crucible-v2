@@ -52,7 +52,13 @@ export function parseProposal(markdown: string, source: string): Proposal {
 
     let end = i + 1;
     while (end < lines.length && !H2.test(lines[end]!)) end += 1;
-    found.set(name, { line: i + 1, body: lines.slice(i + 1, end).join('\n').trim() });
+    found.set(name, {
+      line: i + 1,
+      body: lines
+        .slice(i + 1, end)
+        .join('\n')
+        .trim(),
+    });
   }
 
   for (const name of REQUIRED_SECTIONS) {
