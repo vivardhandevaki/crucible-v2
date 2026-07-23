@@ -31,11 +31,21 @@ describe('buildProgram', () => {
     );
   });
 
-  it.each([...P1_VERBS])('stub verb `%s` fails closed with exit 4', async (verb) => {
+  // approve is implemented (P1-07); the remaining verbs are still stubs.
+  const STUB_VERBS = P1_VERBS.filter((v) => v !== 'approve');
+
+  it.each(STUB_VERBS)('stub verb `%s` fails closed with exit 4', async (verb) => {
     const cap = captureIO();
     const code = await runProgram(buildProgram(), [verb], cap.io);
     // Invariant 3: a not-yet-implemented command must not silently succeed.
     expect(code).toBe(4);
+  });
+
+  it('`approve` is a real verb: no <change> arg → usage error (exit 2), not stub exit 4', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['approve'], cap.io);
+    // A missing required argument is a usage/precondition failure, never exit 4.
+    expect(code).toBe(2);
   });
 
   it('unknown command against the real program → exit 2 with help + hint', async () => {

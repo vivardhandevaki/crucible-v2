@@ -1,11 +1,13 @@
 // The crucible command program: name, version, global flags, and the P1 verb
 // registrations. Command bodies are stubs here — each real orchestration lands
-// in its own Phase 1 task (propose P1-09, approve P1-07, implement P1-13,
-// verify P1-12, status P1-14) and replaces the stub action. Until then a stub
-// must fail closed rather than pretend success (invariant 3).
+// in its own Phase 1 task (propose P1-09, implement P1-13, verify P1-12, status
+// P1-14) and replaces the stub action. Until then a stub must fail closed rather
+// than pretend success (invariant 3). `approve` is the first real verb (P1-07):
+// its dedicated registration (commands/approve.cli.ts) replaces the stub.
 
 import { Command } from 'commander';
 import { internalError } from '../util/errors.js';
+import { registerApprove } from '../commands/approve.cli.js';
 
 // Placeholder until the version is sourced from package metadata in a later
 // task; kept off package.json imports because that file sits outside rootDir.
@@ -44,6 +46,8 @@ export function buildProgram(): Command {
     );
 
   for (const verb of P1_VERBS) {
+    // approve is implemented (P1-07); it gets a dedicated registration below.
+    if (verb === 'approve') continue;
     program
       .command(verb)
       .description(VERB_SUMMARY[verb])
@@ -55,6 +59,8 @@ export function buildProgram(): Command {
         );
       });
   }
+
+  registerApprove(program);
 
   return program;
 }

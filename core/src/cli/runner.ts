@@ -22,12 +22,11 @@ export interface RunnerIO {
 export async function runProgram(program: Command, argv: string[], io: RunnerIO): Promise<number> {
   // Commander must throw instead of exiting the process, and all of its output
   // routes through our sink. We suppress commander's own stderr writes because
-  // this runner emits every error line deterministically below.
-  program.exitOverride();
-  program.configureOutput({
-    writeOut: (s) => io.writeOut(s),
-    writeErr: () => {},
-  });
+  // this runner emits every error line deterministically below. exitOverride and
+  // the output sink are applied to the WHOLE command tree — a subcommand's own
+  // usage error (e.g. `approve` with no <change>) is otherwise raised via
+  // process.exit on that subcommand, escaping our mapping and landing as exit 4.
+  configureTree(program, io);
 
   // `--json` may appear before parsing completes (or fail to parse at all), so
   // detect it from the raw argv for the error-formatting path.
@@ -38,6 +37,18 @@ export async function runProgram(program: Command, argv: string[], io: RunnerIO)
     return 0;
   } catch (err) {
     return handleError(err, io, json, program);
+  }
+}
+
+/** Apply exitOverride + the output sink to a command and all its subcommands. */
+function configureTree(command: Command, io: RunnerIO): void {
+  command.exitOverride();
+  command.configureOutput({
+    writeOut: (s) => io.writeOut(s),
+    writeErr: () => {},
+  });
+  for (const child of command.commands) {
+    configureTree(child, io);
   }
 }
 
