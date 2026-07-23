@@ -1,6 +1,11 @@
 import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
-import { internalError, invalidInputError, preconditionError } from '../util/errors.js';
+import {
+  CheckFailure,
+  internalError,
+  invalidInputError,
+  preconditionError,
+} from '../util/errors.js';
 import { type RunnerIO, runProgram } from './runner.js';
 
 // Capturing IO so the runner can be exercised without touching process
@@ -83,6 +88,16 @@ describe('runProgram exit-code mapping', () => {
     );
     expect(code).toBe(4);
     expect(cap.err()).toContain('invariant broken');
+  });
+
+  it('maps a CheckFailure to exit 1 silently — the command already rendered the report', async () => {
+    const cap = captureIO();
+    // A red verify verdict is not an error: the run succeeded, the code under
+    // test failed. The command prints the report, then throws CheckFailure; the
+    // runner maps it to exit 1 and prints nothing extra (no `error:` line).
+    const code = await runProgram(throwingProgram(new CheckFailure()), ['boom'], cap.io);
+    expect(code).toBe(1);
+    expect(cap.err()).toBe('');
   });
 
   it('maps an unexpected (non-Crucible) exception to exit 4 with a stack to stderr', async () => {

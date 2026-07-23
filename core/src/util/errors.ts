@@ -42,6 +42,27 @@ export function isCrucibleError(value: unknown): value is CrucibleError {
 }
 
 /**
+ * Exit 1 — checks ran and failed (architecture.md §2: "verify red, lint failure,
+ * reviewer block"). This is a *verdict*, not an error: the command succeeded, the
+ * code (or bundle) it judged did not. It is deliberately NOT a `CrucibleError`
+ * (whose exit is 2|3|4 for genuine tool errors) — the command has already
+ * rendered the full report to stdout, so the runner maps this to exit 1 and
+ * prints nothing extra. Carries no teaching hint; the report is the message.
+ */
+export class CheckFailure extends Error {
+  readonly exit = 1 as const;
+
+  constructor(message = 'checks failed') {
+    super(message);
+    this.name = 'CheckFailure';
+  }
+}
+
+export function isCheckFailure(value: unknown): value is CheckFailure {
+  return value instanceof CheckFailure;
+}
+
+/**
  * Exit 2 — a precondition is unmet. The `hint` must name the exact next
  * command to run (architecture.md §2: exit 2 messages are teaching surfaces).
  */
