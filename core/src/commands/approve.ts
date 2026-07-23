@@ -20,6 +20,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { loadOracles, type Oracle } from '../artifacts/oracles.js';
+import { loadProposal } from '../artifacts/proposal.js';
 import { loadSpecDelta, type SpecRequirement } from '../artifacts/spec-delta.js';
 import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
 import { sealBundle, serializeApproval } from '../artifacts/approval.js';
@@ -90,6 +91,10 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
   }
 
   // Parse the bundle. Missing artifact → exit 2 (loaders); malformed → exit 3.
+  // The proposal's parse result is unused beyond validation: approve gates on
+  // the whole bundle parsing (invariant 5), and the Unspecified/Seams sections
+  // are part of the review surface being sealed (P1-09 proposal grammar).
+  loadProposal(join(changeDir, 'proposal.md'));
   const requirements = loadAllRequirements(changeDir, changeRel);
   const oracles = loadOracles(join(changeDir, 'oracles.md'));
 

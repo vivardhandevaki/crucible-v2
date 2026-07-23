@@ -120,6 +120,27 @@ describe('approve — preconditions gate the seal (invariant 5)', () => {
     expect(existsSync(approvalPath(scratch))).toBe(false);
   });
 
+  it('refuses a proposal without the required Unspecified/Seams sections (exit 3)', async () => {
+    // P1-09 proposal grammar: approve gates on the whole bundle parsing, and a
+    // proposal hiding its scope sections is malformed input at this stage.
+    writeFileSync(join(scratch, CHANGE_REL, 'proposal.md'), '# Proposal\n\n## Why\n\nBecause.\n');
+    const err = await catchCrucible(() =>
+      approve({ root: scratch, change: CHANGE, yes: true }, deps()),
+    );
+    expect(err.exit).toBe(3);
+    expect(err.message).toContain('Unspecified');
+    expect(existsSync(approvalPath(scratch))).toBe(false);
+  });
+
+  it('refuses a bundle with no proposal.md at exit 2', async () => {
+    rmSync(join(scratch, CHANGE_REL, 'proposal.md'));
+    const err = await catchCrucible(() =>
+      approve({ root: scratch, change: CHANGE, yes: true }, deps()),
+    );
+    expect(err.exit).toBe(2);
+    expect(existsSync(approvalPath(scratch))).toBe(false);
+  });
+
   it('does not write a seal when the human declines the confirm', async () => {
     const result = await approve(
       { root: scratch, change: CHANGE, yes: false },
