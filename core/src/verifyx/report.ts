@@ -21,8 +21,12 @@ import type { LintReport } from '../lint/traceability.js';
 import type { OracleResult } from '../adapters/types.js';
 import type { VerifyResult } from '../artifacts/approval.js';
 
-/** The three checks verify runs, in report order (design §8). */
-export const CHECK_NAMES = ['traceability', 'oracles', 'approval'] as const;
+/** The check vocabulary, in report order. verify runs traceability → oracles →
+ * approval (design §8); `bundle` (do the authored artifacts parse at all?) is
+ * emitted by propose's post-session judgment (design §6), which reuses this
+ * report as its verdict surface — one zod-guarded verdict shape for every
+ * command that judges. */
+export const CHECK_NAMES = ['bundle', 'traceability', 'oracles', 'approval'] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 
 /** A check's binary outcome. `skip`/`error`/`void` all fold to `fail` upstream. */
@@ -125,11 +129,12 @@ export function aggregate(change: string, checks: CheckResult[]): VerifyReport {
  * Plain terminal render (the rich surface is P2). One header line with the
  * verdict, one line per check with its status, and an indented line per finding
  * naming the exact id — enough for the implement inner loop to read machine-
- * parseable failures without `--json`.
+ * parseable failures without `--json`. `label` names the judging command in the
+ * header (`verify` by default; propose passes its own).
  */
-export function renderReport(report: VerifyReport): string {
+export function renderReport(report: VerifyReport, label = 'verify'): string {
   const lines: string[] = [];
-  lines.push(`verify ${report.change}: ${report.verdict.toUpperCase()}`);
+  lines.push(`${label} ${report.change}: ${report.verdict.toUpperCase()}`);
   for (const check of report.checks) {
     lines.push(`  [${check.status === 'pass' ? 'PASS' : 'FAIL'}] ${check.name}`);
     for (const finding of check.findings) {

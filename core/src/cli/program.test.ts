@@ -31,8 +31,9 @@ describe('buildProgram', () => {
     );
   });
 
-  // approve (P1-07) and verify (P1-12) are implemented; the rest are still stubs.
-  const REAL_VERBS = ['approve', 'verify'];
+  // propose (P1-09), approve (P1-07) and verify (P1-12) are implemented; the
+  // rest are still stubs.
+  const REAL_VERBS = ['approve', 'propose', 'verify'];
   const STUB_VERBS = P1_VERBS.filter((v) => !REAL_VERBS.includes(v));
 
   it.each(STUB_VERBS)('stub verb `%s` fails closed with exit 4', async (verb) => {
