@@ -1,16 +1,15 @@
 // The crucible command program: name, version, global flags, and the P1 verb
-// registrations. Command bodies are stubs here — each real orchestration lands
-// in its own Phase 1 task (status P1-14) and replaces the stub action. Until
-// then a stub must fail closed rather than pretend success (invariant 3).
-// `propose` (P1-09), `approve` (P1-07), `verify` (P1-12) and `implement`
-// (P1-13) are the real verbs so far: their dedicated registrations
-// (commands/*.cli.ts) replace the stubs. `status` remains the last stub.
+// registrations. Every P1 verb now has a dedicated real registration
+// (commands/*.cli.ts) — propose (P1-09), approve (P1-07), verify (P1-12),
+// implement (P1-13), and status (P1-14). The fail-closed stub loop remains as the
+// default for any verb not yet wired (invariant 3: a stub never pretends success).
 
 import { Command } from 'commander';
 import { internalError } from '../util/errors.js';
 import { registerApprove } from '../commands/approve.cli.js';
 import { registerImplement } from '../commands/implement.cli.js';
 import { registerPropose } from '../commands/propose.cli.js';
+import { registerStatus } from '../commands/status.cli.js';
 import { registerVerify } from '../commands/verify.cli.js';
 
 // Placeholder until the version is sourced from package metadata in a later
@@ -49,12 +48,11 @@ export function buildProgram(): Command {
       'read crucible.yaml from this directory (CI target-branch rule)',
     );
 
+  // Every P1 verb has a dedicated registration below; the stub loop only fires if
+  // a verb is added to P1_VERBS before it is wired (fail-closed, invariant 3).
+  const WIRED: readonly P1Verb[] = ['propose', 'approve', 'verify', 'implement', 'status'];
   for (const verb of P1_VERBS) {
-    // propose (P1-09), approve (P1-07), verify (P1-12) and implement (P1-13) are
-    // implemented; each gets a dedicated registration below. The rest remain
-    // fail-closed stubs until their task.
-    if (verb === 'propose' || verb === 'approve' || verb === 'verify' || verb === 'implement')
-      continue;
+    if (WIRED.includes(verb)) continue;
     program
       .command(verb)
       .description(VERB_SUMMARY[verb])
@@ -70,6 +68,7 @@ export function buildProgram(): Command {
   registerApprove(program);
   registerImplement(program);
   registerPropose(program);
+  registerStatus(program);
   registerVerify(program);
 
   return program;

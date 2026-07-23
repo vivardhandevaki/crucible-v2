@@ -31,16 +31,13 @@ describe('buildProgram', () => {
     );
   });
 
-  // propose (P1-09), approve (P1-07), verify (P1-12) and implement (P1-13) are
-  // implemented; only status is still a stub.
-  const REAL_VERBS = ['approve', 'implement', 'propose', 'verify'];
+  // Every P1 verb is now implemented (status landed with P1-14); no stubs remain.
+  // The fail-closed stub loop stays in program.ts for any future unwired verb.
+  const REAL_VERBS = ['approve', 'implement', 'propose', 'status', 'verify'];
   const STUB_VERBS = P1_VERBS.filter((v) => !REAL_VERBS.includes(v));
 
-  it.each(STUB_VERBS)('stub verb `%s` fails closed with exit 4', async (verb) => {
-    const cap = captureIO();
-    const code = await runProgram(buildProgram(), [verb], cap.io);
-    // Invariant 3: a not-yet-implemented command must not silently succeed.
-    expect(code).toBe(4);
+  it('every P1 verb is wired to a real command (no stubs remain)', () => {
+    expect(STUB_VERBS).toEqual([]);
   });
 
   it.each(REAL_VERBS)(
@@ -72,13 +69,13 @@ describe('buildProgram', () => {
     const program = buildProgram();
     program.exitOverride();
     program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
-    // Global options are recorded before the subcommand's action runs; the
-    // stub action throws (NOT_IMPLEMENTED), which we swallow — we only assert
-    // the option was captured.
+    // Global options are recorded before the subcommand's action runs; `status`
+    // with no <change> raises a usage error (exitOverride), which we swallow — we
+    // only assert the global option was captured.
     try {
       program.parse(['--config-from', '/tmp/target', 'status'], { from: 'user' });
     } catch {
-      /* stub verb throws by design */
+      /* missing required <change> throws by design */
     }
     expect(program.opts().configFrom).toBe('/tmp/target');
   });
