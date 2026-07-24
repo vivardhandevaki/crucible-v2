@@ -20,7 +20,13 @@ import {
 /** The charter reference-shape config: risk globs + the three tier diff caps. */
 const CONFIG: TierConfigLike = {
   risk: {
-    critical: ['src/**/auth/**', 'src/**/payments/**', '**/pom.xml', '.crucible/**', 'crucible.yaml'],
+    critical: [
+      'src/**/auth/**',
+      'src/**/payments/**',
+      '**/pom.xml',
+      '.crucible/**',
+      'crucible.yaml',
+    ],
     exempt: ['.crucible/settings.yaml', '.crucible/local.yaml'],
   },
   tiers: {
@@ -43,7 +49,10 @@ function facts(overrides: Partial<TierInputs> = {}): TierInputs {
 
 describe('computeTier — the charter table rows', () => {
   it('trivial: no spec delta, no risk match, within the trivial cap', () => {
-    const d = computeTier(facts({ specDelta: false, touchedPaths: ['docs/x.md'], diffLines: 149 }), CONFIG);
+    const d = computeTier(
+      facts({ specDelta: false, touchedPaths: ['docs/x.md'], diffLines: 149 }),
+      CONFIG,
+    );
     expect(d.tier).toBe('trivial');
     expect(d.computed).toBe('trivial');
     expect(d.facts.risk_matches).toEqual([]);
@@ -52,15 +61,23 @@ describe('computeTier — the charter table rows', () => {
   });
 
   it('standard: spec delta present, no risk match', () => {
-    const d = computeTier(facts({ specDelta: true, touchedPaths: ['src/greeting.ts'], diffLines: 20 }), CONFIG);
+    const d = computeTier(
+      facts({ specDelta: true, touchedPaths: ['src/greeting.ts'], diffLines: 20 }),
+      CONFIG,
+    );
     expect(d.tier).toBe('standard');
     expect(d.facts.diff_cap).toBe(400);
   });
 
   it('critical: a risk-glob match', () => {
-    const d = computeTier(facts({ specDelta: true, touchedPaths: ['src/api/auth/login.ts'] }), CONFIG);
+    const d = computeTier(
+      facts({ specDelta: true, touchedPaths: ['src/api/auth/login.ts'] }),
+      CONFIG,
+    );
     expect(d.tier).toBe('critical');
-    expect(d.facts.risk_matches).toEqual([{ path: 'src/api/auth/login.ts', glob: 'src/**/auth/**' }]);
+    expect(d.facts.risk_matches).toEqual([
+      { path: 'src/api/auth/login.ts', glob: 'src/**/auth/**' },
+    ]);
     expect(d.facts.diff_cap).toBe(400);
   });
 });
@@ -77,7 +94,10 @@ describe('computeTier — honesty rule 1: risk-glob match dominates', () => {
   });
 
   it('risk match wins even when a spec delta is present', () => {
-    const d = computeTier(facts({ specDelta: true, touchedPaths: ['pom.xml'], diffLines: 3 }), CONFIG);
+    const d = computeTier(
+      facts({ specDelta: true, touchedPaths: ['pom.xml'], diffLines: 3 }),
+      CONFIG,
+    );
     expect(d.tier).toBe('critical');
     expect(d.facts.risk_matches[0]?.glob).toBe('**/pom.xml');
   });
@@ -96,25 +116,37 @@ describe('computeTier — honesty rule 1: risk-glob match dominates', () => {
 
 describe('computeTier — honesty rule 2: a spec delta guarantees at least standard', () => {
   it('spec delta with a tiny diff never falls to trivial', () => {
-    const d = computeTier(facts({ specDelta: true, touchedPaths: ['src/x.ts'], diffLines: 1 }), CONFIG);
+    const d = computeTier(
+      facts({ specDelta: true, touchedPaths: ['src/x.ts'], diffLines: 1 }),
+      CONFIG,
+    );
     expect(d.tier).toBe('standard');
   });
 });
 
 describe('computeTier — the diff-cap bump (a would-be-trivial change over its cap)', () => {
   it('no spec delta, no risk, diff over the trivial cap → standard', () => {
-    const d = computeTier(facts({ specDelta: false, touchedPaths: ['docs/x.md'], diffLines: 151 }), CONFIG);
+    const d = computeTier(
+      facts({ specDelta: false, touchedPaths: ['docs/x.md'], diffLines: 151 }),
+      CONFIG,
+    );
     expect(d.tier).toBe('standard');
     expect(d.reasons.join(' ')).toMatch(/exceeds trivial cap 150/);
   });
 
   it('exactly at the trivial cap stays trivial (boundary is inclusive)', () => {
-    const d = computeTier(facts({ specDelta: false, touchedPaths: ['docs/x.md'], diffLines: 150 }), CONFIG);
+    const d = computeTier(
+      facts({ specDelta: false, touchedPaths: ['docs/x.md'], diffLines: 150 }),
+      CONFIG,
+    );
     expect(d.tier).toBe('trivial');
   });
 
   it('honors a repo-tuned trivial cap', () => {
-    const tuned: TierConfigLike = { ...CONFIG, tiers: { ...CONFIG.tiers, trivial: { diff_cap: 40 } } };
+    const tuned: TierConfigLike = {
+      ...CONFIG,
+      tiers: { ...CONFIG.tiers, trivial: { diff_cap: 40 } },
+    };
     expect(computeTier(facts({ diffLines: 41 }), tuned).tier).toBe('standard');
     expect(computeTier(facts({ diffLines: 40 }), tuned).tier).toBe('trivial');
   });
@@ -148,7 +180,10 @@ describe('computeTier — force up allowed, force down impossible', () => {
   });
 
   it('refuses to force a computed-standard change down to trivial', () => {
-    const d = computeTier(facts({ forced: 'trivial', specDelta: true, touchedPaths: ['src/x.ts'] }), CONFIG);
+    const d = computeTier(
+      facts({ forced: 'trivial', specDelta: true, touchedPaths: ['src/x.ts'] }),
+      CONFIG,
+    );
     expect(d.tier).toBe('standard');
     expect(d.reasons.join(' ')).toMatch(/force down impossible/);
   });
@@ -161,7 +196,10 @@ describe('computeTier — force up allowed, force down impossible', () => {
 
 describe('computeTier — exempt globs carve out of the risk set', () => {
   it('an exempt path matching a risk glob is not a risk match', () => {
-    const d = computeTier(facts({ touchedPaths: ['.crucible/settings.yaml'], specDelta: false }), CONFIG);
+    const d = computeTier(
+      facts({ touchedPaths: ['.crucible/settings.yaml'], specDelta: false }),
+      CONFIG,
+    );
     expect(d.facts.risk_matches).toEqual([]);
     expect(d.tier).toBe('trivial');
   });
@@ -192,7 +230,8 @@ describe('computeTier — glob semantics (gitignore-style)', () => {
   for (const [glob, path, expected] of cases) {
     it(`${glob} ${expected ? 'matches' : 'rejects'} ${path}`, () => {
       const cfg: TierConfigLike = { risk: { critical: [glob], exempt: [] }, tiers: CONFIG.tiers };
-      const matched = computeTier(facts({ touchedPaths: [path] }), cfg).facts.risk_matches.length > 0;
+      const matched =
+        computeTier(facts({ touchedPaths: [path] }), cfg).facts.risk_matches.length > 0;
       expect(matched).toBe(expected);
     });
   }
@@ -200,7 +239,11 @@ describe('computeTier — glob semantics (gitignore-style)', () => {
 
 describe('computeTier — determinism (invariant 12)', () => {
   it('same inputs → byte-identical decision across runs', () => {
-    const input = facts({ specDelta: true, touchedPaths: ['src/x/auth/y.ts', 'a.ts'], diffLines: 200 });
+    const input = facts({
+      specDelta: true,
+      touchedPaths: ['src/x/auth/y.ts', 'a.ts'],
+      diffLines: 200,
+    });
     const a = computeTier(input, CONFIG);
     const b = computeTier(input, CONFIG);
     expect(a).toEqual(b);

@@ -139,7 +139,9 @@ export function computeTier(inputs: TierInputs, config: TierConfigLike): TierDec
       tier = forced;
       reasons.push(`forced up to ${forced} via --tier`);
     } else if (TIER_RANK[forced] < TIER_RANK[computed]) {
-      reasons.push(`--tier ${forced} ignored: computed tier is ${computed} (force down impossible)`);
+      reasons.push(
+        `--tier ${forced} ignored: computed tier is ${computed} (force down impossible)`,
+      );
     } else {
       reasons.push(`--tier ${forced} matches the computed tier`);
     }
@@ -165,10 +167,7 @@ export function computeTier(inputs: TierInputs, config: TierConfigLike): TierDec
  * `.crucible/**`). Returns the first matching critical glob per path; paths are
  * already sorted so the result is deterministic.
  */
-function matchRisk(
-  paths: readonly string[],
-  risk: TierConfigLike['risk'],
-): RiskMatch[] {
+function matchRisk(paths: readonly string[], risk: TierConfigLike['risk']): RiskMatch[] {
   const critical = risk.critical.map((glob) => ({ glob, re: globToRegExp(glob) }));
   const exempt = risk.exempt.map((glob) => globToRegExp(glob));
   const matches: RiskMatch[] = [];
@@ -258,8 +257,7 @@ export function parseTierName(value: string): TierName {
  */
 export function renderTierDecision(decision: TierDecision): string {
   const lines: string[] = [];
-  const forceNote =
-    decision.tier !== decision.computed ? ` (computed ${decision.computed})` : '';
+  const forceNote = decision.tier !== decision.computed ? ` (computed ${decision.computed})` : '';
   lines.push(`Tier: ${decision.tier}${forceNote}`);
   for (const reason of decision.reasons) {
     lines.push(`  - ${reason}`);
