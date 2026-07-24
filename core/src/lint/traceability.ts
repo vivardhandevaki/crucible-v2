@@ -36,8 +36,11 @@ import type { SpecRequirement } from '../artifacts/spec-delta.js';
 export interface TargetResolution {
   target: string;
   status: 'found' | 'missing';
-  /** Present only when `found`: the file the target lives in (unused by lint). */
-  targetFile?: string;
+  /** Present only when `found`: the file the target lives in (unused by lint).
+   * `| undefined` so the adapter client's zod-inferred resolve result (its
+   * optionals admit explicit `undefined`) is assignable under
+   * `exactOptionalPropertyTypes` — the tracer wires the real client here. */
+  targetFile?: string | undefined;
 }
 
 /**

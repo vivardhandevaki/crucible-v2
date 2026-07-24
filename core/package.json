@@ -10,7 +10,7 @@
     "crucible": "dist/cli/bin.js"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.test.json",
     "build": "tsc"
   },
   "dependencies": {
