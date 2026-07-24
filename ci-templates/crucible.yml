@@ -1,0 +1,108 @@
+# Crucible enforcement — the required merge gate for a Crucible-governed repo.
+#
+# WHAT THIS IS: the reusable workflow shipped to *consumer* repositories — NOT the
+# Crucible framework's own CI (that is .github/workflows/ci.yml, which builds and
+# tests the framework). Copy this file to `.github/workflows/crucible.yml` in a
+# governed repo and mark the `verify` job a required status check in branch
+# protection. `crucible init` (P2) installs and pins this for you; in Phase 1 it
+# is installed by hand (design phase-0-1.md §9).
+#
+# THE TARGET-BRANCH RULE (charter §The Target-Branch Rule; invariant #7): the
+# enforcement config (crucible.yaml — risk globs, tiers) is read from the branch
+# being merged INTO, never from the PR head. A PR that loosens its own globs
+# achieves nothing for that PR: this workflow extracts crucible.yaml from
+# origin/<base_ref> and hands it to verify via `--config-from`. The rules that
+# judge you are the rules already on the target branch. Convenience config
+# (.crucible/settings.yaml, local.yaml) is never read here — it cannot affect
+# enforcement by construction.
+#
+# ── P1 SCOPE, HONEST LIMITATION ──────────────────────────────────────────────
+# In Phase 1 `crucible verify` does not yet CONSUME enforcement config (tier +
+# risk computation is P2-02 / P2-03), so `--config-from` is wired below but inert.
+# The structure is correct and load-bearing for P2 — nothing here changes when
+# verify starts reading config. What P1 delivers and TESTS today (see
+# src/crucible-template.test.ts): (1) config is sourced from the target branch,
+# never the PR working tree; (2) a red verify verdict fails the check — no
+# error-swallowing (fail-closed, invariant #3). The *executable* proof that a
+# loosened-glob PR still fails is tracked as a distinct task, **P2-18** (depends
+# on P2-03, where verify begins consuming `--config-from`). Also deferred to P2:
+# the live adapter pin (`crucible init`) that lets `verify` run its oracles at all
+# — until then a real consumer run reaches the adapter-pin precondition.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Crucible
+
+on:
+  pull_request:
+
+jobs:
+  # One required check. A red verify verdict is exit 1; any non-zero step exit
+  # fails the job → the required check goes red. There is deliberately no
+  # `continue-on-error` and no `|| true`: the gate must not be silently
+  # satisfiable (fail-closed, invariant #3).
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head (full history for the target-branch diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract target-branch enforcement config
+        # The Target-Branch Rule made concrete. crucible.yaml is taken from
+        # origin/<base_ref> — the branch being merged INTO — and written OUTSIDE
+        # the working tree (under RUNNER_TEMP) so the PR's own copy can never
+        # shadow it. Fail-closed: if the target branch has no crucible.yaml,
+        # `git show` errors and the step (and the check) goes red rather than
+        # silently falling back to the PR's config.
+        run: |
+          set -euo pipefail
+          BASE="${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "$BASE"
+          mkdir -p "$RUNNER_TEMP/crucible-target"
+          git show "origin/$BASE:crucible.yaml" > "$RUNNER_TEMP/crucible-target/crucible.yaml"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Crucible
+        # Consumer repos pin the Crucible CLI as a dev dependency; `crucible init`
+        # (P2) writes the exact pin. Until then, install from the repo's manifest.
+        run: npm ci
+
+      - name: Detect changed change-bundles
+        id: changes
+        # A PR governs the change bundle(s) it touches under
+        # openspec/changes/<name>/. Enumerate them from the diff against the
+        # target branch; zero touched → nothing to enforce (clean pass). The gate
+        # judges only what the PR actually changes.
+        run: |
+          set -euo pipefail
+          BASE="${{ github.base_ref }}"
+          names="$(git diff --name-only "origin/$BASE...HEAD" \
+            | sed -n 's#^openspec/changes/\([^/]*\)/.*#\1#p' | sort -u)"
+          {
+            echo 'names<<EOF'
+            echo "$names"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify (enforcement config from the target branch)
+        # The required gate. `--config-from` points at the target-branch config
+        # extracted above (invariant #7), NOT the PR working tree. The flag is
+        # placed before the subcommand, the form the CLI parses. A red verdict is
+        # exit 1 → this step fails → the required check is red (verify red → check
+        # red). No error-swallowing: the gate is fail-closed.
+        run: |
+          set -euo pipefail
+          names="${{ steps.changes.outputs.names }}"
+          if [ -z "$names" ]; then
+            echo "No change bundles touched by this PR — nothing to verify."
+            exit 0
+          fi
+          for change in $names; do
+            echo "::group::crucible verify $change"
+            npx crucible --config-from "$RUNNER_TEMP/crucible-target" verify "$change"
+            echo "::endgroup::"
+          done

@@ -1,0 +1,82 @@
+{
+  "description": "One defect per file. Each invalid fixture isolates a single artifact-grammar violation so parser tests (P1-03 oracles, P1-04 spec-delta) can assert exactly one failure. All artifact-grammar violations fail closed with exit code 3 (charter invariant #3; design phase-0-1.md §3). `line` is 1-based; `locator` is the exact offending line (drift guard).",
+  "errors": [
+    {
+      "id": "oracle-bad-id",
+      "artifact": "oracles",
+      "path": "bundles/invalid/oracles/bad-id.md",
+      "violation": "Oracle heading id fails ^## (ORC-[a-z0-9-]+-\\d{3}): — the sequence must be exactly three digits.",
+      "heading": "## ORC-greeting-1: Oracle sequence is not three digits",
+      "locator": "## ORC-greeting-1: Oracle sequence is not three digits",
+      "line": 3,
+      "exitCode": 3,
+      "consumers": ["P1-03"]
+    },
+    {
+      "id": "oracle-missing-fence",
+      "artifact": "oracles",
+      "path": "bundles/invalid/oracles/missing-fence.md",
+      "violation": "Oracle has zero crucible-binding fences before the next `## ` heading; exactly one is required.",
+      "heading": "## ORC-greeting-001: No crucible-binding block follows",
+      "locator": "## ORC-greeting-001: No crucible-binding block follows",
+      "line": 3,
+      "exitCode": 3,
+      "consumers": ["P1-03"]
+    },
+    {
+      "id": "oracle-two-fences",
+      "artifact": "oracles",
+      "path": "bundles/invalid/oracles/two-fences.md",
+      "violation": "Oracle has two crucible-binding fences before the next `## ` heading; exactly one is required.",
+      "heading": "## ORC-greeting-001: Two crucible-binding blocks",
+      "locator": "## ORC-greeting-001: Two crucible-binding blocks",
+      "line": 3,
+      "exitCode": 3,
+      "consumers": ["P1-03"]
+    },
+    {
+      "id": "oracle-bad-kind",
+      "artifact": "oracles",
+      "path": "bundles/invalid/oracles/bad-kind.md",
+      "violation": "Binding `kind` is `smoke`, which is not in the enum unit|property|contract|integration.",
+      "heading": "## ORC-greeting-001: Binding kind is not in the enum",
+      "locator": "kind: smoke",
+      "line": 10,
+      "exitCode": 3,
+      "consumers": ["P1-03"]
+    },
+    {
+      "id": "oracle-no-requirement",
+      "artifact": "oracles",
+      "path": "bundles/invalid/oracles/no-requirement.md",
+      "violation": "Binding omits the required `requirement` field; a binding with zero requirements is forbidden.",
+      "heading": "## ORC-greeting-001: Binding omits the requirement field",
+      "locator": "## ORC-greeting-001: Binding omits the requirement field",
+      "line": 3,
+      "exitCode": 3,
+      "consumers": ["P1-03"]
+    },
+    {
+      "id": "spec-malformed-bracket-id",
+      "artifact": "spec-delta",
+      "path": "bundles/invalid/spec-delta/malformed-bracket-id.md",
+      "violation": "Requirement bracket id [REQ-greeting-basic] omits the trailing -<n>; it fails [REQ-[a-z0-9-]+-\\d+].",
+      "heading": "### Requirement: Greeting a named user [REQ-greeting-basic]",
+      "locator": "### Requirement: Greeting a named user [REQ-greeting-basic]",
+      "line": 5,
+      "exitCode": 3,
+      "consumers": ["P1-04"]
+    },
+    {
+      "id": "spec-duplicate-req-id",
+      "artifact": "spec-delta",
+      "path": "bundles/invalid/spec-delta/duplicate-req-id.md",
+      "violation": "REQ-greeting-basic-1 appears on two requirement headings; ids are immutable and never reused.",
+      "heading": "### Requirement: Greeting redux [REQ-greeting-basic-1]",
+      "locator": "### Requirement: Greeting redux [REQ-greeting-basic-1]",
+      "line": 14,
+      "exitCode": 3,
+      "consumers": ["P1-04"]
+    }
+  ]
+}

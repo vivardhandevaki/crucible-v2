@@ -90,3 +90,55 @@ npx openspec validate add-greeting --strict --json # valid (parse JSON, not exit
 git add -A && git commit -m pre-update && npx openspec update --force && git status  # clean
 npx openspec archive add-greeting --yes            # merges deltas into openspec/specs/
 ```
+
+## Re-verification (P0-03 validation, 2026-07-22)
+
+The §Repro sequence was re-run against the pinned `@fission-ai/openspec@1.6.0`,
+this time populating the change with the **committed P0-03 toy fixture bundle**
+(`fixtures/toy-repo/openspec/changes/add-greeting/`) rather than hand-authored
+scratch artifacts. Confirmed independently:
+
+- Custom schema (with the `oracles` artifact, `requires: [design]`) → `schema validate` passes.
+- Fixture bundle → `status` reports 5/5 artifacts done, and `validate --strict --json` returns `valid` (1 passed, 0 failed).
+- `archive` merges both requirements into `openspec/specs/greeting/spec.md` with the `[REQ-greeting-basic-1]` / `[REQ-greeting-default-2]` bracketed headings preserved.
+
+So the toy fixture is validated against OpenSpec's *real* delta grammar, not
+just Crucible's own regexes — the end-to-end spike claim holds on checked-in
+artifacts. The scratch project remains disposable (built in `/tmp`, not part of
+this repo).
+
+## P1-08 addendum — ClaudeCodeSubstrate verified against installed Claude Code (2026-07-23)
+
+`ClaudeCodeSubstrate` (`core/src/substrate/claude-code.ts`) isolates every
+headless-Claude-Code CLI specific. Verified against the installed
+**Claude Code 2.1.179** that its invocation is accepted and its stdout is the
+trajectory we capture into the transcript. The invocation, headless:
+
+```
+claude -p --output-format stream-json --verbose \
+       --model <m> --permission-mode <mode> \
+       --append-system-prompt <role-prompt-content>
+# work-order text (taskPayload) fed on stdin
+```
+
+Confirmed by piping a trivial no-tool prompt through the exact flag set
+(`--disallowedTools` set, `--permission-mode default` for the verification run):
+exit 0, and stdout is well-formed JSONL — `system(init) → assistant → result(success)` —
+which `writeTranscript` persists verbatim to `transcriptPath`. `stream-json`
+requires `--verbose` (the CLI errors otherwise); both are hard-coded in `buildArgv`.
+
+Flag notes locked in from `claude --help`:
+- `--append-system-prompt <text>` carries the role-prompt *content* (the class
+  reads the file itself so an unreadable prompt is a fail-closed cannot-start,
+  `SUBSTRATE_UNAVAILABLE`/exit 3, rather than a claude error we'd have to return).
+- `--model` accepts an alias (`fable`/`opus`/`sonnet`/`haiku`) or a full id; passed through opaquely.
+- Default `--permission-mode bypassPermissions`: a headless run has no interactive
+  approver, so any tool-permission prompt would hang until the timeout. Isolated
+  as the one place the policy is chosen.
+
+**Not exercised live:** a real authoring session under `bypassPermissions` with
+actual file writes — running an unsandboxed permission-bypassed nested agent is
+out of scope for an interface-verification spike (and blocked by the local
+sandbox). The flag acceptance, stream-json framing, transcript capture, exit-code
+return, and the returned-vs-thrown boundary are covered hermetically by
+`claude-code.test.ts` with an injected spawn.

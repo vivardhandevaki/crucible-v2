@@ -1,0 +1,88 @@
+// Error taxonomy — the spine of every exit-code decision (architecture.md §3).
+//
+// Lives in `util/` (the lowest layer) so every layer above may throw it without
+// an upward import — the dependency direction in architecture.md §1 forbids
+// lower layers importing toward `cli/`, and every layer must be able to raise a
+// `CrucibleError`. Each error carries the exit code it maps to plus a teaching
+// `hint` ("run X"). The shared runner (cli/runner.ts) is the only place these
+// become process exit codes. Bare strings/Errors below `commands/` are a bug
+// (invariant: fail-closed).
+
+/** The non-success exit codes a CrucibleError may carry (architecture.md §2). */
+export type ExitCode = 2 | 3 | 4;
+
+export interface CrucibleErrorOptions {
+  /** Stable machine identifier, e.g. `NO_APPROVAL`. Surfaced in `--json`. */
+  code: string;
+  /** Process exit code this error maps to. */
+  exit: ExitCode;
+  /** The teaching line: what the user should run/fix next. May be empty. */
+  hint: string;
+  /** Underlying error, preserved for diagnostics. */
+  cause?: unknown;
+}
+
+export class CrucibleError extends Error {
+  readonly code: string;
+  readonly exit: ExitCode;
+  readonly hint: string;
+
+  constructor(message: string, options: CrucibleErrorOptions) {
+    // Only pass `cause` through when present — exactOptionalPropertyTypes is on.
+    super(message, options.cause !== undefined ? { cause: options.cause } : undefined);
+    this.name = 'CrucibleError';
+    this.code = options.code;
+    this.exit = options.exit;
+    this.hint = options.hint;
+  }
+}
+
+export function isCrucibleError(value: unknown): value is CrucibleError {
+  return value instanceof CrucibleError;
+}
+
+/**
+ * Exit 1 — checks ran and failed (architecture.md §2: "verify red, lint failure,
+ * reviewer block"). This is a *verdict*, not an error: the command succeeded, the
+ * code (or bundle) it judged did not. It is deliberately NOT a `CrucibleError`
+ * (whose exit is 2|3|4 for genuine tool errors) — the command has already
+ * rendered the full report to stdout, so the runner maps this to exit 1 and
+ * prints nothing extra. Carries no teaching hint; the report is the message.
+ */
+export class CheckFailure extends Error {
+  readonly exit = 1 as const;
+
+  constructor(message = 'checks failed') {
+    super(message);
+    this.name = 'CheckFailure';
+  }
+}
+
+export function isCheckFailure(value: unknown): value is CheckFailure {
+  return value instanceof CheckFailure;
+}
+
+/**
+ * Exit 2 — a precondition is unmet. The `hint` must name the exact next
+ * command to run (architecture.md §2: exit 2 messages are teaching surfaces).
+ */
+export function preconditionError(code: string, message: string, hint: string): CrucibleError {
+  return new CrucibleError(message, { code, exit: 2, hint });
+}
+
+/**
+ * Exit 3 — invalid config, schema, or artifact. Any parse/validation
+ * uncertainty maps here, never to a warning (fail-closed, architecture.md §3).
+ */
+export function invalidInputError(code: string, message: string, hint: string): CrucibleError {
+  return new CrucibleError(message, { code, exit: 3, hint });
+}
+
+/**
+ * Exit 4 — an internal error / broken invariant in Crucible itself. Distinct
+ * from an unexpected native exception (also exit 4) in that it is deliberate
+ * and carries a code + hint rather than a raw stack.
+ */
+export function internalError(code: string, message: string, hint: string): CrucibleError {
+  return new CrucibleError(message, { code, exit: 4, hint });
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@crucible/adapter-stub",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stub adapter: a standalone executable speaking the adapter JSON wire protocol over stdin/stdout. Core never imports this.",
+  "bin": {
+    "crucible-adapter-stub": "dist/cli.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "pretest": "tsc"
+  },
+  "devDependencies": {
+    "@crucible/fixtures": "*"
+  }
+}

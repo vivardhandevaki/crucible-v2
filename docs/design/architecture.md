@@ -37,6 +37,10 @@ Rule: exit 2 and 3 messages are teaching surfaces — they name the file, the pr
 
 All thrown errors extend `CrucibleError { code: ErrorCode, exit: 2|3|4, hint: string }`. Never throw bare strings/Errors from below `commands/`. `hint` is the "run X" teaching line. Fail-closed mapping: any parse/validation uncertainty → exit 3, never a warning.
 
+The taxonomy lives in `util/errors.ts` (the lowest layer), not in `cli/`, so every layer above may raise a `CrucibleError` without importing upward against the §1 dependency direction. *(Amended P1-02: relocated from `cli/errors.ts`, where P1-01 first placed it, once `config/` — the first non-cli thrower — surfaced the upward-import conflict. `cli/runner.ts` remains the sole place these map to process exit codes.)*
+
+**Exit 1 is a verdict, not an error** *(settled P1-12)*: "checks ran and failed" (§2) is a successful command whose subject failed, so it is **not** a `CrucibleError` (deliberately typed `2|3|4`). `verify` renders its full report to stdout (or as `--json`), then throws the sentinel `CheckFailure { exit: 1 }` (`util/errors.ts`); `cli/runner.ts` maps it to exit 1 and prints nothing extra. A malformed artifact or a broken adapter is still a fail-closed `CrucibleError` (exit 3) — never downgraded to a red finding. The `VerifyReport` shape (`verifyx/report.ts`) is the zod-validated verdict JSON of §4.
+
 ## 4. Fail-closed conventions
 
 - Parsers return typed results or throw `CrucibleError`; no partially-populated objects.
@@ -50,15 +54,29 @@ All thrown errors extend `CrucibleError { code: ErrorCode, exit: 2|3|4, hint: st
 - Artifact IDs per charter grammar: `REQ-<domain>-<slug>-<n>`, `ORC-<slug>-<seq>`, rubric `R-###`, tasks `P<phase>-##`.
 - Command modules named exactly as the CLI verb (`commands/approve.ts`).
 
-## 6. AgentSubstrate interface `[SETTLES: P1]`
+## 6. AgentSubstrate interface (frozen; settled P1-08)
 
-Shape to be frozen in Phase 1 (see phase-0-1.md §5 for the working draft). Contract intent, stable now:
+Contract intent, unchanged since seed:
 - Input: role (propose|implement|review), prompt/context payload, working dir, model id.
 - Output: exit status, path to the session transcript (trajectory artifact), and nothing else — substrate output is never parsed for "did it succeed"; success is judged from artifacts it produced.
 
-## 7. Adapter wire contract (frozen by charter; restated here once implemented) `[SETTLES: P1]`
+**Frozen shape (P1-08):** canonical machine form in `core/src/substrate/types.ts`.
 
-Verbs `resolve`/`run` (+ optional `scope`), JSON over stdin/stdout, normalized result schema per charter §"Oracle File Syntax & Adapter Binding Spec". The TypeScript types in `adapters/types.ts` are the canonical machine form after P1-11.
+- **Request:** `{ role, rolePromptPath, taskPayload, cwd, model, transcriptPath, timeoutMs? }`. The **caller mints `transcriptPath`** (convention `.crucible/transcripts/<change>/<role>-<ts>.jsonl`, owned by `commands/`): the substrate never invents paths, knows nothing of "changes", and holds no wall-clock naming — the audit-trail timestamp stays in the layer that already owns audit concerns. *(Amends the phase-0-1 §5 draft, which had the substrate computing this path.)*
+- **Result:** `{ exitCode, transcriptPath }` — exactly two fields. Invariant 2 is enforced structurally: no success flag, no message, nothing parsed, nothing to trust. On every returned result the transcript file exists (possibly truncated if the run died mid-stream).
+- **Returned vs thrown:** every outcome of a *started* run is **returned**, never thrown — non-zero exit, agent-side crash, `timeoutMs` expiry (kill → non-zero `exitCode`, transcript preserved). A dead author simply produced no artifacts; the caller's artifact validation fails closed. Thrown `CrucibleError { SUBSTRATE_UNAVAILABLE, exit: 3 }` is reserved for inability to start: missing/unspawnable `claude` binary, unreadable role prompt. (Contrast §7: a broken *judge* is exit 3 because it must never report green; a broken *author* has nothing to report.)
+- **Implementations:** `ClaudeCodeSubstrate` — spawns headless `claude -p`; every CLI-flag specific is isolated in this one class; nothing outside `substrate/` references the `claude` binary (enforced by a dependency test). `FakeSubstrate` — test double that writes scripted files under `cwd` plus a canned transcript and returns a scripted exit code; backs command tests without network. Only `AgentSubstrate` and the request/result types are frozen; the Fake's scripting shape is a test-infrastructure detail.
+
+## 7. Adapter wire contract (frozen by charter; settled P1-11)
+
+Verbs `resolve`/`run` (+ optional `scope`), JSON over stdin/stdout, normalized result schema per charter §"Oracle File Syntax & Adapter Binding Spec". The TypeScript types in `core/src/adapters/types.ts` are the canonical machine form.
+
+**Settled shape (P1-11):**
+- **Request** (both verbs): `{ "targets": string[] }` written to the adapter's stdin.
+- **Response** (both verbs): `{ "results": [...] }` on stdout, one entry per requested target. Two envelopes, zod-validated separately so a resolve-only status can't masquerade as a run status: `resolve → { target, status: "found"|"missing", targetFile? }`; `run → { target, status: "pass"|"fail"|"error"|"skip", message?, location?, duration_ms? }` (charter normalized schema exactly). Unknown fields → exit 3 (strict).
+- **Client** (`core/src/adapters/client.ts`) is the sole spawner (§1). It loads the manifest (`crucible-adapter.yaml`, `core/src/adapters/manifest.ts`), tokenizes the invocation string per verb, spawns the adapter as a subprocess, and dedupes the requested target set (one ask per target, first-appearance order).
+- **ORC join:** `run(oracles[]) → OracleResult[]` joins each normalized result back to its oracle via the binding table. An oracle passes iff **every** bound target ran `pass`; any non-`pass` (incl. `skip` per invariant 4, `error`, or a target the adapter dropped) → the oracle's verdict is `fail`. The underlying per-target status is surfaced verbatim in `OracleResult.targets` for the trace; only the joined verdict is coerced. Results follow oracle input order and per-oracle binding order (invariant 12).
+- **Fail-closed transport → exit 3** (`ADAPTER_TRANSPORT`, invariant 3): timeout, non-zero/killed exit, non-JSON stdout, schema-violating JSON, missing `results` envelope, or a dropped requested target. A broken judge never reports green.
 
 ## 8. Artifact operations API `[SETTLES: P1]`
 

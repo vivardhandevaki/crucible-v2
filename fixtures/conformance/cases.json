@@ -1,0 +1,168 @@
+{
+  "//": "Adapter conformance seed (P1-10). Golden verb+input -> normalized-output cases every Crucible adapter must satisfy. Expected outputs are derived from fixtures/toy-repo/tests.json and assert ONLY the charter wire protocol and normalized result schema. Loaded/validated by @crucible/fixtures loadConformanceCases.",
+  "cases": [
+    {
+      "name": "resolve-found-single",
+      "verb": "resolve",
+      "targets": ["greeting::returns_hello_for_a_name"],
+      "expected": [
+        {
+          "target": "greeting::returns_hello_for_a_name",
+          "status": "found",
+          "targetFile": "tests/greeting.test.ts"
+        }
+      ]
+    },
+    {
+      "name": "resolve-found-multiple-files",
+      "verb": "resolve",
+      "targets": ["greeting::returns_hello_for_a_name", "greeting::rejects_null_bytes"],
+      "expected": [
+        {
+          "target": "greeting::returns_hello_for_a_name",
+          "status": "found",
+          "targetFile": "tests/greeting.test.ts"
+        },
+        {
+          "target": "greeting::rejects_null_bytes",
+          "status": "found",
+          "targetFile": "tests/greeting_extra.test.ts"
+        }
+      ]
+    },
+    {
+      "name": "resolve-unknown-id-is-missing",
+      "verb": "resolve",
+      "targets": ["greeting::no_such_test"],
+      "expected": [
+        {
+          "target": "greeting::no_such_test",
+          "status": "missing"
+        }
+      ]
+    },
+    {
+      "name": "resolve-missing-status-row-is-missing",
+      "verb": "resolve",
+      "targets": ["greeting::streams_large_input"],
+      "expected": [
+        {
+          "target": "greeting::streams_large_input",
+          "status": "missing"
+        }
+      ]
+    },
+    {
+      "name": "resolve-empty-targets",
+      "verb": "resolve",
+      "targets": [],
+      "expected": []
+    },
+    {
+      "name": "resolve-order-preserving-mixed",
+      "verb": "resolve",
+      "targets": ["greeting::no_such_test", "greeting::defaults_to_world_when_empty"],
+      "expected": [
+        {
+          "target": "greeting::no_such_test",
+          "status": "missing"
+        },
+        {
+          "target": "greeting::defaults_to_world_when_empty",
+          "status": "found",
+          "targetFile": "tests/greeting.test.ts"
+        }
+      ]
+    },
+    {
+      "name": "run-pass-passthrough",
+      "verb": "run",
+      "targets": ["greeting::returns_hello_for_a_name"],
+      "expected": [
+        {
+          "target": "greeting::returns_hello_for_a_name",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "run-fail-carries-message",
+      "verb": "run",
+      "targets": ["greeting::rejects_null_bytes"],
+      "expected": [
+        {
+          "target": "greeting::rejects_null_bytes",
+          "status": "fail",
+          "message": "expected 'Hello, ab!' but got 'Hello, a\\u0000b!'"
+        }
+      ]
+    },
+    {
+      "name": "run-skip-passthrough-not-mapped-to-fail",
+      "verb": "run",
+      "targets": ["greeting::is_localized"],
+      "expected": [
+        {
+          "target": "greeting::is_localized",
+          "status": "skip",
+          "message": "localization not implemented; skipped"
+        }
+      ]
+    },
+    {
+      "name": "run-unknown-target-is-error",
+      "verb": "run",
+      "targets": ["greeting::no_such_test"],
+      "expected": [
+        {
+          "target": "greeting::no_such_test",
+          "status": "error",
+          "message": "no test found for target: greeting::no_such_test"
+        }
+      ]
+    },
+    {
+      "name": "run-missing-status-row-is-error",
+      "verb": "run",
+      "targets": ["greeting::streams_large_input"],
+      "expected": [
+        {
+          "target": "greeting::streams_large_input",
+          "status": "error",
+          "message": "test is uncollectible (missing): greeting::streams_large_input"
+        }
+      ]
+    },
+    {
+      "name": "run-empty-targets",
+      "verb": "run",
+      "targets": [],
+      "expected": []
+    },
+    {
+      "name": "run-order-preserving-mixed",
+      "verb": "run",
+      "targets": [
+        "greeting::is_localized",
+        "greeting::returns_hello_for_a_name",
+        "greeting::no_such_test"
+      ],
+      "expected": [
+        {
+          "target": "greeting::is_localized",
+          "status": "skip",
+          "message": "localization not implemented; skipped"
+        },
+        {
+          "target": "greeting::returns_hello_for_a_name",
+          "status": "pass"
+        },
+        {
+          "target": "greeting::no_such_test",
+          "status": "error",
+          "message": "no test found for target: greeting::no_such_test"
+        }
+      ]
+    }
+  ]
+}
