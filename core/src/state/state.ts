@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 import { invalidInputError } from '../util/errors.js';
+import { tierDecisionSchema } from '../tier/tier.js';
 
 /** One append-only audit event: when, which command, a one-line summary. */
 const stateEventSchema = z.strictObject({
@@ -26,10 +27,19 @@ const stateEventSchema = z.strictObject({
   summary: z.string(),
 });
 
-/** The current derived snapshot (grows across phases; P1 tracks phase only). */
+/**
+ * The current derived snapshot (grows across phases). `tier` is the recomputed
+ * tier decision with the facts it rests on (charter §State & Audit: "computed
+ * tier with its inputs"), recorded by the recomputation points (approve /
+ * implement / CI verify — design phase-2.md §2) and displayed by `status`. It is
+ * optional: a P1-era state.yaml, or a change not yet tier-computed, simply omits
+ * it. Like every derived field it is never read to make an enforcement decision
+ * (invariant 1) — CI recomputes the authoritative tier.
+ */
 const snapshotSchema = z.strictObject({
   phase: z.string().min(1),
   last_verify: z.string().optional(),
+  tier: tierDecisionSchema.optional(),
 });
 
 /** state.yaml (design §3), strict — an unknown key fails closed at exit 3. */

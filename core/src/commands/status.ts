@@ -36,6 +36,7 @@ import { loadOracles } from '../artifacts/oracles.js';
 import { loadSpecDelta } from '../artifacts/spec-delta.js';
 import { loadApproval, verifyApproval } from '../artifacts/approval.js';
 import { reconcileState } from '../state/reconcile.js';
+import { renderTierDecision, type TierDecision } from '../tier/tier.js';
 import { preconditionError } from '../util/errors.js';
 
 /** The phases status can derive from artifacts alone (no oracle run — design §9). */
@@ -74,6 +75,13 @@ export interface StatusReport {
   stateReconciled: boolean;
   /** Present only when phase === 'approval-void': the sealed files that changed. */
   voidMismatches?: string[];
+  /**
+   * The tier decision recorded in the snapshot (design phase-2.md §2: "status
+   * display of facts"), when the change has been tier-computed. Displayed, never
+   * enforced (invariant 11) — CI recomputes the authoritative tier. Omitted when
+   * no tier has been recorded yet.
+   */
+  tier?: TierDecision;
 }
 
 /**
@@ -91,8 +99,10 @@ export function status(options: StatusOptions, deps: StatusDeps): StatusReport {
   const derived = derivePhase(root, changeDir);
 
   // Reconcile the derived audit trail — but only when the change dir exists (a
-  // never-proposed change has nowhere to write and nothing to reconcile).
+  // never-proposed change has nowhere to write and nothing to reconcile). The
+  // reconciled snapshot carries the recorded tier (if any) for display.
   let stateReconciled = false;
+  let tier: TierDecision | undefined;
   if (derived.phase !== 'absent') {
     const result = reconcileState(
       join(changeDir, 'state.yaml'),
@@ -101,6 +111,7 @@ export function status(options: StatusOptions, deps: StatusDeps): StatusReport {
       phasesConsistent,
     );
     stateReconciled = result.rewritten;
+    tier = result.state.snapshot.tier;
   }
 
   const warnings = configDiffersWarning(root, deps);
@@ -112,6 +123,7 @@ export function status(options: StatusOptions, deps: StatusDeps): StatusReport {
     warnings,
     stateReconciled,
     ...(derived.voidMismatches ? { voidMismatches: derived.voidMismatches } : {}),
+    ...(tier ? { tier } : {}),
   };
 }
 
@@ -277,6 +289,10 @@ export function renderStatus(report: StatusReport): string {
   lines.push(`Change: ${report.change}`);
   lines.push(`Phase:  ${report.phase}`);
   lines.push(`Next:   ${report.next}`);
+  if (report.tier) {
+    lines.push('');
+    lines.push(renderTierDecision(report.tier));
+  }
   if (report.voidMismatches && report.voidMismatches.length > 0) {
     lines.push('');
     lines.push('Void seal — these sealed files changed or went missing since approval:');
