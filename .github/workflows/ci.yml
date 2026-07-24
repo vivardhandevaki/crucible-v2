@@ -35,5 +35,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # The integration tests (adapter client, tracer) spawn the BUILT stub
+      # adapter from adapters/stub/dist/ — without a build they fail closed
+      # with ADAPTER_TRANSPORT, never a false green.
+      - name: Build
+        run: npm run build
+
       - name: Test
         run: npm test
