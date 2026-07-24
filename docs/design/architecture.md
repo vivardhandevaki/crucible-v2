@@ -16,10 +16,11 @@ substrate/    AgentSubstrate interface + ClaudeCodeSubstrate impl
 adapters/     adapter client: manifest loading, spawn, JSON transport, result normalization
 config/       crucible.yaml / settings.yaml / local.yaml loading + validation
 state/        state.yaml event log (write-only from commands; reconcile in status)
+notify/       convenience-only dispatch (terminal/desktop/webhook/github); may fail, never blocks (added P2-00, built P2-15)
 util/         pure helpers only
 ```
 
-**Dependency direction (enforced by convention, later by lint):** `cli → commands → {artifacts, hash, lint, tier, verifyx, substrate, adapters, config, state} → util`. Lower layers never import upward. `substrate` and `adapters` never import each other. Nothing outside `substrate` invokes an agent; nothing outside `adapters` spawns an adapter process.
+**Dependency direction (enforced by convention, later by lint):** `cli → commands → {artifacts, hash, lint, tier, verifyx, substrate, adapters, config, state, notify} → util`. Lower layers never import upward. `substrate` and `adapters` never import each other. Nothing outside `substrate` invokes an agent; nothing outside `adapters` spawns an adapter process.
 
 ## 2. Exit codes (CLI-wide)
 
@@ -66,6 +67,7 @@ Contract intent, unchanged since seed:
 - **Result:** `{ exitCode, transcriptPath }` — exactly two fields. Invariant 2 is enforced structurally: no success flag, no message, nothing parsed, nothing to trust. On every returned result the transcript file exists (possibly truncated if the run died mid-stream).
 - **Returned vs thrown:** every outcome of a *started* run is **returned**, never thrown — non-zero exit, agent-side crash, `timeoutMs` expiry (kill → non-zero `exitCode`, transcript preserved). A dead author simply produced no artifacts; the caller's artifact validation fails closed. Thrown `CrucibleError { SUBSTRATE_UNAVAILABLE, exit: 3 }` is reserved for inability to start: missing/unspawnable `claude` binary, unreadable role prompt. (Contrast §7: a broken *judge* is exit 3 because it must never report green; a broken *author* has nothing to report.)
 - **Implementations:** `ClaudeCodeSubstrate` — spawns headless `claude -p`; every CLI-flag specific is isolated in this one class; nothing outside `substrate/` references the `claude` binary (enforced by a dependency test). `FakeSubstrate` — test double that writes scripted files under `cwd` plus a canned transcript and returns a scripted exit code; backs command tests without network. Only `AgentSubstrate` and the request/result types are frozen; the Fake's scripting shape is a test-infrastructure detail.
+- **Structured outputs generalize the caller-minted-path rule** *(P2-00 addendum)*: when a role must return structured data (e.g. the review verdict), the calling command mints a target path (convention `.crucible/verdicts/<change>/<role>-<ts>.json`, owned by `commands/` like transcript paths), names it in the taskPayload, and validates the file after the run — fail-closed. The substrate result is never widened; there remains nothing in it to trust.
 
 ## 7. Adapter wire contract (frozen by charter; settled P1-11)
 
@@ -78,9 +80,9 @@ Verbs `resolve`/`run` (+ optional `scope`), JSON over stdin/stdout, normalized r
 - **ORC join:** `run(oracles[]) → OracleResult[]` joins each normalized result back to its oracle via the binding table. An oracle passes iff **every** bound target ran `pass`; any non-`pass` (incl. `skip` per invariant 4, `error`, or a target the adapter dropped) → the oracle's verdict is `fail`. The underlying per-target status is surfaced verbatim in `OracleResult.targets` for the trace; only the joined verdict is coerced. Results follow oracle input order and per-oracle binding order (invariant 12).
 - **Fail-closed transport → exit 3** (`ADAPTER_TRANSPORT`, invariant 3): timeout, non-zero/killed exit, non-JSON stdout, schema-violating JSON, missing `results` envelope, or a dropped requested target. A broken judge never reports green.
 
-## 8. Artifact operations API `[SETTLES: P1]`
+## 8. Artifact operations API (frozen; settled P1, ratified P2-00)
 
-`artifacts/` exposes typed load/validate functions per artifact kind; commands never read artifact files directly. Frozen after P1.
+`artifacts/` exposes typed load/validate functions per artifact kind; commands never read artifact files directly. As-built P1 surface, now frozen: `parseProposal`/`loadProposal`, `parseOracles`/`loadOracles`, `parseSpecDelta`/`loadSpecDelta`, and approval sealing (`sealBundle`, `verifyApproval`, `parseApproval`/`serializeApproval`, strict `approvalSchema` with the `amendments[]` array). All parsers throw `CrucibleError` exit 3 on malformed input (§3–4); the strict `state/state.ts` parser vs. tolerant `state/reconcile.ts` split (P1-14) is part of the contract — no enforcement path may accept a broken log. Phase 2 *adds* kinds (escalation, override, rubric, verdict) under the same rules; it does not reshape the P1 surface.
 
 ## 9. Testing contract
 

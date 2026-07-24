@@ -1,6 +1,6 @@
-# Tasks — Phase 2 — **DRAFT**
+# Tasks — Phase 2
 
-> **Do not execute until re-ratified.** Gate task P2-00 must complete first. Format and rules identical to phase-0-1 tasks (test-first; done = named tests pass + committed; one task ≈ one session).
+> **Ratified via P2-00 (2026-07-24)** — tasks below are executable. All "per P2-00-resolved" references point at the inline *Resolved P2-00* passages in `docs/design/phase-2.md`. Format and rules identical to phase-0-1 tasks (test-first; done = named tests pass + committed; one task ≈ one session).
 
 **P2-00 · Re-ratification of Phase 2 design** · Tier: Fable · Depends: P1-16 green
 Reads: phase-2.md (whole), architecture.md as frozen by P1, spike-notes, tracer test.
@@ -23,7 +23,7 @@ Acceptance: critical → human routing asserted in template test (per P2-00-reso
 Delivers: `commands/escalate.ts`; escalation.yaml schema; implement refusal while unresolved.
 Acceptance: FakeSubstrate implement run that escalates halts; resume refused with hint `crucible amend`; notify dispatch invoked (spy).
 
-**P2-05 · amend command (+ propose --revise & staleness)** · Tier: Opus (flow) after Fable ratifies UX in P2-00 · Depends: P2-04, P1-06
+**P2-05 · amend command (+ propose --revise & staleness)** · Tier: Opus (UX ratified in P2-00, design §3) · Depends: P2-04, P1-06
 Delivers: `commands/amend.ts`; `--revise`; generation-hash staleness tracking; approval `amendments[]` appending.
 Acceptance: escalation resolution end-to-end (pick option → regenerated artifacts diff shown → re-seal → implement resumes); design-edited-after-oracles → approve refuses until revise/confirm; post-amend hash verification passes; direct post-approval edit still voids.
 
@@ -32,7 +32,7 @@ Delivers: `commands/override.ts`; override.yaml; CI forced-human + issue filing.
 Acceptance: override present → verify green-with-override flag; routing forced human regardless of tier; issue payload correct (mocked API); missing reason → exit 2.
 
 **P2-07 · Change-type schemas** · Tier: Opus · Depends: P2-00, P2-01
-Delivers: feature/bugfix/refactor schema variants; type inference + `--type`; refactor lint rules.
+Delivers: the root `schemas/` workspace (does not exist yet — P2-00 as-built finding) holding the three sibling bundles (`crucible`, `crucible-bugfix`, `crucible-refactor`); type inference + `--type`; refactor lint rules.
 Acceptance: refactor with spec delta → exit 3; refactor tracer flows on regression suite alone; type recorded + revalidated like tier.
 
 **P2-08 · Red-on-base / green-on-fix check** · Tier: Opus · Depends: P2-07
@@ -51,7 +51,7 @@ Acceptance: FakeSubstrate canned verdicts flow (pass, block-finding, malformed�
 Delivers: transcript indexing in state; `local_verify_ran` surfaced in CI report per config.
 Acceptance: stamp true/false paths asserted; absence with require_local_verify → report finding (advise-level, per parked-checks status).
 
-**P2-12 · init** · Tier: Opus (after P2-00 confirms install surfaces) · Depends: P2-07, P2-09
+**P2-12 · init** · Tier: Opus (install surfaces confirmed in P2-00, design §7) · Depends: P2-07, P2-09
 Delivers: `commands/init.ts` per design §7.
 Acceptance: fresh repo → complete working setup (asserted file-by-file); re-run idempotent (diff-and-confirm, no silent overwrite); gitignore entries present.
 
