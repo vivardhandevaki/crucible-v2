@@ -74,3 +74,9 @@ Acceptance: each failure class in the tracer negatives traceable to its source w
 **P2-17 · Worked-examples integration suite** · Tier: Fable · Depends: all P2
 Delivers: three integration tests mirroring charter worked examples (standard, refactor, critical+escalate+amend+bugfix) on toy fixtures; PHASES.md Phase 2 marked done.
 Acceptance: all green in CI with FakeSubstrate; real-substrate runbook updated; these join P1-16 as permanent regression anchors.
+
+**P2-18 · Executable target-branch-rule proof** · Tier: Opus · Depends: P2-03
+Reads: charter §The Target-Branch Rule; phase-0-1.md §9 (P1-15 Settled note); phase-2.md §P2-03 (per P2-00-resolved mechanics).
+Delivers: an end-to-end test (act-style local run or a test repo, per P2-00-resolved harness) that exercises the *shipped* `ci-templates/crucible.yml` gate against a change whose PR **loosens a risk glob**; docs updated to fold the now-executable clause back out of the "structural-only" caveat in phase-0-1.md §9.
+Acceptance: a PR that loosens/exempts a glob in its own `crucible.yaml` still fails the verify check because CI evaluated the **target-branch** config (invariant #7 proven behaviorally, not just structurally); the mirror case — the same loosening merged to the target branch first — then passes; verify red → check red still holds. **This is invariant #7's permanent regression anchor** (analogous to P1-16 for the tracer).
+Rationale: split out of P1-15 rather than amended into it — in P1 `verify` does not consume enforcement config, so the loosened-glob proof is not reachable until verify reads `--config-from` (P2-03). P1-15 delivered the structural half (target-branch *sourcing* + fail-closed gate, asserted by `ci-templates/src/crucible-template.test.ts`); this task delivers the behavioral half once the config-consumption machinery exists.

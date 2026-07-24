@@ -99,6 +99,7 @@ Acceptance: correct phase + next-command at each stage of the fixture flow; hand
 Reads: phase-0-1.md §2, §9; charter §The Target-Branch Rule.
 Delivers: `ci-templates/crucible.yml`.
 Acceptance: in a test repo (or act-style local run): PR branch config edits do not affect the verify run (target-branch config proven by a PR that loosens a glob and still fails); verify red → check red.
+> **Scope split (see P2-18):** the *executable* "loosen a glob and still fails" proof is not reachable in P1 — `verify` does not consume enforcement config until P2-03, so `--config-from` is inert. P1-15 delivers + tests the **structural** guarantees only (config sourced from the target branch, never the PR tree; fail-closed gate — verify red → check red), via `ci-templates/src/crucible-template.test.ts`. The behavioral glob-loosening proof is tracked as **P2-18** (depends on P2-03). Recorded here as a pointer rather than by rewriting this acceptance.
 
 **P1-16 · Tracer integration test** · Tier: Fable · Depends: all P1
 Reads: phase-0-1.md §10 + exit criterion.
