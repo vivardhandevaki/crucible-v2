@@ -33,10 +33,15 @@ export function registerPropose(program: Command): void {
     .description('Draft a change bundle (spec + oracles) for approval')
     .argument('<change>', 'the change name to create (lowercase kebab-case)')
     .argument('<intent>', 'what should change and why, in one quoted string')
-    .action(async (change: string, intent: string) => {
+    .option(
+      '--revise',
+      'regenerate an existing, not-yet-approved bundle coherently (charter §Editing Artifacts)',
+      false,
+    )
+    .action(async (change: string, intent: string, opts: { revise?: boolean }) => {
       const root = process.cwd();
       const result = await propose(
-        { root, change, intent, model: proposeModel(root) },
+        { root, change, intent, model: proposeModel(root), revise: opts.revise === true },
         liveDeps(root),
       );
 

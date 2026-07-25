@@ -23,9 +23,19 @@ export function registerApprove(program: Command): void {
     .description('Seal an approved bundle by hashing its artifacts')
     .argument('<change>', 'the change name to approve (openspec/changes/<change>/)')
     .option('-y, --yes', 'skip the confirmation prompt', false)
-    .action(async (change: string, opts: { yes?: boolean }) => {
+    .option(
+      '--confirm-consistency',
+      'seal despite a staleness warning (you have checked the hand-edits are coherent)',
+      false,
+    )
+    .action(async (change: string, opts: { yes?: boolean; confirmConsistency?: boolean }) => {
       const result = await approve(
-        { root: process.cwd(), change, yes: opts.yes === true },
+        {
+          root: process.cwd(),
+          change,
+          yes: opts.yes === true,
+          confirmConsistency: opts.confirmConsistency === true,
+        },
         liveDeps(),
       );
       process.stdout.write(result.render + '\n');

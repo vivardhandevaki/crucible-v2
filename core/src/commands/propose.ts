@@ -21,23 +21,15 @@
 // injected clock (architecture.md §6: the caller owns transcript naming) and
 // touches no wall-clock or randomness itself.
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
-import { loadOracles, type Oracle } from '../artifacts/oracles.js';
-import { loadProposal } from '../artifacts/proposal.js';
-import { loadSpecDelta, type SpecRequirement } from '../artifacts/spec-delta.js';
-import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
+import { existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ResolveFn } from '../lint/traceability.js';
 import type { AgentSubstrate } from '../substrate/types.js';
 import { appendStateEvent } from '../state/state.js';
-import {
-  aggregate,
-  renderReport,
-  traceabilityCheck,
-  type CheckResult,
-  type VerifyFinding,
-  type VerifyReport,
-} from '../verifyx/report.js';
-import { invalidInputError, isCrucibleError, preconditionError } from '../util/errors.js';
+import { renderReport, type VerifyReport } from '../verifyx/report.js';
+import { dependencyOrder, judgeBundle } from './bundle.js';
+import { serializeGeneration, stampGeneration } from '../artifacts/generation.js';
+import { invalidInputError, preconditionError } from '../util/errors.js';
 
 // Change names follow OpenSpec's rule (spike D6): lowercase kebab-case, no
 // leading digit, no leading/trailing/double hyphen. propose enforces the same
@@ -71,10 +63,18 @@ export interface ProposeOptions {
   root: string;
   /** The change name to create (lowercase kebab-case, no leading digit). */
   change: string;
-  /** The distilled intent text handed to the propose session verbatim. */
+  /** The distilled intent text handed to the propose session verbatim. In
+   * `--revise` mode this is the revision instruction ("switch to token-bucket"). */
   intent: string;
   /** Model id for the session (convenience `models.propose`; opaque here). */
   model: string;
+  /**
+   * `--revise`: regenerate an EXISTING, not-yet-approved bundle coherently
+   * through the same propose-role path (charter §Editing Artifacts). Skips the
+   * scaffold, requires the change dir to exist, and refuses once the bundle is
+   * approved (post-approval fixes go through `crucible amend`). Default: create.
+   */
+  revise?: boolean;
 }
 
 /** propose outcome: the judgment report and where the session transcript went. */
@@ -95,6 +95,7 @@ export interface ProposeResult {
  */
 export async function propose(options: ProposeOptions, deps: ProposeDeps): Promise<ProposeResult> {
   const { root, change, intent, model } = options;
+  const revise = options.revise === true;
   const changeRel = join('openspec', 'changes', change);
   const changeDir = join(root, changeRel);
 
@@ -108,15 +109,38 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
   if (intent.trim().length === 0) {
     throw invalidInputError(
       'EMPTY_INTENT',
-      'The intent text is empty — the propose session would have nothing to specify.',
-      `Re-run \`crucible propose ${change} "<what should change and why>"\`.`,
+      revise
+        ? 'The revision instruction is empty — `--revise` would have nothing to change.'
+        : 'The intent text is empty — the propose session would have nothing to specify.',
+      revise
+        ? `Re-run \`crucible propose ${change} --revise "<what to change>"\`.`
+        : `Re-run \`crucible propose ${change} "<what should change and why>"\`.`,
     );
   }
-  if (existsSync(changeDir)) {
+
+  if (revise) {
+    // --revise regenerates an EXISTING, not-yet-approved bundle (charter §Editing
+    // Artifacts). It must exist, and it must not yet be sealed — once approved,
+    // the only coherent path is `crucible amend`, which re-seals the delta.
+    if (!existsSync(changeDir)) {
+      throw preconditionError(
+        'NO_CHANGE',
+        `No change bundle found at ${changeRel} to revise.`,
+        `Run \`crucible propose ${change} "<intent>"\` to scaffold the bundle first.`,
+      );
+    }
+    if (existsSync(join(changeDir, 'approval.yaml'))) {
+      throw preconditionError(
+        'ALREADY_APPROVED',
+        `Change ${change} is already approved — \`--revise\` only edits pre-approval bundles.`,
+        `Post-approval spec fixes go through \`crucible amend ${change}\` (re-seals the delta).`,
+      );
+    }
+  } else if (existsSync(changeDir)) {
     throw preconditionError(
       'CHANGE_EXISTS',
       `Change ${change} already exists at ${changeRel}.`,
-      'Pre-approval artifacts are freely editable in place (charter §Editing Artifacts); `crucible propose --revise` lands in P2. To re-propose from scratch, remove the change dir first.',
+      `Pre-approval, revise it coherently with \`crucible propose ${change} --revise "<fix>"\`. To re-propose from scratch, remove the change dir first.`,
     );
   }
 
@@ -132,30 +156,36 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
     );
   }
 
-  // Scaffold, then verify the scaffolder actually produced the change dir —
-  // its silence is not success (invariant 3).
-  await deps.scaffold(change);
-  if (!existsSync(changeDir)) {
-    throw invalidInputError(
-      'SCAFFOLD_FAILED',
-      `Scaffolding did not create ${changeRel} — the OpenSpec change was not made.`,
-      'Check that this repo is OpenSpec-initialized with the crucible schema (openspec/config.yaml).',
-    );
+  // Create mode scaffolds the OpenSpec change dir, then verifies the scaffolder
+  // actually produced it — its silence is not success (invariant 3). Revise mode
+  // operates on the bundle already on disk, so it skips scaffolding entirely.
+  if (!revise) {
+    await deps.scaffold(change);
+    if (!existsSync(changeDir)) {
+      throw invalidInputError(
+        'SCAFFOLD_FAILED',
+        `Scaffolding did not create ${changeRel} — the OpenSpec change was not made.`,
+        'Check that this repo is OpenSpec-initialized with the crucible schema (openspec/config.yaml).',
+      );
+    }
   }
 
   // One fresh-context session (invariant 10). The transcript path is minted
   // here from the injected clock (architecture.md §6: caller-owned naming).
+  const stamp = deps.now().replace(/[:.]/g, '-');
   const transcriptPath = join(
     root,
     '.crucible',
     'transcripts',
     change,
-    `propose-${deps.now().replace(/[:.]/g, '-')}.jsonl`,
+    `${revise ? 'revise' : 'propose'}-${stamp}.jsonl`,
   );
   await deps.substrate.run({
     role: 'propose',
     rolePromptPath,
-    taskPayload: buildTaskPayload(change, changeRel, intent),
+    taskPayload: revise
+      ? buildRevisePayload(change, changeRel, intent)
+      : buildTaskPayload(change, changeRel, intent),
     cwd: root,
     model,
     transcriptPath,
@@ -164,17 +194,28 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
 
   const report = await judgeBundle(change, changeDir, changeRel, deps.resolve);
 
+  // On a GREEN bundle, stamp the generation ledger (staleness tracking, charter
+  // §Editing Artifacts): record each artifact's hash in dependency order so a
+  // later hand-edit that breaks coherence is detectable at approve. Only a
+  // coherent bundle has a meaningful lineage — a red bundle is skipped (approve
+  // will not run on it anyway). Convenience-adjacent: it never gates propose.
+  if (report.verdict === 'pass') {
+    const generation = stampGeneration(changeDir, change, dependencyOrder(changeDir), deps.now());
+    writeFileSync(join(changeDir, 'generation.yaml'), serializeGeneration(generation), 'utf8');
+  }
+
   // Audit trail, written last and never read to gate (invariant 1). A red
   // judgment is still an event that happened.
+  const cmd = revise ? 'revise' : 'propose';
   appendStateEvent(
     join(changeDir, 'state.yaml'),
     change,
     {
       at: deps.now(),
-      cmd: 'propose',
+      cmd,
       summary: `bundle judged ${report.verdict} (${report.checks.length} check(s))`,
     },
-    report.verdict === 'pass' ? 'proposed' : 'propose-red',
+    report.verdict === 'pass' ? (revise ? 'revised' : 'proposed') : 'propose-red',
   );
 
   return { report, render: renderReport(report, 'propose'), transcriptPath };
@@ -186,92 +227,18 @@ function buildTaskPayload(change: string, changeRel: string, intent: string): st
 }
 
 /**
- * Judge the authored bundle: the `bundle` check parses every required artifact,
- * folding each parser's `CrucibleError` into a red finding (the agent is judged
- * on its output, never trusted about it); the `traceability` check runs only on
- * a green bundle — linting unparseable artifacts is meaningless.
+ * The revise work order (charter §Editing Artifacts): the bundle already exists;
+ * apply the revision instruction and regenerate every DEPENDENT artifact so the
+ * bundle stays coherent (that coherence is the whole point of the agent path).
  */
-async function judgeBundle(
-  change: string,
-  changeDir: string,
-  changeRel: string,
-  resolve: ResolveFn,
-): Promise<VerifyReport> {
-  const findings: VerifyFinding[] = [];
-  const judged = <T>(artifactRel: string, load: () => T): T | undefined => {
-    try {
-      return load();
-    } catch (err) {
-      if (isCrucibleError(err)) {
-        findings.push({ check: 'bundle', id: artifactRel, message: err.message });
-        return undefined;
-      }
-      throw err;
-    }
-  };
-
-  judged('proposal.md', () => loadProposal(join(changeDir, 'proposal.md')));
-
-  // design.md carries no Crucible grammar (P1): required present + non-empty.
-  const designPath = join(changeDir, 'design.md');
-  const designOk = existsSync(designPath) && statSync(designPath).size > 0;
-  if (!designOk) {
-    findings.push({
-      check: 'bundle',
-      id: 'design.md',
-      message: `${join(changeRel, 'design.md')}: missing or empty — the propose session must author the design`,
-    });
-  }
-
-  // Spec deltas: at least one specs/** markdown, each parsing clean.
-  const specFiles = markdownFilesUnder(join(changeDir, 'specs')).sort();
-  let requirements: SpecRequirement[] | undefined = [];
-  if (specFiles.length === 0) {
-    findings.push({
-      check: 'bundle',
-      id: 'specs/',
-      message: `${join(changeRel, 'specs')}: no spec delta authored — a change with no spec delta promises nothing`,
-    });
-    requirements = undefined;
-  } else {
-    for (const file of specFiles) {
-      const rel = relative(changeDir, file);
-      const reqs = judged(rel, () => loadSpecDelta(file));
-      if (reqs === undefined) requirements = undefined;
-      else requirements?.push(...reqs);
-    }
-  }
-
-  const oracles: Oracle[] | undefined = judged('oracles.md', () =>
-    loadOracles(join(changeDir, 'oracles.md')),
-  );
-
-  const bundle: CheckResult = {
-    name: 'bundle',
-    status: findings.length === 0 ? 'pass' : 'fail',
-    findings,
-  };
-  const checks: CheckResult[] = [bundle];
-
-  if (bundle.status === 'pass' && requirements !== undefined && oracles !== undefined) {
-    const lint = await lintTraceability(requirements, oracles, resolve);
-    checks.push(traceabilityCheck(lint));
-  }
-
-  return aggregate(change, checks);
-}
-
-/** All `.md` files under `dir` (recursive), absolute paths. Empty if absent. */
-function markdownFilesUnder(dir: string): string[] {
-  if (!existsSync(dir)) return [];
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      out.push(...markdownFilesUnder(full));
-    } else if (entry.endsWith('.md')) {
-      out.push(full);
-    }
-  }
-  return out;
+function buildRevisePayload(change: string, changeRel: string, instruction: string): string {
+  return [
+    `Change: ${change}`,
+    `Bundle directory: ${changeRel}/`,
+    'Revise the EXISTING bundle in place. Apply this change, then regenerate every',
+    'dependent artifact (design → spec delta → oracles → bound tests) so the bundle',
+    'stays internally consistent — a stale downstream artifact is a bug.',
+    'Revision instruction:',
+    instruction,
+  ].join('\n');
 }
