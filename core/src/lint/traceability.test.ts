@@ -117,6 +117,45 @@ describe('lintTraceability — orphan-oracle (points at no requirement)', () => 
   });
 });
 
+describe('lintTraceability — archived-REQ index (bugfix/ratchet, design phase-2.md §1)', () => {
+  it('a binding referencing an ARCHIVED requirement passes (not an orphan)', async () => {
+    // A bugfix change: its own delta adds nothing here, but its reproduction oracle
+    // binds an OLD requirement that lives only in the archived spec (ORC-refund-013
+    // → REQ-payments-refund-4). With the archived index supplied, this is legal.
+    const requirements: SpecRequirement[] = [];
+    const oracles = [oracle('ORC-refund-013', 'REQ-payments-refund-4', ['t::repro'])];
+    const archived = new Set(['REQ-payments-refund-4']);
+
+    const report = await lintTraceability(requirements, oracles, resolveAllFound, archived);
+
+    expect(report.ok).toBe(true);
+    expect(report.findings).toEqual([]);
+  });
+
+  it('a binding referencing an UNARCHIVED unknown requirement still fails as an orphan', async () => {
+    const oracles = [oracle('ORC-x-001', 'REQ-never-existed-9', ['t::a'], 7)];
+    const archived = new Set(['REQ-payments-refund-4']); // does not contain the id
+
+    const report = await lintTraceability([], oracles, resolveAllFound, archived);
+
+    expect(report.ok).toBe(false);
+    const finding = report.findings.find((f) => f.kind === 'orphan-oracle');
+    expect(finding?.id).toBe('ORC-x-001');
+    expect(finding?.requirement).toBe('REQ-never-existed-9');
+    expect(finding?.line).toBe(7);
+  });
+
+  it('the delta still dominates: an id in the delta needs no archived entry', async () => {
+    const report = await lintTraceability(
+      [req('REQ-x-1')],
+      [oracle('ORC-x-001', 'REQ-x-1', ['t::a'])],
+      resolveAllFound,
+      new Set(), // empty archive
+    );
+    expect(report.ok).toBe(true);
+  });
+});
+
 describe('lintTraceability — unresolved-binding (broken pointer)', () => {
   it('flags a binding whose target the adapter cannot collect, naming id + target', async () => {
     const requirements = [req('REQ-x-1')];

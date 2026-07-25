@@ -27,7 +27,14 @@ import { tierDecisionSchema, type TierDecision } from '../tier/tier.js';
  * emitted by propose's post-session judgment (design §6), which reuses this
  * report as its verdict surface — one zod-guarded verdict shape for every
  * command that judges. */
-export const CHECK_NAMES = ['bundle', 'traceability', 'diff-cap', 'oracles', 'approval'] as const;
+export const CHECK_NAMES = [
+  'bundle',
+  'traceability',
+  'diff-cap',
+  'oracles',
+  'regression',
+  'approval',
+] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 
 /** A check's binary outcome. `skip`/`error`/`void` all fold to `fail` upstream. */
@@ -153,6 +160,30 @@ export function oraclesCheck(results: readonly OracleResult[]): CheckResult {
     }
   }
   return { name: 'oracles', status: findings.length === 0 ? 'pass' : 'fail', findings };
+}
+
+/**
+ * Regression check (charter §The Regression Suite; design phase-2.md §1): green
+ * iff every ARCHIVED oracle re-run by verify still passes. Structurally identical
+ * to `oraclesCheck` — same joined `OracleResult` shape, same skip→fail coercion
+ * already applied by the client — but attributed to `regression` so the report
+ * distinguishes a broken PAST promise (a refactor that changed pinned behavior)
+ * from a failing current-change oracle. Findings follow oracle input order. An
+ * empty suite (nothing archived yet) is vacuously green.
+ */
+export function regressionCheck(results: readonly OracleResult[]): CheckResult {
+  const findings: VerifyFinding[] = [];
+  for (const result of results) {
+    if (result.status !== 'pass') {
+      const detail = result.targets.map((t) => `${t.target}=${t.status}`).join(', ');
+      findings.push({
+        check: 'regression',
+        id: result.oracleId,
+        message: `regression oracle ${result.oracleId} for ${result.requirement} failed: ${detail} — a past promise no longer holds`,
+      });
+    }
+  }
+  return { name: 'regression', status: findings.length === 0 ? 'pass' : 'fail', findings };
 }
 
 /**

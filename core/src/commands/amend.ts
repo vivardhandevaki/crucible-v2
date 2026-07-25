@@ -38,6 +38,7 @@ import type { AgentSubstrate } from '../substrate/types.js';
 import type { NotifyFn } from '../notify/types.js';
 import { appendStateEvent } from '../state/state.js';
 import { computeHashScope, dependencyOrder, judgeBundle } from './bundle.js';
+import { collectArchivedRequirementIds } from '../regression/regression.js';
 import { renderReport, type VerifyReport } from '../verifyx/report.js';
 import { preconditionError } from '../util/errors.js';
 
@@ -163,7 +164,13 @@ export async function amend(options: AmendOptions, deps: AmendDeps): Promise<Ame
   });
   // SubstrateResult carries nothing to trust (invariant 2) — judge the files.
 
-  const report = await judgeBundle(change, changeDir, changeRel, deps.resolve);
+  const report = await judgeBundle(
+    change,
+    changeDir,
+    changeRel,
+    deps.resolve,
+    collectArchivedRequirementIds(root),
+  );
 
   // A red regeneration cannot be re-sealed and does not resolve the ambiguity:
   // return the report (exit 1 at the CLI), leaving the escalation in place so

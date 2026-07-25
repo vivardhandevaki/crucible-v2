@@ -43,12 +43,17 @@ export const CORE_ARTIFACTS = ['proposal.md', 'design.md', 'oracles.md'] as cons
  * `traceability` check runs only on a green bundle — linting unparseable
  * artifacts is meaningless. Returns an aggregated report; a red verdict is the
  * agent failing, not the tool (the CLI maps it to exit 1).
+ *
+ * `archivedRequirementIds` (default empty) is the archived-REQ index the lint
+ * consults so a bugfix/ratchet oracle may bind an OLD requirement id living only
+ * in the archived spec (design phase-2.md §1); propose/amend pass the real index.
  */
 export async function judgeBundle(
   change: string,
   changeDir: string,
   changeRel: string,
   resolve: ResolveFn,
+  archivedRequirementIds: ReadonlySet<string> = new Set(),
 ): Promise<VerifyReport> {
   const findings: VerifyFinding[] = [];
   const judged = <T>(artifactRel: string, load: () => T): T | undefined => {
@@ -107,7 +112,7 @@ export async function judgeBundle(
   const checks: CheckResult[] = [bundle];
 
   if (bundle.status === 'pass' && requirements !== undefined && oracles !== undefined) {
-    const lint = await lintTraceability(requirements, oracles, resolve);
+    const lint = await lintTraceability(requirements, oracles, resolve, archivedRequirementIds);
     checks.push(traceabilityCheck(lint));
   }
 

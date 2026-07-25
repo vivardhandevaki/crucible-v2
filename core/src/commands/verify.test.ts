@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TOY_REPO_ROOT } from '@crucible/fixtures';
@@ -327,6 +327,92 @@ describe('verify — override (the 2am hatch: design §3, P2-06)', () => {
     writeFileSync(join(scratch, CHANGE_REL, 'override.yaml'), 'reason: 42\nrogue: [\n', 'utf8');
     const err = await catchCrucible(() => verify({ root: scratch, change: CHANGE }, deps()));
     expect(err.exit).toBe(3);
+  });
+});
+
+describe('verify — regression suite (design phase-2.md §1)', () => {
+  // A prior change, archived: its oracles are the regression suite that every
+  // later change's verify must re-run (charter §The Regression Suite).
+  const ARCHIVED_ORACLES = `# Oracles — add-farewell
+
+## ORC-farewell-001: Farewell names the person
+**Then** the result is \`Bye, <name>!\`
+
+\`\`\`yaml crucible-binding
+requirement: REQ-farewell-basic-1
+kind: unit
+runner: stub
+target: farewell::bye_for_a_name
+\`\`\`
+`;
+
+  function archivePriorChange(root: string): void {
+    const dir = join(root, 'openspec', 'changes', 'archive', '2026-07-24-add-farewell');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'oracles.md'), ARCHIVED_ORACLES, 'utf8');
+  }
+
+  it('verify on a later change RE-RUNS every archived binding (acceptance)', async () => {
+    archivePriorChange(scratch);
+    const ranIds: string[] = [];
+    const run = (oracles: readonly Oracle[]): Promise<OracleResult[]> => {
+      for (const o of oracles) ranIds.push(o.id);
+      return runAllPass(oracles);
+    };
+
+    const report = await verify({ root: scratch, change: CHANGE }, deps({ run }));
+
+    // The archived oracle was executed alongside the current change's oracles.
+    expect(ranIds).toContain('ORC-farewell-001');
+    expect(ranIds).toContain('ORC-greeting-001');
+    // A distinct `regression` check is emitted and green.
+    const regression = report.checks.find((c) => c.name === 'regression');
+    expect(regression?.status).toBe('pass');
+    expect(report.verdict).toBe('pass');
+  });
+
+  it('a broken PAST promise fails the verdict, attributed to `regression`', async () => {
+    archivePriorChange(scratch);
+    // The archived (regression) oracle now fails; current-change oracles pass.
+    const run = (oracles: readonly Oracle[]): Promise<OracleResult[]> =>
+      Promise.resolve(
+        oracles.map((o): OracleResult => {
+          const failing = o.id === 'ORC-farewell-001';
+          return {
+            oracleId: o.id,
+            requirement: o.binding.requirement,
+            status: failing ? 'fail' : 'pass',
+            targets: o.binding.targets.map((t) => ({
+              target: t,
+              status: failing ? ('fail' as const) : ('pass' as const),
+            })),
+          };
+        }),
+      );
+
+    const report = await verify({ root: scratch, change: CHANGE }, deps({ run }));
+
+    expect(report.verdict).toBe('fail');
+    const regression = report.checks.find((c) => c.name === 'regression');
+    expect(regression?.status).toBe('fail');
+    expect(regression?.findings[0]?.id).toBe('ORC-farewell-001');
+    // The current change's own oracles check stays green — the red is the past promise.
+    expect(report.checks.find((c) => c.name === 'oracles')?.status).toBe('pass');
+  });
+
+  it('no archive → no `regression` check emitted (nothing to re-run)', async () => {
+    const report = await verify({ root: scratch, change: CHANGE }, deps());
+    expect(report.checks.some((c) => c.name === 'regression')).toBe(false);
+  });
+
+  it('a red current lint short-circuits the regression run too (cheap gate first)', async () => {
+    archivePriorChange(scratch);
+    const report = await verify(
+      { root: scratch, change: CHANGE },
+      deps({ resolve: resolveAllMissing, run: runNeverCalled }),
+    );
+    expect(report.verdict).toBe('fail');
+    expect(report.checks.some((c) => c.name === 'regression')).toBe(false);
   });
 });
 

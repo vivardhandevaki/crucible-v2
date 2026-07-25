@@ -28,6 +28,7 @@ import type { AgentSubstrate } from '../substrate/types.js';
 import { appendStateEvent } from '../state/state.js';
 import { renderReport, type VerifyReport } from '../verifyx/report.js';
 import { dependencyOrder, judgeBundle } from './bundle.js';
+import { collectArchivedRequirementIds } from '../regression/regression.js';
 import { serializeGeneration, stampGeneration } from '../artifacts/generation.js';
 import { invalidInputError, preconditionError } from '../util/errors.js';
 
@@ -192,7 +193,13 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
   });
   // SubstrateResult carries nothing to trust (invariant 2) — judge the files.
 
-  const report = await judgeBundle(change, changeDir, changeRel, deps.resolve);
+  const report = await judgeBundle(
+    change,
+    changeDir,
+    changeRel,
+    deps.resolve,
+    collectArchivedRequirementIds(root),
+  );
 
   // On a GREEN bundle, stamp the generation ledger (staleness tracking, charter
   // §Editing Artifacts): record each artifact's hash in dependency order so a

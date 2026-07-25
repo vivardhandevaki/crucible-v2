@@ -7,6 +7,7 @@ import {
   approvalCheck,
   diffCapCheck,
   oraclesCheck,
+  regressionCheck,
   renderReport,
   routingFor,
   traceabilityCheck,
@@ -86,6 +87,28 @@ describe('oraclesCheck', () => {
     expect(finding?.id).toBe('ORC-greeting-002');
     expect(finding?.message).toContain('greeting::b');
     expect(finding?.message).toContain('skip');
+  });
+});
+
+describe('regressionCheck', () => {
+  it('an empty suite is vacuously green (nothing archived yet)', () => {
+    expect(regressionCheck([])).toEqual({ name: 'regression', status: 'pass', findings: [] });
+  });
+
+  it('a broken past promise fails, attributed to `regression` and naming the oracle', () => {
+    const broken: OracleResult = {
+      oracleId: 'ORC-farewell-001',
+      requirement: 'REQ-farewell-basic-1',
+      status: 'fail',
+      targets: [{ target: 'farewell::bye', status: 'fail' }],
+    };
+    const check = regressionCheck([broken]);
+    expect(check.status).toBe('fail');
+    expect(check.name).toBe('regression');
+    const [finding] = check.findings;
+    expect(finding?.check).toBe('regression');
+    expect(finding?.id).toBe('ORC-farewell-001');
+    expect(finding?.message).toContain('past promise');
   });
 });
 

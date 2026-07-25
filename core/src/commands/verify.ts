@@ -7,8 +7,11 @@
 //      every binding resolves (the cheap millisecond gate; charter: run this
 //      before you run anything).
 //   2. oracle run — execute the current-change oracles via the adapter and join
-//      results back to oracle ids (skip→fail is already coerced in the client).
-//      The regression suite (all archived bindings) is empty in P1 (no archive).
+//      results back to oracle ids (skip→fail is already coerced in the client) —
+//      PLUS the regression suite: every archived binding, collected from the
+//      archive on disk and re-run so a broken past promise is a red verdict
+//      (charter §The Regression Suite; design phase-2.md §1). Reported as a
+//      distinct `regression` check when the suite is non-empty.
 //   3. approval-hash — recompute every sealed file's hash; any mismatch or
 //      missing file voids the approval (invariant 6). Run ONLY when an
 //      approval.yaml exists, so a pre-approve verify (during propose) skips it
@@ -49,6 +52,7 @@ import {
   approvalCheck,
   diffCapCheck,
   oraclesCheck,
+  regressionCheck,
   routingFor,
   routingWithOverride,
   traceabilityCheck,
@@ -57,6 +61,7 @@ import {
   type ReportExtras,
   type VerifyReport,
 } from '../verifyx/report.js';
+import { collectArchivedRequirementIds, collectRegressionSuite } from '../regression/regression.js';
 import { computeTier } from '../tier/tier.js';
 import { buildRatchetIssue, loadOverride } from '../artifacts/override.js';
 import type { EnforcementConfig } from '../config/enforcement.js';
@@ -176,8 +181,12 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
 
   const checks: CheckResult[] = [];
 
-  // Check 1 — traceability lint (the cheap gate; no tests run).
-  const lint = await lintTraceability(requirements, oracles, deps.resolve);
+  // Check 1 — traceability lint (the cheap gate; no tests run). The archived-REQ
+  // index lets a bugfix/ratchet oracle legally bind an OLD requirement id that
+  // lives only in the archived spec (charter §ID grammar; design §1). It is a
+  // deterministic filesystem read (like loading the bundle), not an injected edge.
+  const archivedReqIds = collectArchivedRequirementIds(root);
+  const lint = await lintTraceability(requirements, oracles, deps.resolve, archivedReqIds);
   const trace = traceabilityCheck(lint);
   checks.push(trace);
 
@@ -185,12 +194,23 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   // red verdict naming the tier + cap (design §2). Present only on the config path.
   if (capCheck) checks.push(capCheck);
 
-  // Check 3 — oracle run, ONLY when the lint gate is green. Running tests against
-  // unresolved or uncovered bindings is meaningless; a red lint already fails the
-  // verdict, so short-circuit rather than ask the adapter for phantom targets.
+  // Checks 3 & 4 — oracle run + regression run, ONLY when the lint gate is green.
+  // Running tests against unresolved or uncovered bindings is meaningless; a red
+  // lint already fails the verdict, so short-circuit. verify judges the current
+  // change's oracles AND re-runs the whole regression suite — every archived
+  // binding, collected from the archive on disk (charter §The Regression Suite;
+  // design §1). A broken PAST promise (a refactor that changed pinned behavior) is
+  // a red verdict just like a failing current oracle. Both run through the one
+  // injected `run` edge in a single batch; results are partitioned back by id so
+  // each is attributed to its own check (`oracles` vs `regression`).
   if (trace.status === 'pass') {
-    const results = await deps.run(oracles);
-    checks.push(oraclesCheck(results));
+    const regression = collectRegressionSuite(root).oracles;
+    const currentIds = new Set(oracles.map((o) => o.id));
+    const results = await deps.run([...oracles, ...regression]);
+    checks.push(oraclesCheck(results.filter((r) => currentIds.has(r.oracleId))));
+    if (regression.length > 0) {
+      checks.push(regressionCheck(results.filter((r) => !currentIds.has(r.oracleId))));
+    }
   }
 
   // Check 4 — approval-hash, ONLY when a seal exists. A pre-approve verify (during

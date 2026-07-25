@@ -23,6 +23,7 @@ import { loadOracles, type Oracle } from '../artifacts/oracles.js';
 import { loadProposal } from '../artifacts/proposal.js';
 import type { SpecRequirement } from '../artifacts/spec-delta.js';
 import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
+import { collectArchivedRequirementIds } from '../regression/regression.js';
 import { sealBundle, serializeApproval } from '../artifacts/approval.js';
 import {
   checkStaleness,
@@ -111,8 +112,10 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
 
   // Precondition: the traceability lint must be green (invariant 5). A red lint
   // is a bundle that promises something no executable check covers — refuse to
-  // seal it, and name the fix.
-  const lint = await lintTraceability(requirements, oracles, deps.resolve);
+  // seal it, and name the fix. The archived-REQ index lets a bugfix/ratchet oracle
+  // legally bind an OLD requirement id from the archived spec (design phase-2.md §1).
+  const archivedReqIds = collectArchivedRequirementIds(root);
+  const lint = await lintTraceability(requirements, oracles, deps.resolve, archivedReqIds);
   if (!lint.ok) {
     const detail = lint.findings.map((f) => `  ✗ ${f.message}`).join('\n');
     throw preconditionError(

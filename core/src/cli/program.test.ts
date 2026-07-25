@@ -76,6 +76,18 @@ describe('buildProgram', () => {
     expect(code).toBe(2);
   });
 
+  it('registers the P2 `archive` verb so it appears in help', async () => {
+    const cap = captureIO();
+    await runProgram(buildProgram(), ['--help'], cap.io);
+    expect(cap.out()).toContain('archive');
+  });
+
+  it('archive with no <change> argument → exit 2 (required argument)', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['archive'], cap.io);
+    expect(code).toBe(2);
+  });
+
   it('unknown command against the real program → exit 2 with help + hint', async () => {
     const cap = captureIO();
     const code = await runProgram(buildProgram(), ['frobnicate'], cap.io);
