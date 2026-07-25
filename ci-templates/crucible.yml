@@ -16,32 +16,51 @@
 # (.crucible/settings.yaml, local.yaml) is never read here — it cannot affect
 # enforcement by construction.
 #
-# ── P1 SCOPE, HONEST LIMITATION ──────────────────────────────────────────────
-# In Phase 1 `crucible verify` does not yet CONSUME enforcement config (tier +
-# risk computation is P2-02 / P2-03), so `--config-from` is wired below but inert.
-# The structure is correct and load-bearing for P2 — nothing here changes when
-# verify starts reading config. What P1 delivers and TESTS today (see
-# src/crucible-template.test.ts): (1) config is sourced from the target branch,
-# never the PR working tree; (2) a red verify verdict fails the check — no
-# error-swallowing (fail-closed, invariant #3). The *executable* proof that a
-# loosened-glob PR still fails is tracked as a distinct task, **P2-18** (depends
-# on P2-03, where verify begins consuming `--config-from`). Also deferred to P2:
-# the live adapter pin (`crucible init`) that lets `verify` run its oracles at all
-# — until then a real consumer run reaches the adapter-pin precondition.
+# ── ROUTING (P2-03) ──────────────────────────────────────────────────────────
+# As of P2-03 `crucible verify` CONSUMES the target-branch enforcement config: it
+# recomputes the tier from the diff against origin/<base_ref> (invariant #8),
+# enforces the per-tier diff cap (a breach → red verdict), and emits a routing
+# decision (auto | human) in its --json report. This workflow has TWO required
+# jobs: `verify` (the green/red gate) and `route` (needs: verify), which holds a
+# critical change red until a non-author APPROVED review exists. The
+# `pull_request_review` trigger re-evaluates the check the moment that approval
+# lands. Trivial/standard green → auto path; critical → required human review.
+#
+# The behavioral proof that a loosened-glob PR still routes to human because CI
+# used the target-branch config is P2-18's hermetic anchor
+# (core/test/target-branch-rule.test.ts); this file's structure is asserted by
+# src/crucible-template.test.ts.
+#
+# STILL DEFERRED to P2: the live adapter pin (`crucible init`) that lets `verify`
+# run its oracles against a real consumer repo — until then a real consumer run
+# reaches the adapter-pin precondition (the tier/routing/cap logic above runs
+# regardless, since it is computed from config + diff, not from the adapter).
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Crucible
 
 on:
   pull_request:
+  # Re-run when a review is submitted/dismissed so `route` re-checks approval and
+  # the required check flips green the moment a non-author approves.
+  pull_request_review:
+
+# `route` reads the PR's reviews via the ambient GITHUB_TOKEN; verify only reads
+# the checked-out tree. Least privilege (invariant: harness is TCB).
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
-  # One required check. A red verify verdict is exit 1; any non-zero step exit
+  # The green/red gate. A red verify verdict is exit 1; any non-zero step exit
   # fails the job → the required check goes red. There is deliberately no
   # `continue-on-error` and no `|| true`: the gate must not be silently
-  # satisfiable (fail-closed, invariant #3).
+  # satisfiable (fail-closed, invariant #3). Its `routing` output feeds `route`.
   verify:
     runs-on: ubuntu-latest
+    outputs:
+      # Aggregated routing across every touched change: `human` if any is critical.
+      routing: ${{ steps.verify.outputs.routing }}
     steps:
       - name: Checkout PR head (full history for the target-branch diff)
         uses: actions/checkout@v4
@@ -89,20 +108,77 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Verify (enforcement config from the target branch)
+        id: verify
         # The required gate. `--config-from` points at the target-branch config
-        # extracted above (invariant #7), NOT the PR working tree. The flag is
-        # placed before the subcommand, the form the CLI parses. A red verdict is
+        # extracted above (invariant #7), NOT the PR working tree; `--diff-base`
+        # points at origin/<base_ref> so the tier is computed against the target
+        # branch too. Global flags precede the subcommand, the form the CLI parses;
+        # --diff-base is a verify option (after `verify <change>`). A red verdict is
         # exit 1 → this step fails → the required check is red (verify red → check
-        # red). No error-swallowing: the gate is fail-closed.
+        # red). No error-swallowing: the gate is fail-closed. The aggregated routing
+        # decision is written to $GITHUB_OUTPUT for the `route` job.
         run: |
           set -euo pipefail
+          BASE="${{ github.base_ref }}"
           names="${{ steps.changes.outputs.names }}"
+          routing="auto"
           if [ -z "$names" ]; then
             echo "No change bundles touched by this PR — nothing to verify."
+            echo "routing=$routing" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           for change in $names; do
             echo "::group::crucible verify $change"
-            npx crucible --config-from "$RUNNER_TEMP/crucible-target" verify "$change"
+            # Capture the --json report while preserving the exit code: a red
+            # verdict must still fail the step (fail-closed), but we also want the
+            # report printed and its routing read when green.
+            set +e
+            report="$(npx crucible --json --config-from "$RUNNER_TEMP/crucible-target" verify "$change" --diff-base "origin/$BASE")"
+            code=$?
+            set -e
+            printf '%s\n' "$report"
+            if [ "$code" -ne 0 ]; then
+              echo "::endgroup::"
+              exit "$code"
+            fi
+            decision="$(printf '%s' "$report" | jq -r '.routing.decision // "auto"')"
+            if [ "$decision" = "human" ]; then
+              routing="human"
+            fi
             echo "::endgroup::"
           done
+          echo "routing=$routing" >> "$GITHUB_OUTPUT"
+
+  # The second required check. Auto-routed (trivial/standard) changes pass
+  # immediately; critical changes stay RED until a non-author APPROVED review
+  # exists (design phase-2.md §2). Crucible emits the decision; GitHub enforces the
+  # human gate. Mark BOTH `verify` and `route` required in branch protection.
+  route:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce the routing decision
+        env:
+          ROUTING: ${{ needs.verify.outputs.routing }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        # Fail-closed: human routing without a qualifying review is exit 1 (the
+        # required check stays red). No `|| true` / `continue-on-error`.
+        run: |
+          set -euo pipefail
+          if [ "$ROUTING" != "human" ]; then
+            echo "Routing is '$ROUTING' — auto-merge path; no human review required."
+            exit 0
+          fi
+          echo "Routing is 'human' — a non-author APPROVED review is required to merge."
+          # Query the PR's reviews via the ambient token; count APPROVED reviews
+          # whose author is not the PR author. `gh api` needs no checkout.
+          approved="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+            --jq "[.[] | select(.state == \"APPROVED\" and .user.login != \"$PR_AUTHOR\")] | length")"
+          if [ "$approved" -gt 0 ]; then
+            echo "Found a non-author APPROVED review — human routing satisfied."
+            exit 0
+          fi
+          echo "No non-author APPROVED review yet — this check stays red until one lands."
+          exit 1
