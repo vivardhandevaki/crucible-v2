@@ -37,6 +37,7 @@ import { loadSpecDelta } from '../artifacts/spec-delta.js';
 import { loadApproval, verifyApproval } from '../artifacts/approval.js';
 import { reconcileState } from '../state/reconcile.js';
 import { renderTierDecision, type TierDecision } from '../tier/tier.js';
+import { readChangeType, type ChangeType } from '../changetype/changetype.js';
 import { preconditionError } from '../util/errors.js';
 
 /** The phases status can derive from artifacts alone (no oracle run — design §9). */
@@ -82,6 +83,12 @@ export interface StatusReport {
    * no tier has been recorded yet.
    */
   tier?: TierDecision;
+  /**
+   * The change type, read from the `.openspec.yaml` schema pin (design phase-2.md
+   * §4) — derived from the artifact, not the state cache (invariant 1). Omitted for
+   * an absent change. An unknown pin fails closed at exit 3 like any broken artifact.
+   */
+  changeType?: ChangeType;
 }
 
 /**
@@ -103,6 +110,7 @@ export function status(options: StatusOptions, deps: StatusDeps): StatusReport {
   // reconciled snapshot carries the recorded tier (if any) for display.
   let stateReconciled = false;
   let tier: TierDecision | undefined;
+  let changeType: ChangeType | undefined;
   if (derived.phase !== 'absent') {
     const result = reconcileState(
       join(changeDir, 'state.yaml'),
@@ -112,6 +120,8 @@ export function status(options: StatusOptions, deps: StatusDeps): StatusReport {
     );
     stateReconciled = result.rewritten;
     tier = result.state.snapshot.tier;
+    // Derive the type from the pin (the artifact), not the state cache (invariant 1).
+    changeType = readChangeType(changeDir);
   }
 
   const warnings = configDiffersWarning(root, deps);
@@ -124,6 +134,7 @@ export function status(options: StatusOptions, deps: StatusDeps): StatusReport {
     stateReconciled,
     ...(derived.voidMismatches ? { voidMismatches: derived.voidMismatches } : {}),
     ...(tier ? { tier } : {}),
+    ...(changeType ? { changeType } : {}),
   };
 }
 
@@ -288,6 +299,7 @@ export function renderStatus(report: StatusReport): string {
   const lines: string[] = [];
   lines.push(`Change: ${report.change}`);
   lines.push(`Phase:  ${report.phase}`);
+  if (report.changeType) lines.push(`Type:   ${report.changeType}`);
   lines.push(`Next:   ${report.next}`);
   if (report.tier) {
     lines.push('');

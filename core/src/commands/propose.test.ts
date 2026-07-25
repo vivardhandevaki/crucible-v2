@@ -69,17 +69,23 @@ beforeEach(() => {
   // propose scaffolds the change itself: start from a repo without the bundle.
   rmSync(join(scratch, CHANGE_REL), { recursive: true });
   events = [];
+  scaffoldedSchema = undefined;
 });
 
 afterEach(() => rmSync(scratch, { recursive: true, force: true }));
 
-/** A scaffolder that mimics `openspec new change` (dir + OpenSpec metadata). */
-function fakeScaffold(root: string): (change: string) => Promise<void> {
-  return (change) => {
+/** The schema the last scaffold call was asked to pin (asserted by type tests). */
+let scaffoldedSchema: string | undefined;
+
+/** A scaffolder that mimics `openspec new change` (dir + OpenSpec metadata),
+ * pinning whatever schema propose passes (the change type's sibling bundle). */
+function fakeScaffold(root: string): (change: string, schema: string) => Promise<void> {
+  return (change, schema) => {
     events.push('scaffold');
+    scaffoldedSchema = schema;
     const dir = join(root, 'openspec', 'changes', change);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, '.openspec.yaml'), `schema: crucible\ncreated: 2026-07-23\n`);
+    writeFileSync(join(dir, '.openspec.yaml'), `schema: ${schema}\ncreated: 2026-07-23\n`);
     writeFileSync(join(dir, 'README.md'), `# ${change}\n`);
     return Promise.resolve();
   };
@@ -383,5 +389,45 @@ describe('propose --revise — coherent regeneration of an existing bundle (P2-0
     );
     expect(err.exit).toBe(3);
     expect(err.code).toBe('EMPTY_INTENT');
+  });
+});
+
+// A conformant refactor bundle: no spec delta, empty oracles.md.
+const REFACTOR_FILES: Record<string, string> = {
+  [join(CHANGE_REL, 'proposal.md')]:
+    '# Proposal\n\n## Why\nTidy it.\n\n## What Changes\n- Extract helper.\n\n## Impact\n- src\n\n## Unspecified\nNone known.\n\n## Seams\nNone known.\n',
+  [join(CHANGE_REL, 'design.md')]: '# Design\n\nExtract the helper; behavior preserved.\n',
+  [join(CHANGE_REL, 'oracles.md')]: '# Oracles\n\n<!-- refactor: no new oracles -->\n',
+};
+
+describe('propose — change type (P2-07)', () => {
+  it('infers feature by default and pins the crucible schema', async () => {
+    const result = await propose(options(), deps());
+    expect(result.type).toBe('feature');
+    expect(scaffoldedSchema).toBe('crucible');
+    expect(result.report.verdict).toBe('pass');
+  });
+
+  it('--type refactor pins crucible-refactor; a conformant refactor is green', async () => {
+    const result = await propose(
+      options({ type: 'refactor', intent: 'Refactor the greeting module' }),
+      deps({}, { files: REFACTOR_FILES }),
+    );
+    expect(scaffoldedSchema).toBe('crucible-refactor');
+    expect(result.type).toBe('refactor');
+    expect(result.report.verdict).toBe('pass');
+  });
+
+  it('a refactor that authors a spec delta fails closed at exit 3', async () => {
+    const withSpec = {
+      ...REFACTOR_FILES,
+      [join(CHANGE_REL, 'specs', 'greeting', 'spec.md')]:
+        '# Spec\n\n## ADDED Requirements\n\n### Requirement: New [REQ-x-9]\nThe system SHALL do new.\n\n#### Scenario: s\n- **WHEN** x\n- **THEN** y\n',
+    };
+    const err = await catchCrucible(() =>
+      propose(options({ type: 'refactor', intent: 'Refactor it' }), deps({}, { files: withSpec })),
+    );
+    expect(err.exit).toBe(3);
+    expect(err.code).toBe('TYPE_NONCONFORMANT');
   });
 });

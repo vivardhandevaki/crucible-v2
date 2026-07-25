@@ -24,6 +24,7 @@ import { loadOracles, type Oracle } from '../artifacts/oracles.js';
 import { loadProposal } from '../artifacts/proposal.js';
 import { loadSpecDelta, type SpecRequirement } from '../artifacts/spec-delta.js';
 import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
+import { type ChangeType, type TypeFacts } from '../changetype/changetype.js';
 import {
   aggregate,
   traceabilityCheck,
@@ -54,6 +55,7 @@ export async function judgeBundle(
   changeRel: string,
   resolve: ResolveFn,
   archivedRequirementIds: ReadonlySet<string> = new Set(),
+  type: ChangeType = 'feature',
 ): Promise<VerifyReport> {
   const findings: VerifyFinding[] = [];
   const judged = <T>(artifactRel: string, load: () => T): T | undefined => {
@@ -81,16 +83,22 @@ export async function judgeBundle(
     });
   }
 
-  // Spec deltas: at least one specs/** markdown, each parsing clean.
+  // Spec deltas: at least one specs/** markdown, each parsing clean. Only a
+  // FEATURE requires one — a refactor promises nothing new and a bugfix pins an
+  // archived promise (charter §Change Types), so for those an absent spec delta
+  // is EXPECTED, not a red finding (type conformance handles the inverse: a
+  // refactor that *carries* a spec delta is caught by assertTypeConformance).
   const specFiles = markdownFilesUnder(join(changeDir, 'specs')).sort();
   let requirements: SpecRequirement[] | undefined = [];
   if (specFiles.length === 0) {
-    findings.push({
-      check: 'bundle',
-      id: 'specs/',
-      message: `${join(changeRel, 'specs')}: no spec delta authored — a change with no spec delta promises nothing`,
-    });
-    requirements = undefined;
+    if (requiresSpecDelta(type)) {
+      findings.push({
+        check: 'bundle',
+        id: 'specs/',
+        message: `${join(changeRel, 'specs')}: no spec delta authored — a ${type} change with no spec delta promises nothing`,
+      });
+      requirements = undefined;
+    }
   } else {
     for (const file of specFiles) {
       const rel = relative(changeDir, file);
@@ -119,23 +127,57 @@ export async function judgeBundle(
   return aggregate(change, checks);
 }
 
+/** Does a change of this type require a spec delta? Only feature (charter §Change
+ * Types): a refactor permits none and a bugfix pins an archived promise. */
+export function requiresSpecDelta(type: ChangeType): boolean {
+  return type === 'feature';
+}
+
 /**
- * Parse every spec-delta markdown file under the change's `specs/**` into one
- * ordered requirement list. A bundle with no spec delta at all is a precondition
- * failure (exit 2) — approve/amend have nothing to gate. Order is deterministic:
- * files sorted by relative path, requirements in source order within each.
+ * Parse every spec-delta markdown under the change's `specs/**` into one ordered
+ * requirement list, honoring the change type. A FEATURE with no spec delta is a
+ * precondition failure (exit 2) — it promises nothing to gate; a bugfix/refactor
+ * with none returns `[]` (expected — charter §Change Types). Order is
+ * deterministic: files sorted by relative path, requirements in source order.
  */
-export function loadAllRequirements(changeDir: string, changeRel: string): SpecRequirement[] {
+export function loadRequirementsForType(
+  changeDir: string,
+  changeRel: string,
+  type: ChangeType,
+): SpecRequirement[] {
   const specsDir = join(changeDir, 'specs');
   const specFiles = existsSync(specsDir) ? markdownFilesUnder(specsDir).sort() : [];
   if (specFiles.length === 0) {
-    throw preconditionError(
-      'NO_SPEC_DELTA',
-      `No spec delta found under ${join(changeRel, 'specs')}.`,
-      'Run `crucible propose` to scaffold the change bundle with a spec delta.',
-    );
+    if (requiresSpecDelta(type)) {
+      throw preconditionError(
+        'NO_SPEC_DELTA',
+        `No spec delta found under ${join(changeRel, 'specs')}.`,
+        'Run `crucible propose` to scaffold the change bundle with a spec delta.',
+      );
+    }
+    return [];
   }
   return specFiles.flatMap((file) => loadSpecDelta(file));
+}
+
+/** Back-compat feature-typed loader (unchanged behavior: exit 2 if no spec delta). */
+export function loadAllRequirements(changeDir: string, changeRel: string): SpecRequirement[] {
+  return loadRequirementsForType(changeDir, changeRel, 'feature');
+}
+
+/**
+ * Assemble the type-conformance facts from the bundle on disk (design phase-2.md
+ * §4): is a spec delta present (any specs/** markdown), how many oracles, and how
+ * many are reproduction oracles. A deterministic filesystem read; `oracles` is the
+ * already-parsed list so this never re-parses (and never double-reports a parse
+ * error the caller already handled).
+ */
+export function gatherTypeFacts(changeDir: string, oracles: readonly Oracle[]): TypeFacts {
+  return {
+    specDelta: markdownFilesUnder(join(changeDir, 'specs')).length > 0,
+    oracleCount: oracles.length,
+    reproductionOracleCount: oracles.filter((o) => o.binding.reproduces === true).length,
+  };
 }
 
 /**

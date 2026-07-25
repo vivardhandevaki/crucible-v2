@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SCHEMA_BUNDLE_NAMES, schemaBundleFile, type SchemaBundleName } from '@crucible/schemas';
+import { SCHEMA_BUNDLE_NAMES, schemaBundleFile } from '@crucible/schemas';
 import { loadSchemaBundle } from './schema-bundle.js';
 import { CHANGE_TYPES, schemaForType } from './changetype.js';
 import { isCrucibleError } from '../util/errors.js';

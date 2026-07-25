@@ -25,10 +25,18 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ResolveFn } from '../lint/traceability.js';
 import type { AgentSubstrate } from '../substrate/types.js';
-import { appendStateEvent } from '../state/state.js';
+import { appendStateEvent, recordSnapshotType } from '../state/state.js';
 import { renderReport, type VerifyReport } from '../verifyx/report.js';
-import { dependencyOrder, judgeBundle } from './bundle.js';
+import { dependencyOrder, gatherTypeFacts, judgeBundle } from './bundle.js';
 import { collectArchivedRequirementIds } from '../regression/regression.js';
+import { loadOracles } from '../artifacts/oracles.js';
+import {
+  assertTypeConformance,
+  inferType,
+  readChangeType,
+  schemaForType,
+  type ChangeType,
+} from '../changetype/changetype.js';
 import { serializeGeneration, stampGeneration } from '../artifacts/generation.js';
 import { invalidInputError, preconditionError } from '../util/errors.js';
 
@@ -43,11 +51,13 @@ export interface ProposeDeps {
   substrate: AgentSubstrate;
   /**
    * Scaffold the OpenSpec change dir (spike: `openspec new change <name>
-   * --schema crucible --json`). Injected because the real one spawns the
-   * pinned OpenSpec CLI; the core verifies the dir exists afterwards rather
-   * than trusting the scaffolder's silence (invariant 3).
+   * --schema <schema> --json`), pinning the given schema — the sibling bundle
+   * for the change type (design phase-2.md §4). Injected because the real one
+   * spawns the pinned OpenSpec CLI; the core verifies the dir exists afterwards
+   * rather than trusting the scaffolder's silence (invariant 3). The `.openspec.yaml`
+   * the scaffold writes carries the schema pin, which IS the recorded type.
    */
-  scaffold: (change: string) => Promise<void>;
+  scaffold: (change: string, schema: string) => Promise<void>;
   /**
    * Batch dry-run resolver (charter §Bindings & the Adapter Protocol) — powers
    * the traceability lint. Injected because the real one spawns the adapter
@@ -70,6 +80,13 @@ export interface ProposeOptions {
   /** Model id for the session (convenience `models.propose`; opaque here). */
   model: string;
   /**
+   * The change type (charter §Change Types). When omitted in create mode it is
+   * INFERRED from the intent (`--type` on the CLI supplies it explicitly); it
+   * selects the sibling schema the scaffold pins. Ignored in `--revise` mode,
+   * where the type is already pinned in the existing `.openspec.yaml`.
+   */
+  type?: ChangeType;
+  /**
    * `--revise`: regenerate an EXISTING, not-yet-approved bundle coherently
    * through the same propose-role path (charter §Editing Artifacts). Skips the
    * scaffold, requires the change dir to exist, and refuses once the bundle is
@@ -86,6 +103,8 @@ export interface ProposeResult {
   render: string;
   /** Absolute path of the captured session transcript. */
   transcriptPath: string;
+  /** The resolved change type (inferred, `--type`, or the pin in revise mode). */
+  type: ChangeType;
 }
 
 /**
@@ -157,11 +176,19 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
     );
   }
 
-  // Create mode scaffolds the OpenSpec change dir, then verifies the scaffolder
-  // actually produced it — its silence is not success (invariant 3). Revise mode
-  // operates on the bundle already on disk, so it skips scaffolding entirely.
+  // The change type (charter §Change Types): inferred from the intent in create
+  // mode (or `--type`), read from the existing `.openspec.yaml` pin in revise mode
+  // (the type is fixed once scaffolded — revise regenerates content, not the type).
+  const type: ChangeType = revise
+    ? readChangeType(changeDir)
+    : (options.type ?? inferType(intent));
+
+  // Create mode scaffolds the OpenSpec change dir with the TYPE's schema pinned,
+  // then verifies the scaffolder actually produced it — its silence is not success
+  // (invariant 3). Revise mode operates on the bundle already on disk, so it skips
+  // scaffolding entirely (the pin already exists).
   if (!revise) {
-    await deps.scaffold(change);
+    await deps.scaffold(change, schemaForType(type));
     if (!existsSync(changeDir)) {
       throw invalidInputError(
         'SCAFFOLD_FAILED',
@@ -199,7 +226,21 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
     changeRel,
     deps.resolve,
     collectArchivedRequirementIds(root),
+    type,
   );
+
+  // Type conformance (charter §Change Types; design phase-2.md §4): once the
+  // artifacts PARSE (the `bundle` check is green), revalidate the bundle's real
+  // shape against its pinned type — a refactor that carries a spec delta or
+  // oracles, or a bugfix with no reproduction oracle, fails closed at exit 3
+  // regardless of the lint verdict (a refactor's spec delta is the ROOT cause of
+  // any downstream coverage red, so it takes precedence). Gated on a parseable
+  // bundle so a malformed artifact stays a red `bundle` finding (the propose
+  // judgment boundary, invariant 2) rather than being reclassified as exit 3.
+  const bundleParsed = report.checks.find((c) => c.name === 'bundle')?.status === 'pass';
+  if (bundleParsed) {
+    assertTypeConformance(type, gatherTypeFacts(changeDir, loadOracles(join(changeDir, 'oracles.md'))));
+  }
 
   // On a GREEN bundle, stamp the generation ledger (staleness tracking, charter
   // §Editing Artifacts): record each artifact's hash in dependency order so a
@@ -214,18 +255,22 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
   // Audit trail, written last and never read to gate (invariant 1). A red
   // judgment is still an event that happened.
   const cmd = revise ? 'revise' : 'propose';
+  const statePath = join(changeDir, 'state.yaml');
   appendStateEvent(
-    join(changeDir, 'state.yaml'),
+    statePath,
     change,
     {
       at: deps.now(),
       cmd,
-      summary: `bundle judged ${report.verdict} (${report.checks.length} check(s))`,
+      summary: `bundle judged ${report.verdict} (${report.checks.length} check(s)) [type: ${type}]`,
     },
     report.verdict === 'pass' ? (revise ? 'revised' : 'proposed') : 'propose-red',
   );
+  // Record the type into the snapshot for `status` display (design §4). Best-effort
+  // convenience (invariant 11) — the `.openspec.yaml` pin is the real record.
+  recordSnapshotType(statePath, type);
 
-  return { report, render: renderReport(report, 'propose'), transcriptPath };
+  return { report, render: renderReport(report, 'propose'), transcriptPath, type };
 }
 
 /** The work order handed to the session: the specifics the role prompt doesn't know. */

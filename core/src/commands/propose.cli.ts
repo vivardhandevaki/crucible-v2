@@ -20,6 +20,7 @@ import type { Command } from 'commander';
 import { propose, type ProposeDeps } from './propose.js';
 import { loadConvenienceConfig } from '../config/convenience.js';
 import { ClaudeCodeSubstrate } from '../substrate/claude-code.js';
+import { parseTypeName, type ChangeType } from '../changetype/changetype.js';
 import type { ResolveFn } from '../lint/traceability.js';
 import { CheckFailure, invalidInputError, preconditionError } from '../util/errors.js';
 
@@ -38,10 +39,25 @@ export function registerPropose(program: Command): void {
       'regenerate an existing, not-yet-approved bundle coherently (charter §Editing Artifacts)',
       false,
     )
-    .action(async (change: string, intent: string, opts: { revise?: boolean }) => {
+    .option(
+      '--type <type>',
+      'change type: feature | bugfix | refactor (default: inferred from the intent)',
+    )
+    .action(async (change: string, intent: string, opts: { revise?: boolean; type?: string }) => {
       const root = process.cwd();
+      // `--type` is validated fail-closed here (exit 3 on an unknown type); omitted
+      // → the core infers it from the intent (charter §Change Types).
+      const type: ChangeType | undefined =
+        opts.type !== undefined ? parseTypeName(opts.type) : undefined;
       const result = await propose(
-        { root, change, intent, model: proposeModel(root), revise: opts.revise === true },
+        {
+          root,
+          change,
+          intent,
+          model: proposeModel(root),
+          revise: opts.revise === true,
+          ...(type ? { type } : {}),
+        },
         liveDeps(root),
       );
 
@@ -49,6 +65,10 @@ export function registerPropose(program: Command): void {
       if (json) {
         process.stdout.write(JSON.stringify(result.report) + '\n');
       } else {
+        // Say the type (charter §Change Types: "infers ... and says so"), noting
+        // whether it was inferred or forced with `--type`.
+        const how = type !== undefined ? 'forced via --type' : 'inferred from intent';
+        process.stdout.write(`Change type: ${result.type} (${how})\n`);
         process.stdout.write(result.render + '\n');
         process.stdout.write(`Transcript: ${result.transcriptPath}\n`);
       }
@@ -70,7 +90,7 @@ function proposeModel(root: string): string {
 function liveDeps(root: string): ProposeDeps {
   return {
     substrate: new ClaudeCodeSubstrate(),
-    scaffold: (change) => scaffoldViaOpenSpec(root, change),
+    scaffold: (change, schema) => scaffoldViaOpenSpec(root, change, schema),
     resolve: liveResolveUnavailable,
     now: () => new Date().toISOString(),
   };
@@ -78,15 +98,16 @@ function liveDeps(root: string): ProposeDeps {
 
 /**
  * The spike-determined scaffolding mechanism (spike-notes §Repro): spawn the
- * pinned OpenSpec CLI. Non-zero exit → fail closed; the core additionally
- * verifies the change dir exists afterwards (a scaffolder is not trusted on
- * silence any more than an agent is).
+ * pinned OpenSpec CLI with the change TYPE's sibling schema (design phase-2.md §4:
+ * `propose` passes `--schema` explicitly — spike D5, never ambient resolution).
+ * Non-zero exit → fail closed; the core additionally verifies the change dir
+ * exists afterwards (a scaffolder is not trusted on silence any more than an agent).
  */
-function scaffoldViaOpenSpec(root: string, change: string): Promise<void> {
+function scaffoldViaOpenSpec(root: string, change: string, schema: string): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(
       'npx',
-      ['openspec', 'new', 'change', change, '--schema', 'crucible', '--json'],
+      ['openspec', 'new', 'change', change, '--schema', schema, '--json'],
       {
         cwd: root,
         stdio: ['ignore', 'ignore', 'pipe'],

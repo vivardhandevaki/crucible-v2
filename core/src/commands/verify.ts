@@ -43,9 +43,10 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadOracles, type Oracle } from '../artifacts/oracles.js';
-import { loadSpecDelta, type SpecRequirement } from '../artifacts/spec-delta.js';
 import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
 import { loadApproval, verifyApproval } from '../artifacts/approval.js';
+import { gatherTypeFacts, loadRequirementsForType } from './bundle.js';
+import { assertTypeConformance, readChangeType } from '../changetype/changetype.js';
 import type { OracleResult } from '../adapters/types.js';
 import {
   aggregate,
@@ -66,7 +67,6 @@ import { computeTier } from '../tier/tier.js';
 import { buildRatchetIssue, loadOverride } from '../artifacts/override.js';
 import type { EnforcementConfig } from '../config/enforcement.js';
 import { preconditionError } from '../util/errors.js';
-import { readdirSync, statSync } from 'node:fs';
 
 /** The diff facts the tier computation rests on (design phase-2.md §2). */
 export interface DiffFacts {
@@ -135,9 +135,21 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
     );
   }
 
-  // Parse the bundle. Missing spec delta → exit 2; malformed artifact → exit 3.
-  const requirements = loadAllRequirements(changeDir, changeRel);
+  // The pinned change type (charter §Change Types; design phase-2.md §4). It
+  // decides whether a spec delta is required and is REVALIDATED below (the type
+  // analogue of "tiers are computed, never declared"). An unknown pin → exit 3.
+  const type = readChangeType(changeDir);
+
+  // Parse the bundle, honoring the type: a FEATURE with no spec delta → exit 2; a
+  // refactor/bugfix may have none. A malformed artifact → exit 3 (fail-closed).
+  const requirements = loadRequirementsForType(changeDir, changeRel, type);
   const oracles = loadOracles(join(changeDir, 'oracles.md'));
+
+  // Revalidate the type against the bundle's real shape (design §4): a refactor
+  // that carries a spec delta or oracles, or a bugfix with no reproduction oracle,
+  // fails closed at exit 3 — CI recomputes type conformance exactly as it
+  // recomputes the tier (invariant 8's stance, applied to change types).
+  assertTypeConformance(type, gatherTypeFacts(changeDir, oracles));
 
   // Override — the 2am escape hatch (charter §Override; design §3). An
   // override.yaml in the bundle PERMITS a gate bypass: it forces the verdict green
@@ -162,9 +174,9 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
     const facts = deps.diffFacts();
     const decision = computeTier(
       {
-        // A spec delta guarantees ≥ standard (invariant 8, rule 2). verify already
-        // required a spec delta above, so this is true on every reachable path
-        // today; kept explicit for when refactor bundles (no delta) arrive (P2-07).
+        // A spec delta guarantees ≥ standard (invariant 8, rule 2). A refactor
+        // carries no spec delta (its correctness is the regression suite), so it
+        // is tiered by diff size alone; a feature always has one.
         specDelta: requirements.length > 0,
         touchedPaths: facts.touchedPaths,
         diffLines: facts.diffLines,
@@ -223,40 +235,4 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   }
 
   return aggregate(change, checks, extras);
-}
-
-/**
- * Parse every spec-delta markdown under the change's `specs/**` into one ordered
- * requirement list (files sorted by path, requirements in source order). A bundle
- * with no spec delta at all is a precondition failure (exit 2) — verify has
- * nothing to trace. (Trivial-tier changes carry no spec delta and no oracles;
- * tier-aware verify is P2. This mirrors approve's loader; a shared
- * `artifacts/bundle` extraction is flagged as follow-up.)
- */
-function loadAllRequirements(changeDir: string, changeRel: string): SpecRequirement[] {
-  const specsDir = join(changeDir, 'specs');
-  const specFiles = existsSync(specsDir) ? markdownFilesUnder(specsDir).sort() : [];
-  if (specFiles.length === 0) {
-    throw preconditionError(
-      'NO_SPEC_DELTA',
-      `No spec delta found under ${join(changeRel, 'specs')}.`,
-      'Run `crucible propose` to scaffold the change bundle with a spec delta.',
-    );
-  }
-  return specFiles.flatMap((file) => loadSpecDelta(file));
-}
-
-/** All `.md` files under `dir` (recursive), absolute paths. Empty if absent. */
-function markdownFilesUnder(dir: string): string[] {
-  if (!existsSync(dir)) return [];
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      out.push(...markdownFilesUnder(full));
-    } else if (entry.endsWith('.md')) {
-      out.push(full);
-    }
-  }
-  return out;
 }

@@ -31,8 +31,14 @@ import {
   serializeGeneration,
   stampGeneration,
 } from '../artifacts/generation.js';
-import { computeHashScope, dependencyOrder, loadAllRequirements } from './bundle.js';
-import { appendStateEvent } from '../state/state.js';
+import {
+  computeHashScope,
+  dependencyOrder,
+  gatherTypeFacts,
+  loadRequirementsForType,
+} from './bundle.js';
+import { assertTypeConformance, readChangeType } from '../changetype/changetype.js';
+import { appendStateEvent, recordSnapshotType } from '../state/state.js';
 import { preconditionError } from '../util/errors.js';
 
 /** The P1 approval.yaml schema version (design §3). */
@@ -107,8 +113,16 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
   // the whole bundle parsing (invariant 5), and the Unspecified/Seams sections
   // are part of the review surface being sealed (P1-09 proposal grammar).
   loadProposal(join(changeDir, 'proposal.md'));
-  const requirements = loadAllRequirements(changeDir, changeRel);
+  // The pinned change type (charter §Change Types): a FEATURE requires a spec
+  // delta; a refactor/bugfix may carry none. Revalidated below (design §4).
+  const type = readChangeType(changeDir);
+  const requirements = loadRequirementsForType(changeDir, changeRel, type);
   const oracles = loadOracles(join(changeDir, 'oracles.md'));
+
+  // Revalidate the type before sealing (invariant 5 / design §4): a bundle that
+  // violates its pinned type must never be sealed — a refactor carrying a spec
+  // delta or oracles, or a bugfix with no reproduction oracle, is exit 3 here.
+  assertTypeConformance(type, gatherTypeFacts(changeDir, oracles));
 
   // Precondition: the traceability lint must be green (invariant 5). A red lint
   // is a bundle that promises something no executable check covers — refuse to
@@ -184,12 +198,16 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
   writeFileSync(join(changeDir, 'approval.yaml'), serializeApproval(approval), 'utf8');
 
   // Append the audit event last (design §3 / invariant 1 — never read to gate).
+  const statePath = join(changeDir, 'state.yaml');
   appendStateEvent(
-    join(changeDir, 'state.yaml'),
+    statePath,
     change,
     { at: deps.now(), cmd: 'approve', summary: `sealed ${relpaths.length} file(s)` },
     'approved',
   );
+  // Re-record the type into the snapshot for `status` display (design §4). Derived
+  // convenience (invariant 1) — the `.openspec.yaml` pin remains the real record.
+  recordSnapshotType(statePath, type);
 
   return { approved: true, render, sealedFiles: relpaths };
 }

@@ -39,6 +39,7 @@ import type { NotifyFn } from '../notify/types.js';
 import { appendStateEvent } from '../state/state.js';
 import { computeHashScope, dependencyOrder, judgeBundle } from './bundle.js';
 import { collectArchivedRequirementIds } from '../regression/regression.js';
+import { readChangeType } from '../changetype/changetype.js';
 import { renderReport, type VerifyReport } from '../verifyx/report.js';
 import { preconditionError } from '../util/errors.js';
 
@@ -170,6 +171,7 @@ export async function amend(options: AmendOptions, deps: AmendDeps): Promise<Ame
     changeRel,
     deps.resolve,
     collectArchivedRequirementIds(root),
+    readChangeType(changeDir),
   );
 
   // A red regeneration cannot be re-sealed and does not resolve the ambiguity:

@@ -26,6 +26,12 @@ export interface OracleBinding {
   runner: string;
   /** Opaque adapter targets, always ≥1. `target:` is normalized into this list. */
   targets: string[];
+  /**
+   * `reproduces: true` marks a bugfix's reproduction oracle (charter §Change
+   * Types; design phase-2.md §4). Absent on ordinary oracles. Bugfix conformance
+   * requires ≥1 of these; P2-08's red-on-base/green-on-fix check runs them.
+   */
+  reproduces?: boolean;
 }
 
 /** One fully-parsed oracle: id + heading + its single binding. */
@@ -56,6 +62,7 @@ const bindingSchema = z
     runner: z.string().min(1),
     target: z.string().min(1).optional(),
     targets: z.array(z.string().min(1)).min(1).optional(),
+    reproduces: z.boolean().optional(),
   })
   // Exactly one of `target` / `targets` — the list form lets one oracle bind
   // multiple tests (all must pass); zero targets is not addressable.
@@ -215,7 +222,13 @@ function parseBinding(
 
   const b = result.data;
   const targets = b.targets ?? (b.target !== undefined ? [b.target] : []);
-  return { requirement: b.requirement, kind: b.kind, runner: b.runner, targets };
+  return {
+    requirement: b.requirement,
+    kind: b.kind,
+    runner: b.runner,
+    targets,
+    ...(b.reproduces !== undefined ? { reproduces: b.reproduces } : {}),
+  };
 }
 
 /** Locate the fence line defining `key`, so a schema error can point at it. */
