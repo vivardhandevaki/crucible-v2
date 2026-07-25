@@ -14,6 +14,13 @@
 //      approval.yaml exists, so a pre-approve verify (during propose) skips it
 //      cleanly rather than failing.
 //
+// On the authoritative path (the real CLI / CI, where enforcement config + the
+// diff-facts edge are supplied) it ALSO recomputes the tier (invariant 8) from
+// the diff, enforces the per-tier diff cap as a fourth check (a breach is a red
+// verdict naming the tier + cap), and attaches the tier + the merge-path routing
+// (auto | human) to the report (design phase-2.md §2). Given neither input it
+// runs the three P1 checks only — the inner-loop / pre-approve verify path.
+//
 // Verdict is `fail` if any check is red; the CLI layer maps that to exit 1 via
 // `CheckFailure` (a verdict, not an error). Fail-closed (invariant 3): a
 // malformed artifact throws exit 3 from the parsers; adapter transport failure
@@ -35,13 +42,26 @@ import type { OracleResult } from '../adapters/types.js';
 import {
   aggregate,
   approvalCheck,
+  diffCapCheck,
   oraclesCheck,
+  routingFor,
   traceabilityCheck,
   type CheckResult,
+  type ReportExtras,
   type VerifyReport,
 } from '../verifyx/report.js';
+import { computeTier } from '../tier/tier.js';
+import type { EnforcementConfig } from '../config/enforcement.js';
 import { preconditionError } from '../util/errors.js';
 import { readdirSync, statSync } from 'node:fs';
+
+/** The diff facts the tier computation rests on (design phase-2.md §2). */
+export interface DiffFacts {
+  /** Repo-relative paths changed vs the diff base (for risk-glob matching). */
+  touchedPaths: readonly string[];
+  /** Total changed lines (added + deleted) vs the diff base (for the cap). */
+  diffLines: number;
+}
 
 /** Injected non-deterministic edges — so verify's core stays reproducible. */
 export interface VerifyDeps {
@@ -56,6 +76,15 @@ export interface VerifyDeps {
    * (the adapter client's `run`). skip→fail is coerced in the client, not here.
    */
   run: (oracles: readonly Oracle[]) => Promise<OracleResult[]>;
+  /**
+   * Assemble the diff facts (touched paths + changed lines) vs the diff base —
+   * the git edge, injected so the core stays deterministic (design §2, following
+   * the P1-14 `StatusDeps` precedent). In an enforcement context an uncomputable
+   * diff is exit 3 (the live edge throws; never "assume trivial"). Supplied only
+   * on the authoritative CLI/CI path; omitted → verify skips tier computation and
+   * behaves as in P1 (the inner-loop / pre-approve verify).
+   */
+  diffFacts?: () => DiffFacts;
 }
 
 /** verify invocation options. `root` is the repo root the seal is relative to. */
@@ -64,6 +93,13 @@ export interface VerifyOptions {
   root: string;
   /** The change to verify (its bundle lives at openspec/changes/<change>/). */
   change: string;
+  /**
+   * Enforcement config the tier is computed against (risk globs + diff caps). In
+   * CI this is the *target-branch* config (invariant 7), resolved by the CLI via
+   * `--config-from`. Supplied together with `deps.diffFacts` to enable the tier /
+   * routing / diff-cap checks; omitted → verify runs the P1 checks only.
+   */
+  config?: EnforcementConfig;
 }
 
 /**
@@ -90,6 +126,30 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   const requirements = loadAllRequirements(changeDir, changeRel);
   const oracles = loadOracles(join(changeDir, 'oracles.md'));
 
+  // Tier / routing / diff-cap — computed ONLY when the caller supplied enforcement
+  // config AND the diff-facts edge (the authoritative CLI/CI path). The `tier/`
+  // module is pure (invariant 12): the git edge already ran in `deps.diffFacts`,
+  // and an uncomputable diff has already thrown exit 3 there (design §2). Without
+  // both inputs verify runs the P1 checks only (inner-loop / pre-approve verify).
+  let extras: ReportExtras = {};
+  let capCheck: CheckResult | undefined;
+  if (options.config && deps.diffFacts) {
+    const facts = deps.diffFacts();
+    const decision = computeTier(
+      {
+        // A spec delta guarantees ≥ standard (invariant 8, rule 2). verify already
+        // required a spec delta above, so this is true on every reachable path
+        // today; kept explicit for when refactor bundles (no delta) arrive (P2-07).
+        specDelta: requirements.length > 0,
+        touchedPaths: facts.touchedPaths,
+        diffLines: facts.diffLines,
+      },
+      options.config,
+    );
+    extras = { tier: decision, routing: routingFor(decision) };
+    capCheck = diffCapCheck(decision);
+  }
+
   const checks: CheckResult[] = [];
 
   // Check 1 — traceability lint (the cheap gate; no tests run).
@@ -97,7 +157,11 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   const trace = traceabilityCheck(lint);
   checks.push(trace);
 
-  // Check 2 — oracle run, ONLY when the lint gate is green. Running tests against
+  // Check 2 — diff cap (config-only; independent of the lint gate). A breach is a
+  // red verdict naming the tier + cap (design §2). Present only on the config path.
+  if (capCheck) checks.push(capCheck);
+
+  // Check 3 — oracle run, ONLY when the lint gate is green. Running tests against
   // unresolved or uncovered bindings is meaningless; a red lint already fails the
   // verdict, so short-circuit rather than ask the adapter for phantom targets.
   if (trace.status === 'pass') {
@@ -105,7 +169,7 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
     checks.push(oraclesCheck(results));
   }
 
-  // Check 3 — approval-hash, ONLY when a seal exists. A pre-approve verify (during
+  // Check 4 — approval-hash, ONLY when a seal exists. A pre-approve verify (during
   // propose) has no approval.yaml and skips this cleanly (not a failure). A void
   // seal is a red check here (exit 1), never a silent pass (invariant 6).
   const approvalPath = join(changeDir, 'approval.yaml');
@@ -114,7 +178,7 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
     checks.push(approvalCheck(verifyApproval(root, approval)));
   }
 
-  return aggregate(change, checks);
+  return aggregate(change, checks, extras);
 }
 
 /**

@@ -5,12 +5,15 @@ import type { VerifyResult } from '../artifacts/approval.js';
 import {
   aggregate,
   approvalCheck,
+  diffCapCheck,
   oraclesCheck,
   renderReport,
+  routingFor,
   traceabilityCheck,
   verifyReportSchema,
   type CheckResult,
 } from './report.js';
+import type { TierDecision } from '../tier/tier.js';
 
 // verifyx aggregates independently-computed check results into one machine-
 // readable VerifyReport whose verdict is fail iff any check failed. Findings are
@@ -137,6 +140,80 @@ describe('aggregate + schema', () => {
   it('the schema is strict — an unknown field is rejected (fail-closed)', () => {
     const report = aggregate('c', [pass]) as Record<string, unknown>;
     expect(() => verifyReportSchema.parse({ ...report, sneaky: true })).toThrow();
+  });
+});
+
+/** A tier decision fixture with the given effective tier and cap state. */
+function tierDecision(
+  tier: 'trivial' | 'standard' | 'critical',
+  capExceeded: boolean,
+): TierDecision {
+  return {
+    tier,
+    computed: tier,
+    forced: null,
+    reasons: [`computed ${tier}`],
+    facts: {
+      spec_delta: tier !== 'trivial',
+      risk_matches: tier === 'critical' ? [{ path: 'src/auth/x.ts', glob: 'src/**/auth/**' }] : [],
+      diff_lines: capExceeded ? 500 : 40,
+      diff_cap: 400,
+      cap_exceeded: capExceeded,
+    },
+  };
+}
+
+describe('diffCapCheck', () => {
+  it('passes when the diff is within the tier cap', () => {
+    expect(diffCapCheck(tierDecision('standard', false))).toEqual({
+      name: 'diff-cap',
+      status: 'pass',
+      findings: [],
+    });
+  });
+
+  it('fails naming the tier and the cap on a breach (acceptance: exit 1 names tier + cap)', () => {
+    const check = diffCapCheck(tierDecision('standard', true));
+    expect(check.status).toBe('fail');
+    expect(check.findings).toHaveLength(1);
+    const [finding] = check.findings;
+    expect(finding?.check).toBe('diff-cap');
+    // The tier and its cap both appear in the message so the operator sees WHY.
+    expect(finding?.message).toContain('standard');
+    expect(finding?.message).toContain('400');
+    expect(finding?.message).toContain('500');
+  });
+});
+
+describe('routingFor', () => {
+  it('routes a critical tier to human review', () => {
+    const routing = routingFor(tierDecision('critical', false));
+    expect(routing.decision).toBe('human');
+    expect(routing.reasons.length).toBeGreaterThan(0);
+  });
+
+  it('routes trivial and standard tiers to the auto path', () => {
+    expect(routingFor(tierDecision('standard', false)).decision).toBe('auto');
+    expect(routingFor(tierDecision('trivial', false)).decision).toBe('auto');
+  });
+});
+
+describe('aggregate + tier/routing extras', () => {
+  const pass: CheckResult = { name: 'traceability', status: 'pass', findings: [] };
+
+  it('threads the tier decision and routing through into the report', () => {
+    const decision = tierDecision('critical', false);
+    const report = aggregate('c', [pass], { tier: decision, routing: routingFor(decision) });
+    expect(report.tier?.tier).toBe('critical');
+    expect(report.routing?.decision).toBe('human');
+    expect(() => verifyReportSchema.parse(report)).not.toThrow();
+  });
+
+  it('a report without tier/routing still validates (propose reuses this shape)', () => {
+    const report = aggregate('c', [pass]);
+    expect(report.tier).toBeUndefined();
+    expect(report.routing).toBeUndefined();
+    expect(() => verifyReportSchema.parse(report)).not.toThrow();
   });
 });
 

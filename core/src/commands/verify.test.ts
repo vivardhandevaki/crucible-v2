@@ -9,7 +9,8 @@ import type { Oracle } from '../artifacts/oracles.js';
 import type { OracleResult } from '../adapters/types.js';
 import { sealBundle, serializeApproval } from '../artifacts/approval.js';
 import { verifyReportSchema } from '../verifyx/report.js';
-import { verify, type VerifyDeps } from './verify.js';
+import { loadEnforcementConfig, type EnforcementConfig } from '../config/enforcement.js';
+import { verify, type DiffFacts, type VerifyDeps } from './verify.js';
 
 // TCB: verify is the machine that decides green/red. It parses the bundle, runs
 // the three checks (traceability lint → oracle run → approval-hash), and
@@ -181,6 +182,66 @@ describe('verify — red source: hash void', () => {
     const report = await verify({ root: scratch, change: CHANGE }, deps());
     expect(report.verdict).toBe('pass');
     expect(report.checks.find((c) => c.name === 'approval')?.status).toBe('pass');
+  });
+});
+
+describe('verify — tier, routing & diff caps (config + diff-facts path)', () => {
+  // The toy repo's crucible.yaml: risk.critical includes `src/**/auth/**`,
+  // `.crucible/**`, `crucible.yaml`; tiers trivial 150 / standard 400 / critical
+  // 400. Loaded from the scratch copy so the test rides the real config shape.
+  function toyConfig(): EnforcementConfig {
+    return loadEnforcementConfig(scratch);
+  }
+
+  /** A diff-facts edge returning fixed touched paths + line count (no git). */
+  function facts(touchedPaths: string[], diffLines: number): () => DiffFacts {
+    return () => ({ touchedPaths, diffLines });
+  }
+
+  it('a risk-glob match dominates → critical → routing human', async () => {
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: toyConfig() },
+      deps({ diffFacts: facts(['src/app/auth/login.ts'], 20) }),
+    );
+    expect(report.tier?.tier).toBe('critical');
+    expect(report.routing?.decision).toBe('human');
+    // The tier facts record the matched glob for the audit trail.
+    expect(report.tier?.facts.risk_matches[0]?.glob).toBe('src/**/auth/**');
+    // No cap breach (20 < 400) and oracles/lint green → verdict pass.
+    expect(report.verdict).toBe('pass');
+    expect(report.checks.find((c) => c.name === 'diff-cap')?.status).toBe('pass');
+  });
+
+  it('a spec delta with no risk match → standard → routing auto', async () => {
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: toyConfig() },
+      deps({ diffFacts: facts(['src/greeting.ts'], 30) }),
+    );
+    expect(report.tier?.tier).toBe('standard');
+    expect(report.routing?.decision).toBe('auto');
+    expect(report.verdict).toBe('pass');
+  });
+
+  it('a diff over the tier cap → diff-cap red → verdict fail naming tier + cap', async () => {
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: toyConfig() },
+      deps({ diffFacts: facts(['src/greeting.ts'], 500) }),
+    );
+    expect(report.verdict).toBe('fail');
+    const cap = report.checks.find((c) => c.name === 'diff-cap');
+    expect(cap?.status).toBe('fail');
+    // The finding names the tier and its cap (acceptance).
+    expect(cap?.findings[0]?.message).toContain('standard');
+    expect(cap?.findings[0]?.message).toContain('400');
+    // Lint + oracles are unaffected — the cap is the only red source.
+    expect(report.checks.find((c) => c.name === 'traceability')?.status).toBe('pass');
+  });
+
+  it('without config + diff-facts, verify runs the P1 checks only (no tier/routing)', async () => {
+    const report = await verify({ root: scratch, change: CHANGE }, deps());
+    expect(report.tier).toBeUndefined();
+    expect(report.routing).toBeUndefined();
+    expect(report.checks.some((c) => c.name === 'diff-cap')).toBe(false);
   });
 });
 

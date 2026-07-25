@@ -100,6 +100,23 @@ export function appendStateEvent(
   writeFileSync(path, serializeState(state), 'utf8');
 }
 
+/**
+ * Best-effort (invariant 11): record a recomputed tier decision into
+ * `snapshot.tier` so `status` can display it (design phase-2.md §2 — the
+ * populator P2-02 deferred to "the diff edge in P2-03"). Convenience only: it
+ * NEVER creates a state.yaml (an absent file is left absent), never advances the
+ * phase, and is never read to make an enforcement decision (invariant 1 — CI
+ * recomputes the authoritative tier). A parse/write failure is swallowed by the
+ * caller: a display cache must never block the verdict. Returns whether it wrote.
+ */
+export function recordSnapshotTier(path: string, tier: State['snapshot']['tier']): boolean {
+  const state = readState(path);
+  if (state === undefined) return false;
+  state.snapshot.tier = tier;
+  writeFileSync(path, serializeState(state), 'utf8');
+  return true;
+}
+
 /** Read + parse state.yaml, or `undefined` if it does not exist yet. */
 function readState(path: string): State | undefined {
   let text: string;
