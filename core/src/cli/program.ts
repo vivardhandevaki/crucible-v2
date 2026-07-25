@@ -2,12 +2,13 @@
 // registrations. Every P1 verb has a dedicated real registration
 // (commands/*.cli.ts) — propose (P1-09), approve (P1-07), verify (P1-12),
 // implement (P1-13), and status (P1-14) — plus the P2 verbs as they land:
-// override (P2-06). The fail-closed stub loop remains as the default for any P1
+// escalate (P2-04) and override (P2-06). The fail-closed stub loop remains for any P1
 // verb not yet wired (invariant 3: a stub never pretends success).
 
 import { Command } from 'commander';
 import { internalError } from '../util/errors.js';
 import { registerApprove } from '../commands/approve.cli.js';
+import { registerEscalate } from '../commands/escalate.cli.js';
 import { registerImplement } from '../commands/implement.cli.js';
 import { registerOverride } from '../commands/override.cli.js';
 import { registerPropose } from '../commands/propose.cli.js';
@@ -68,6 +69,7 @@ export function buildProgram(): Command {
   }
 
   registerApprove(program);
+  registerEscalate(program);
   registerImplement(program);
   registerOverride(program);
   registerPropose(program);

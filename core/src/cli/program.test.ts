@@ -64,6 +64,18 @@ describe('buildProgram', () => {
     expect(code).toBe(2);
   });
 
+  it('registers the P2 `escalate` verb so it appears in help', async () => {
+    const cap = captureIO();
+    await runProgram(buildProgram(), ['--help'], cap.io);
+    expect(cap.out()).toContain('escalate');
+  });
+
+  it('escalate with a change but no --question → exit 2 (required option)', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['escalate', 'some-change'], cap.io);
+    expect(code).toBe(2);
+  });
+
   it('unknown command against the real program → exit 2 with help + hint', async () => {
     const cap = captureIO();
     const code = await runProgram(buildProgram(), ['frobnicate'], cap.io);
