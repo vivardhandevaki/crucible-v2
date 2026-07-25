@@ -1,13 +1,15 @@
-// The crucible command program: name, version, global flags, and the P1 verb
-// registrations. Every P1 verb now has a dedicated real registration
+// The crucible command program: name, version, global flags, and the verb
+// registrations. Every P1 verb has a dedicated real registration
 // (commands/*.cli.ts) — propose (P1-09), approve (P1-07), verify (P1-12),
-// implement (P1-13), and status (P1-14). The fail-closed stub loop remains as the
-// default for any verb not yet wired (invariant 3: a stub never pretends success).
+// implement (P1-13), and status (P1-14) — plus the P2 verbs as they land:
+// override (P2-06). The fail-closed stub loop remains as the default for any P1
+// verb not yet wired (invariant 3: a stub never pretends success).
 
 import { Command } from 'commander';
 import { internalError } from '../util/errors.js';
 import { registerApprove } from '../commands/approve.cli.js';
 import { registerImplement } from '../commands/implement.cli.js';
+import { registerOverride } from '../commands/override.cli.js';
 import { registerPropose } from '../commands/propose.cli.js';
 import { registerStatus } from '../commands/status.cli.js';
 import { registerVerify } from '../commands/verify.cli.js';
@@ -67,6 +69,7 @@ export function buildProgram(): Command {
 
   registerApprove(program);
   registerImplement(program);
+  registerOverride(program);
   registerPropose(program);
   registerStatus(program);
   registerVerify(program);

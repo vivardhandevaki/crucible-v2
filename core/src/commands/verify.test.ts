@@ -245,6 +245,91 @@ describe('verify — tier, routing & diff caps (config + diff-facts path)', () =
   });
 });
 
+describe('verify — override (the 2am hatch: design §3, P2-06)', () => {
+  function toyConfig(): EnforcementConfig {
+    return loadEnforcementConfig(scratch);
+  }
+  function facts(touchedPaths: string[], diffLines: number): () => DiffFacts {
+    return () => ({ touchedPaths, diffLines });
+  }
+  /** Write a valid override.yaml into the change bundle. */
+  function writeOverride(reason: string): void {
+    writeFileSync(
+      join(scratch, CHANGE_REL, 'override.yaml'),
+      [
+        'version: 1',
+        `change: ${CHANGE}`,
+        `reason: ${JSON.stringify(reason)}`,
+        'created_by: ada@example.com',
+        'created_at: 2026-07-25T02:00:00Z',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+  }
+
+  it('override present + a RED oracle check → verdict pass with the override flag', async () => {
+    // Without the override this fixture would be red (the first oracle fails).
+    writeOverride('2am prod incident');
+    const report = await verify({ root: scratch, change: CHANGE }, deps({ run: runFirstFails }));
+    // Green-with-override: the bypass is permitted (acceptance).
+    expect(report.verdict).toBe('pass');
+    expect(report.override).toBeDefined();
+    expect(report.override?.reason).toBe('2am prod incident');
+    // The red check is still visible — the override does not hide what it bypassed.
+    expect(report.checks.find((c) => c.name === 'oracles')?.status).toBe('fail');
+  });
+
+  it('override forces routing → human even for a normally-auto (standard) tier', async () => {
+    // Baseline: this same change/diff routes AUTO without an override.
+    const auto = await verify(
+      { root: scratch, change: CHANGE, config: toyConfig() },
+      deps({ diffFacts: facts(['src/greeting.ts'], 30) }),
+    );
+    expect(auto.routing?.decision).toBe('auto');
+
+    // With an override it is forced to human regardless of the computed tier.
+    writeOverride('shipping ahead of review');
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: toyConfig() },
+      deps({ diffFacts: facts(['src/greeting.ts'], 30) }),
+    );
+    expect(report.tier?.tier).toBe('standard');
+    expect(report.routing?.decision).toBe('human');
+    expect(report.routing?.reasons.some((r) => r.toLowerCase().includes('override'))).toBe(true);
+  });
+
+  it('emits a ratchet-issue payload naming the change, labeled crucible-override', async () => {
+    writeOverride('needs a retroactive proposal');
+    const report = await verify({ root: scratch, change: CHANGE }, deps());
+    const issue = report.override?.issue;
+    expect(issue).toBeDefined();
+    expect(issue?.title).toContain(CHANGE);
+    expect(issue?.labels).toContain('crucible-override');
+    expect(issue?.body).toContain('needs a retroactive proposal');
+    // The whole report still validates as a trust-boundary verdict.
+    expect(() => verifyReportSchema.parse(report)).not.toThrow();
+  });
+
+  it('override even flips a diff-cap breach green (the gate is bypassed)', async () => {
+    writeOverride('oversized emergency change');
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: toyConfig() },
+      deps({ diffFacts: facts(['src/greeting.ts'], 500) }),
+    );
+    // The cap check is red, but the override forces the verdict green.
+    expect(report.checks.find((c) => c.name === 'diff-cap')?.status).toBe('fail');
+    expect(report.verdict).toBe('pass');
+    expect(report.routing?.decision).toBe('human');
+  });
+
+  it('a malformed override.yaml fails closed at exit 3, not a silent bypass', async () => {
+    writeFileSync(join(scratch, CHANGE_REL, 'override.yaml'), 'reason: 42\nrogue: [\n', 'utf8');
+    const err = await catchCrucible(() => verify({ root: scratch, change: CHANGE }, deps()));
+    expect(err.exit).toBe(3);
+  });
+});
+
 describe('verify — preconditions & fail-closed', () => {
   it('missing change bundle → exit 2 naming the next command', async () => {
     const err = await catchCrucible(() =>

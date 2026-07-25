@@ -21,6 +21,11 @@
 // (auto | human) to the report (design phase-2.md §2). Given neither input it
 // runs the three P1 checks only — the inner-loop / pre-approve verify path.
 //
+// An override.yaml in the bundle is the 2am escape hatch (charter §Override;
+// design phase-2.md §3): it forces the verdict green-with-`override`, forces
+// routing → human regardless of tier, and emits the ratchet-issue payload CI
+// files — a loud, self-repairing bypass, never a quiet one.
+//
 // Verdict is `fail` if any check is red; the CLI layer maps that to exit 1 via
 // `CheckFailure` (a verdict, not an error). Fail-closed (invariant 3): a
 // malformed artifact throws exit 3 from the parsers; adapter transport failure
@@ -45,12 +50,15 @@ import {
   diffCapCheck,
   oraclesCheck,
   routingFor,
+  routingWithOverride,
   traceabilityCheck,
   type CheckResult,
+  type OverrideReport,
   type ReportExtras,
   type VerifyReport,
 } from '../verifyx/report.js';
 import { computeTier } from '../tier/tier.js';
+import { buildRatchetIssue, loadOverride } from '../artifacts/override.js';
 import type { EnforcementConfig } from '../config/enforcement.js';
 import { preconditionError } from '../util/errors.js';
 import { readdirSync, statSync } from 'node:fs';
@@ -126,6 +134,18 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   const requirements = loadAllRequirements(changeDir, changeRel);
   const oracles = loadOracles(join(changeDir, 'oracles.md'));
 
+  // Override — the 2am escape hatch (charter §Override; design §3). An
+  // override.yaml in the bundle PERMITS a gate bypass: it forces the verdict green
+  // (in `aggregate`) and routing → human regardless of tier (below), and emits the
+  // ratchet-issue payload CI files. A malformed override.yaml is exit 3 from the
+  // loader (fail-closed) — a bypass we cannot read is not a bypass we honor.
+  const overridePath = join(changeDir, 'override.yaml');
+  let override: OverrideReport | undefined;
+  if (existsSync(overridePath)) {
+    const loaded = loadOverride(overridePath);
+    override = { reason: loaded.reason, issue: buildRatchetIssue(loaded) };
+  }
+
   // Tier / routing / diff-cap — computed ONLY when the caller supplied enforcement
   // config AND the diff-facts edge (the authoritative CLI/CI path). The `tier/`
   // module is pure (invariant 12): the git edge already ran in `deps.diffFacts`,
@@ -146,9 +166,13 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
       },
       options.config,
     );
-    extras = { tier: decision, routing: routingFor(decision) };
+    // An override forces routing → human regardless of the computed tier (design §3).
+    const routing = override ? routingWithOverride(decision) : routingFor(decision);
+    extras = { tier: decision, routing };
     capCheck = diffCapCheck(decision);
   }
+  // Carried on every path (inner-loop verify included) so a bypass is always flagged.
+  if (override) extras.override = override;
 
   const checks: CheckResult[] = [];
 

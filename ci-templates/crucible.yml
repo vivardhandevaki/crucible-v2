@@ -31,6 +31,18 @@
 # (core/test/target-branch-rule.test.ts); this file's structure is asserted by
 # src/crucible-template.test.ts.
 #
+# ── OVERRIDE (P2-06) ─────────────────────────────────────────────────────────
+# An override.yaml in a change bundle is the 2am escape hatch (charter §Override).
+# `crucible verify` then emits verdict green-with-`override`, forces its routing
+# decision to `human` regardless of tier (so `route` requires a human approval),
+# AND emits a ratchet-issue payload in its --json report. The verify job files
+# that issue idempotently via the ambient GITHUB_TOKEN (`issues: write`): it
+# searches OPEN `crucible-override`-labeled issues for the change first and creates
+# one only if none exists. The issue stays open until a retroactive proposal lands
+# — "instant to use, impossible to use quietly." Local runs never file issues
+# (invariant #11: convenience never enforcement).
+# ─────────────────────────────────────────────────────────────────────────────
+#
 # STILL DEFERRED to P2: the live adapter pin (`crucible init`) that lets `verify`
 # run its oracles against a real consumer repo — until then a real consumer run
 # reaches the adapter-pin precondition (the tier/routing/cap logic above runs
@@ -46,10 +58,12 @@ on:
   pull_request_review:
 
 # `route` reads the PR's reviews via the ambient GITHUB_TOKEN; verify only reads
-# the checked-out tree. Least privilege (invariant: harness is TCB).
+# the checked-out tree (plus `issues: write` so it can file an override ratchet
+# issue). Least privilege (invariant: harness is TCB).
 permissions:
   contents: read
   pull-requests: read
+  issues: write
 
 jobs:
   # The green/red gate. A red verify verdict is exit 1; any non-zero step exit
@@ -145,9 +159,45 @@ jobs:
             if [ "$decision" = "human" ]; then
               routing="human"
             fi
+            # Override (the 2am hatch): stash the ratchet-issue payload for the
+            # filing step below. verify already forced routing→human above.
+            issue="$(printf '%s' "$report" | jq -c '.override.issue // empty')"
+            if [ -n "$issue" ]; then
+              mkdir -p "$RUNNER_TEMP/override-issues"
+              printf '%s' "$issue" > "$RUNNER_TEMP/override-issues/$change.json"
+            fi
             echo "::endgroup::"
           done
           echo "routing=$routing" >> "$GITHUB_OUTPUT"
+
+      - name: File override ratchet issues
+        # The override's self-repairing paper trail (charter §Override; design §3).
+        # For each overridden change, file a `crucible-override`-labeled issue that
+        # stays open until a retroactive proposal lands — but idempotently: search
+        # OPEN issues with that label naming the change first, and skip if one
+        # already exists (re-runs of the same PR must not spam duplicates). Uses the
+        # payload verify emitted; no token plumbing in the core (design §3).
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/override-issues"
+          if [ ! -d "$dir" ]; then
+            echo "No overrides on this PR — nothing to file."
+            exit 0
+          fi
+          for f in "$dir"/*.json; do
+            change="$(basename "$f" .json)"
+            title="$(jq -r '.title' "$f")"
+            body="$(jq -r '.body' "$f")"
+            existing="$(gh issue list --label crucible-override --state open \
+              --search "$change in:title" --json number --jq 'length')"
+            if [ "$existing" -gt 0 ]; then
+              echo "A crucible-override issue for '$change' is already open — not filing a duplicate."
+              continue
+            fi
+            gh issue create --title "$title" --body "$body" --label crucible-override
+          done
 
   # The second required check. Auto-routed (trivial/standard) changes pass
   # immediately; critical changes stay RED until a non-author APPROVED review

@@ -189,3 +189,40 @@ describe('crucible.yml — tier routing (P2-03, design phase-2.md §2)', () => {
     }
   });
 });
+
+describe('crucible.yml — override ratchet issue (P2-06, design phase-2.md §3)', () => {
+  it('grants issues: write so the override ratchet issue can be filed', () => {
+    // Workflow- or verify-job level. The forced-human teeth come from routing;
+    // this permission is only for the self-repairing paper trail.
+    const perms = workflow.jobs?.verify?.permissions ?? workflow.permissions ?? {};
+    expect(perms.issues).toBe('write');
+  });
+
+  it('captures the override issue payload verify emits in its --json report', () => {
+    // The verify loop stashes `.override.issue` for the filing step — CI never
+    // builds the payload itself; the core emits it (design §3, no token plumbing).
+    const run = stepNamed('verify').run ?? '';
+    expect(run).toContain('.override.issue');
+  });
+
+  it('files the ratchet issue idempotently, searching the crucible-override label first', () => {
+    const step = stepNamed('override ratchet');
+    const run = step.run ?? '';
+    // Searches OPEN crucible-override issues for the change before creating one.
+    expect(run).toContain('crucible-override');
+    expect(run).toContain('gh issue list');
+    expect(run).toContain('--state open');
+    // Only creates when none exists (idempotency: no duplicate on PR re-runs).
+    expect(run).toContain('gh issue create');
+    // Uses the ambient token, not any bespoke plumbing.
+    expect(step.env?.GH_TOKEN).toBeTruthy();
+  });
+
+  it('the filing step is fail-closed — no swallowed failure', () => {
+    const run = stepNamed('override ratchet').run ?? '';
+    expect(run).toContain('set -euo pipefail');
+    expect(run).not.toContain('|| true');
+    expect(run).not.toContain('|| exit 0');
+    expect(stepNamed('override ratchet')['continue-on-error']).not.toBe(true);
+  });
+});
