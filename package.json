@@ -6,6 +6,7 @@
   "description": "Crucible — humans approve artifacts, not code. Monorepo root.",
   "workspaces": [
     "core",
+    "schemas",
     "adapters/stub",
     "fixtures",
     "ci-templates"

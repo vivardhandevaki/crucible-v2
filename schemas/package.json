@@ -1,0 +1,23 @@
+{
+  "name": "@crucible/schemas",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The shipped Crucible OpenSpec change-type bundles (crucible / crucible-bugfix / crucible-refactor). Plain files installed by copying; `crucible init` copies them into a target repo's openspec/schemas/.",
+  "//": "Resolves to TypeScript source, not dist: like @crucible/fixtures this is imported only by TS-aware tooling. The bundle DATA lives under crucible*/; src/index.ts only computes paths — it never parses or mutates the bundles (that is core's changetype/ TCB).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1"
+  }
+}
