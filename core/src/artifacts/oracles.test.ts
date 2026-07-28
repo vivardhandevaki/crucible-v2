@@ -88,6 +88,66 @@ describe('parseOracles — valid fixture', () => {
     expect(oracle?.binding.targets).toEqual(['a::t1', 'b::t2']);
     expect(oracle?.binding.kind).toBe('integration');
   });
+
+  it('parses `reproduces: true` on a bugfix reproduction oracle (P2-07)', () => {
+    const [oracle] = parseOracles(
+      [
+        '## ORC-fix-001: Reproduces the crash',
+        '**Then** it no longer crashes',
+        '',
+        '```yaml crucible-binding',
+        'requirement: REQ-fix-1',
+        'kind: unit',
+        'runner: stub',
+        'target: fix::t',
+        'reproduces: true',
+        '```',
+      ].join('\n'),
+      'inline.md',
+    );
+    expect(oracle?.binding.reproduces).toBe(true);
+  });
+
+  it('leaves `reproduces` undefined on an ordinary oracle', () => {
+    const [oracle] = parseOracles(
+      [
+        '## ORC-x-001: Ordinary',
+        '**Then** it passes',
+        '',
+        '```yaml crucible-binding',
+        'requirement: REQ-x-1',
+        'kind: unit',
+        'runner: stub',
+        'target: x::t',
+        '```',
+      ].join('\n'),
+      'inline.md',
+    );
+    expect(oracle?.binding.reproduces).toBeUndefined();
+  });
+
+  it('rejects a non-boolean `reproduces` at exit 3 (strict schema)', () => {
+    try {
+      parseOracles(
+        [
+          '## ORC-x-001: Bad reproduces',
+          '**Then** it passes',
+          '',
+          '```yaml crucible-binding',
+          'requirement: REQ-x-1',
+          'kind: unit',
+          'runner: stub',
+          'target: x::t',
+          'reproduces: yes-please',
+          '```',
+        ].join('\n'),
+        'inline.md',
+      );
+      expect.unreachable('non-boolean reproduces must throw');
+    } catch (err) {
+      expect(isCrucibleError(err) && err.exit).toBe(3);
+    }
+  });
 });
 
 describe('parseOracles — invalid fixtures (exit 3, heading + line named)', () => {

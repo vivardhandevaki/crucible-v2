@@ -30,7 +30,18 @@ const CORE_SRC = join(ROOT, 'core', 'src');
 const LAYER_ORDER = [
   ['cli'],
   ['commands'],
-  ['artifacts', 'hash', 'lint', 'tier', 'verifyx', 'substrate', 'adapters', 'config', 'state'],
+  [
+    'artifacts',
+    'hash',
+    'lint',
+    'tier',
+    'changetype',
+    'verifyx',
+    'substrate',
+    'adapters',
+    'config',
+    'state',
+  ],
   ['util'],
 ];
 

@@ -14,6 +14,12 @@
 //      on disk (invariant 2 — the agent's claim is worth zero; only the artifact
 //      counts). Implementation cannot begin without a plan the command can see.
 //
+// It also honors the escalation layer (charter §Escalation, layer 2, added P2-04):
+// while an unresolved escalation.yaml exists in the bundle it refuses to resume
+// (exit 2, teach `crucible amend`), and if THIS run's implement session files one
+// it halts before verify — the agent stopped on an ambiguity only a human may
+// resolve, and there is nothing to judge until they do.
+//
 // After the (single, non-looping — P1 has no iteration budget, that is P2)
 // implement session, it runs the local `verify` core (P1-12) and returns that
 // report: a red verdict is the code failing, mapped to exit 1 at the CLI, never
@@ -28,6 +34,8 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadApproval, verifyApproval } from '../artifacts/approval.js';
+import { readEscalationIfPresent } from '../artifacts/escalation.js';
+import type { CrucibleError } from '../util/errors.js';
 import type { ResolveFn } from '../lint/traceability.js';
 import type { AgentSubstrate } from '../substrate/types.js';
 import type { Oracle } from '../artifacts/oracles.js';
@@ -130,6 +138,17 @@ export async function implement(
     );
   }
 
+  // Structural escalation gate (charter §Escalation, layer 2): while an unresolved
+  // escalation.yaml exists, implement refuses to resume — the agent stopped on an
+  // ambiguity that only a human (via `crucible amend`) may resolve. A malformed
+  // escalation fails closed at exit 3 inside the reader (invariant 3); a valid one
+  // → exit 2 naming `crucible amend`. escalation.yaml is a real artifact, so
+  // gating on it is enforcement-from-truth, not from the derived state cache.
+  const escalationPath = join(changeDir, 'escalation.yaml');
+  if (readEscalationIfPresent(escalationPath) !== undefined) {
+    throw escalationPendingError(change);
+  }
+
   // Both sessions mint transcripts from the injected clock (architecture.md §6:
   // caller-owned naming). Distinct prefixes so the two never collide on one tick.
   const stamp = deps.now().replace(/[:.]/g, '-');
@@ -188,6 +207,22 @@ export async function implement(
   });
   // SubstrateResult carries nothing to trust (invariant 2) — judge via verify.
 
+  // Mid-run halt (charter §Escalation, layer 2 — "escalate ... ends the run"): if
+  // the implement session hit an ambiguity and ran `crucible escalate`, the bundle
+  // now carries an escalation.yaml. Stop BEFORE verify — there is nothing to judge
+  // yet, and claiming a verdict over a half-done change would be dishonest. Record
+  // the halt (audit only, invariant 1) and refuse with the same `amend` hint the
+  // resume gate uses; a malformed escalation still fails closed at exit 3 here.
+  if (readEscalationIfPresent(escalationPath) !== undefined) {
+    appendStateEvent(
+      join(changeDir, 'state.yaml'),
+      change,
+      { at: deps.now(), cmd: 'implement', summary: 'halted — escalation filed' },
+      'escalated',
+    );
+    throw escalationPendingError(change);
+  }
+
   // Local verify (design §6): reuse the P1-12 core. A void seal (the session
   // edited a sealed test file) surfaces as a red `approval` check, exit 1 — the
   // seal catching an immutability violation rather than trusting the session.
@@ -205,6 +240,22 @@ export async function implement(
     render: renderReport(report, 'implement'),
     transcriptPaths: { tasks: tasksTranscript, implement: implementTranscript },
   };
+}
+
+/**
+ * The exit-2, teach-`amend` error both escalation gates raise (charter §Escalation
+ * layer 2): the resume-refusal (a pending escalation from a prior run) and the
+ * mid-run halt (this run's session filed one). Identical outcome — the loop stops
+ * until a human resolves the ambiguity through `crucible amend`, never improvised.
+ */
+function escalationPendingError(change: string): CrucibleError {
+  return preconditionError(
+    'ESCALATION_PENDING',
+    `Cannot implement ${change}: an unresolved escalation is pending (escalation.yaml). ` +
+      'The implement agent stopped on a decision that is not derivable from the approved spec.',
+    `Resolve it with \`crucible amend ${change}\` (pick an option / patch the spec), ` +
+      `then re-run \`crucible implement ${change}\`.`,
+  );
 }
 
 /** The work order for the first session: author the work breakdown, nothing else. */

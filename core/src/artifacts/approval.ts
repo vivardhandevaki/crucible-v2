@@ -84,6 +84,34 @@ export function sealBundle(root: string, relpaths: string[], meta: ApprovalMeta)
 }
 
 /**
+ * Re-seal an approved bundle with an amendment (charter §Approval, Amend,
+ * Override — Wire Format: "a delta entry with new hashes is appended to
+ * approval.yaml"; design phase-2.md §3). `crucible amend` calls this after the
+ * agent has coherently regenerated the bundle: it recomputes every covered
+ * file's hash from current bytes (the same sorted, byte-stable scope `sealBundle`
+ * produces), sets that fresh map as the live `files` seal (so `verifyApproval`
+ * passes post-amend), and appends `{ at, files }` to `amendments[]` as the audit
+ * record of this re-seal. The original approver/approved_at metadata is
+ * preserved — an amendment is a delta on an existing approval, not a fresh one.
+ */
+export function amendApproval(
+  root: string,
+  relpaths: string[],
+  at: string,
+  existing: Approval,
+): Approval {
+  const files: Record<string, string> = {};
+  for (const rel of [...relpaths].sort()) {
+    files[rel] = hashFile(join(root, rel));
+  }
+  return {
+    ...existing,
+    files,
+    amendments: [...existing.amendments, { at, files }],
+  };
+}
+
+/**
  * Recompute every covered file's hash against the seal. Returns `{valid:true}`
  * only if every covered file exists and matches; otherwise `void`, listing —
  * sorted — every relpath whose content differs or that has gone missing

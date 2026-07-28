@@ -17,22 +17,32 @@
 // the plain terminal render; the rich side-by-side gate is P2 (phase-0-1.md §17
 // deferrals).
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { loadOracles, type Oracle } from '../artifacts/oracles.js';
 import { loadProposal } from '../artifacts/proposal.js';
-import { loadSpecDelta, type SpecRequirement } from '../artifacts/spec-delta.js';
+import type { SpecRequirement } from '../artifacts/spec-delta.js';
 import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
+import { collectArchivedRequirementIds } from '../regression/regression.js';
 import { sealBundle, serializeApproval } from '../artifacts/approval.js';
-import { appendStateEvent } from '../state/state.js';
+import {
+  checkStaleness,
+  readGenerationIfPresent,
+  serializeGeneration,
+  stampGeneration,
+} from '../artifacts/generation.js';
+import {
+  computeHashScope,
+  dependencyOrder,
+  gatherTypeFacts,
+  loadRequirementsForType,
+} from './bundle.js';
+import { assertTypeConformance, readChangeType } from '../changetype/changetype.js';
+import { appendStateEvent, recordSnapshotType } from '../state/state.js';
 import { preconditionError } from '../util/errors.js';
-import { writeFileSync } from 'node:fs';
 
 /** The P1 approval.yaml schema version (design §3). */
 const APPROVAL_VERSION = 1;
-
-/** The artifacts that always live directly in a change bundle dir. */
-const CORE_ARTIFACTS = ['proposal.md', 'design.md', 'oracles.md'] as const;
 
 /** Injected non-deterministic edges — so the command's core stays reproducible. */
 export interface ApproveDeps {
@@ -59,6 +69,14 @@ export interface ApproveOptions {
   change: string;
   /** Skip the interactive confirm (`--yes`). */
   yes: boolean;
+  /**
+   * `--confirm-consistency`: proceed past a staleness refusal (charter §Editing
+   * Artifacts). When an upstream artifact was hand-edited after a downstream one
+   * was generated, approve refuses by default; this flag asserts the human has
+   * checked the edits are coherent, re-stamping the generation ledger to the
+   * current bytes and sealing. The alternative is `crucible propose --revise`.
+   */
+  confirmConsistency?: boolean;
 }
 
 /** approve outcome: `approved` is false only when the human declined. */
@@ -95,13 +113,23 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
   // the whole bundle parsing (invariant 5), and the Unspecified/Seams sections
   // are part of the review surface being sealed (P1-09 proposal grammar).
   loadProposal(join(changeDir, 'proposal.md'));
-  const requirements = loadAllRequirements(changeDir, changeRel);
+  // The pinned change type (charter §Change Types): a FEATURE requires a spec
+  // delta; a refactor/bugfix may carry none. Revalidated below (design §4).
+  const type = readChangeType(changeDir);
+  const requirements = loadRequirementsForType(changeDir, changeRel, type);
   const oracles = loadOracles(join(changeDir, 'oracles.md'));
+
+  // Revalidate the type before sealing (invariant 5 / design §4): a bundle that
+  // violates its pinned type must never be sealed — a refactor carrying a spec
+  // delta or oracles, or a bugfix with no reproduction oracle, is exit 3 here.
+  assertTypeConformance(type, gatherTypeFacts(changeDir, oracles));
 
   // Precondition: the traceability lint must be green (invariant 5). A red lint
   // is a bundle that promises something no executable check covers — refuse to
-  // seal it, and name the fix.
-  const lint = await lintTraceability(requirements, oracles, deps.resolve);
+  // seal it, and name the fix. The archived-REQ index lets a bugfix/ratchet oracle
+  // legally bind an OLD requirement id from the archived spec (design phase-2.md §1).
+  const archivedReqIds = collectArchivedRequirementIds(root);
+  const lint = await lintTraceability(requirements, oracles, deps.resolve, archivedReqIds);
   if (!lint.ok) {
     const detail = lint.findings.map((f) => `  ✗ ${f.message}`).join('\n');
     throw preconditionError(
@@ -109,6 +137,32 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
       `Cannot approve ${change}: traceability lint failed —\n${detail}`,
       `Fix the bundle and re-run \`crucible propose ${change} --revise "<fix>"\`, then \`crucible approve ${change}\`.`,
     );
+  }
+
+  // Staleness gate (charter §Editing Artifacts / invariant 5): if a generation
+  // ledger exists and an UPSTREAM artifact was hand-edited after a DOWNSTREAM one
+  // was generated, the downstream may be stale — refuse until the human either
+  // regenerates coherently (`--revise`) or asserts consistency. A bundle with no
+  // ledger (P1-era / hand-authored) has no lineage to check and passes through;
+  // the post-approval hash seal is the hard immutability guarantee regardless.
+  const generationPath = join(changeDir, 'generation.yaml');
+  const generation = readGenerationIfPresent(generationPath);
+  let restampStaleLedger = false;
+  if (generation !== undefined) {
+    const staleness = checkStaleness(changeDir, generation);
+    if (staleness.stale) {
+      if (options.confirmConsistency !== true) {
+        const leaf = staleness.downstream[staleness.downstream.length - 1] ?? '(downstream)';
+        throw preconditionError(
+          'BUNDLE_STALE',
+          `Cannot approve ${change}: ${staleness.editedPath} was edited after ${leaf} was generated — the downstream artifacts may be stale.`,
+          `Regenerate coherently with \`crucible propose ${change} --revise "<fix>"\`, or re-run \`crucible approve ${change} --confirm-consistency\` if you have checked the edits are consistent.`,
+        );
+      }
+      // The human asserts consistency: accept the hand-edits as coherent. Defer
+      // the re-stamp to the seal step so a declined confirm writes nothing.
+      restampStaleLedger = true;
+    }
   }
 
   // The hash scope (design §4): the core bundle artifacts, every spec-delta file
@@ -125,6 +179,14 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
     }
   }
 
+  // Confirmed-consistency re-stamp (deferred from the staleness gate): now that
+  // we are actually sealing, accept the hand-edits by re-stamping the ledger to
+  // the current bytes so future staleness checks start clean from here.
+  if (restampStaleLedger) {
+    const restamped = stampGeneration(changeDir, change, dependencyOrder(changeDir), deps.now());
+    writeFileSync(generationPath, serializeGeneration(restamped), 'utf8');
+  }
+
   // Seal + write. sealBundle emits `files` sorted → byte-stable serialization,
   // so re-approving an unchanged bundle is idempotent (same bytes).
   const approval = sealBundle(root, relpaths, {
@@ -136,107 +198,18 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
   writeFileSync(join(changeDir, 'approval.yaml'), serializeApproval(approval), 'utf8');
 
   // Append the audit event last (design §3 / invariant 1 — never read to gate).
+  const statePath = join(changeDir, 'state.yaml');
   appendStateEvent(
-    join(changeDir, 'state.yaml'),
+    statePath,
     change,
     { at: deps.now(), cmd: 'approve', summary: `sealed ${relpaths.length} file(s)` },
     'approved',
   );
+  // Re-record the type into the snapshot for `status` display (design §4). Derived
+  // convenience (invariant 1) — the `.openspec.yaml` pin remains the real record.
+  recordSnapshotType(statePath, type);
 
   return { approved: true, render, sealedFiles: relpaths };
-}
-
-/**
- * Parse every spec-delta markdown file under the change's `specs/**` into one
- * ordered requirement list. A bundle with no spec delta at all is a precondition
- * failure (exit 2) — approve has nothing to gate. Order is deterministic:
- * files sorted by relative path, requirements in source order within each.
- */
-function loadAllRequirements(changeDir: string, changeRel: string): SpecRequirement[] {
-  const specsDir = join(changeDir, 'specs');
-  const specFiles = existsSync(specsDir) ? markdownFilesUnder(specsDir).sort() : [];
-  if (specFiles.length === 0) {
-    throw preconditionError(
-      'NO_SPEC_DELTA',
-      `No spec delta found under ${join(changeRel, 'specs')}.`,
-      'Run `crucible propose` to scaffold the change bundle with a spec delta.',
-    );
-  }
-  return specFiles.flatMap((file) => loadSpecDelta(file));
-}
-
-/**
- * The sealed relpaths (design §4), relative to `root`, deterministically sorted:
- *   proposal.md, design.md, oracles.md, every specs/** markdown, every bound
- *   test file. Bound test files come from the resolver's `targetFile` — the core
- *   never parses the opaque `target` syntax (charter §Bindings). A `found`
- *   target that reports no `targetFile` is a fail-closed precondition (exit 2):
- *   we cannot seal a check whose file we cannot locate.
- */
-async function computeHashScope(
-  root: string,
-  changeRel: string,
-  changeDir: string,
-  oracles: readonly Oracle[],
-  resolve: ResolveFn,
-): Promise<string[]> {
-  const covered = new Set<string>();
-
-  for (const artifact of CORE_ARTIFACTS) {
-    covered.add(join(changeRel, artifact));
-  }
-  for (const abs of markdownFilesUnder(join(changeDir, 'specs'))) {
-    covered.add(relative(root, abs));
-  }
-
-  const targets = dedupeTargets(oracles);
-  if (targets.length > 0) {
-    const resolutions = await resolve(targets);
-    const byTarget = new Map(resolutions.map((r) => [r.target, r] as const));
-    for (const target of targets) {
-      const resolution = byTarget.get(target);
-      if (resolution === undefined || resolution.status !== 'found' || !resolution.targetFile) {
-        throw preconditionError(
-          'UNRESOLVED_TARGET_FILE',
-          `Cannot approve: bound target ${target} did not resolve to a file to seal.`,
-          'Re-run `crucible propose --revise` so every oracle binds an addressable test.',
-        );
-      }
-      covered.add(resolution.targetFile);
-    }
-  }
-
-  return [...covered].sort();
-}
-
-/** Distinct oracle targets in first-appearance order (matches lint dedupe). */
-function dedupeTargets(oracles: readonly Oracle[]): string[] {
-  const seen = new Set<string>();
-  const ordered: string[] = [];
-  for (const oracle of oracles) {
-    for (const target of oracle.binding.targets) {
-      if (!seen.has(target)) {
-        seen.add(target);
-        ordered.push(target);
-      }
-    }
-  }
-  return ordered;
-}
-
-/** All `.md` files under `dir` (recursive), absolute paths. Empty if absent. */
-function markdownFilesUnder(dir: string): string[] {
-  if (!existsSync(dir)) return [];
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      out.push(...markdownFilesUnder(full));
-    } else if (entry.endsWith('.md')) {
-      out.push(full);
-    }
-  }
-  return out;
 }
 
 /**

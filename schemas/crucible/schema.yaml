@@ -1,0 +1,94 @@
+name: crucible
+version: 1
+description: >-
+  Crucible FEATURE change type (the default). Full artifact bundle — proposal →
+  spec delta → design → oracles → tasks — where a human approves the spec + the
+  oracles that pin it, and correctness is the current change's oracles plus the
+  regression suite. Custom `oracles` artifact: install by copying, never via
+  `openspec schema init` (spike-notes §schema format).
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Why the change is needed + what it does NOT decide
+    template: proposal.md
+    instruction: |
+      Author the proposal. Beyond the conventional Why / What Changes / Impact
+      prose, Crucible REQUIRES two sections it enforces at the gate:
+
+      - **## Unspecified** — what this proposal deliberately does NOT decide /
+        holds out of scope. Approval does not cover anything listed here.
+      - **## Seams** — external systems touched, contracts crossed, and any
+        concurrent changes in flight.
+
+      Neither may be empty. If there is nothing to list, write `None known.`
+      (a missing, empty, or duplicated section fails the bundle judge, exit 3).
+    requires: []
+
+  - id: specs
+    generates: 'specs/**/*.md'
+    description: The spec delta — normative requirements this change adds/changes
+    template: spec.md
+    instruction: |
+      Author the spec delta: one `specs/<capability>/spec.md` per capability.
+
+      - Each requirement: `### Requirement: <name> [REQ-<slug>-<seq>]` — the
+        bracketed id is REQUIRED (Crucible traces every REQ to an oracle by it).
+      - Use SHALL/MUST for normative statements.
+      - Every requirement MUST have at least one `#### Scenario:` (exactly four
+        hashes) with WHEN/THEN.
+
+      A requirement with no oracle covering it is a wish, not a spec — the
+      traceability lint will block it.
+    requires:
+      - proposal
+
+  - id: design
+    generates: design.md
+    description: How the change is implemented (architecture, decisions, risks)
+    template: design.md
+    instruction: |
+      Author the technical design: context, decisions with rationale, risks and
+      trade-offs, migration. Reference the proposal for motivation and the spec
+      delta for requirements. Focus on the "why" behind the technical choices,
+      not line-by-line implementation.
+    requires:
+      - specs
+
+  - id: oracles
+    generates: oracles.md
+    description: One executable oracle per requirement, each with an adapter binding
+    template: oracles.md
+    instruction: |
+      Author oracles.md: one oracle per requirement in the spec delta.
+
+      - Heading: `## ORC-<slug>-<seq3>: <title>` (sequence is exactly 3 digits).
+      - Human-readable Given / When / Then prose beneath the heading.
+      - Exactly one fenced ```yaml crucible-binding``` block per oracle with:
+          requirement: REQ-...   # the single requirement this oracle judges
+          kind: unit|property|contract|integration
+          runner: <adapter runner name>
+          target: <opaque adapter target>   # or `targets: [..]` for several
+
+      Every requirement MUST be covered by at least one oracle, and every
+      binding target MUST resolve through the adapter, or the lint blocks.
+    requires:
+      - design
+
+  - id: tasks
+    generates: tasks.md
+    description: Implementation checklist (authored during implement, post-approval)
+    template: tasks.md
+    instruction: |
+      Break the implementation into small, dependency-ordered, checkbox tasks
+      (`- [ ] X.Y ...`) grouped under `## N.` headings. Reference the spec delta
+      for WHAT and the design for HOW. Each task should be verifiable.
+    requires:
+      - oracles
+
+apply:
+  requires: [tasks]
+  tracks: tasks.md
+  instruction: |
+    Work through pending tasks, marking each complete as you go. On any decision
+    the approved spec does not determine, STOP and run `crucible escalate` — do
+    not improvise the missing decision into code.

@@ -1,0 +1,65 @@
+name: crucible-refactor
+version: 1
+description: >-
+  Crucible REFACTOR change type. A refactor promises NOTHING new: no spec delta
+  is permitted and no new oracles are added. Its correctness criterion is the
+  regression suite alone — every past promise must still hold. Thin bundle:
+  proposal → design → (empty) oracles → tasks. Crucible fails closed (exit 3) if
+  a refactor bundle carries a spec delta or any oracle.
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Why the refactor is worth doing + what it does NOT touch
+    template: proposal.md
+    instruction: |
+      Author the proposal. A refactor changes structure, not behavior — say so.
+      Crucible still REQUIRES two enforced sections (neither may be empty; write
+      `None known.` if there is nothing):
+
+      - **## Unspecified** — anything held out of scope for this refactor.
+      - **## Seams** — external systems touched, contracts crossed, in-flight work.
+
+      Do NOT author a spec delta and do NOT add oracles: a refactor that needs
+      either is a feature or a bugfix, not a refactor.
+    requires: []
+
+  - id: design
+    generates: design.md
+    description: What is being restructured and why it is behavior-preserving
+    template: design.md
+    instruction: |
+      Author the design: what is being restructured, the before/after shape, and
+      the argument that behavior is preserved. The regression suite is the check
+      on that claim — name any past behavior you are relying on it to pin.
+    requires:
+      - proposal
+
+  - id: oracles
+    generates: oracles.md
+    description: Empty — a refactor adds no new oracles (kept for a uniform seal)
+    template: oracles.md
+    instruction: |
+      A refactor introduces NO new oracles. Leave this file with only its title
+      (`# Oracles`) and the note that correctness is the regression suite. Adding
+      any `## ORC-...` oracle here makes the change a feature/bugfix, not a
+      refactor, and Crucible will fail the bundle closed (exit 3).
+    requires:
+      - design
+
+  - id: tasks
+    generates: tasks.md
+    description: Implementation checklist (authored during implement, post-approval)
+    template: tasks.md
+    instruction: |
+      Break the refactor into small, dependency-ordered, checkbox tasks
+      (`- [ ] X.Y ...`). Each step should keep the regression suite green.
+    requires:
+      - oracles
+
+apply:
+  requires: [tasks]
+  tracks: tasks.md
+  instruction: |
+    Work through pending tasks, keeping behavior unchanged. The regression suite
+    is your correctness check — run `crucible verify` often. On any decision the
+    refactor's scope does not determine, STOP and run `crucible escalate`.

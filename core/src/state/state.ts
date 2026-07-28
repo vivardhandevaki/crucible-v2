@@ -19,6 +19,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 import { invalidInputError } from '../util/errors.js';
 import { tierDecisionSchema } from '../tier/tier.js';
+import { CHANGE_TYPES } from '../changetype/changetype.js';
 
 /** One append-only audit event: when, which command, a one-line summary. */
 const stateEventSchema = z.strictObject({
@@ -40,6 +41,11 @@ const snapshotSchema = z.strictObject({
   phase: z.string().min(1),
   last_verify: z.string().optional(),
   tier: tierDecisionSchema.optional(),
+  /** The change type recorded from the `.openspec.yaml` schema pin (design
+   * phase-2.md §4), set at propose and displayed by `status`. Optional: a P1-era
+   * state.yaml omits it. Like every derived field it is never read to make an
+   * enforcement decision (invariant 1) — verify re-reads the pin and revalidates. */
+  change_type: z.enum(CHANGE_TYPES).optional(),
 });
 
 /** state.yaml (design §3), strict — an unknown key fails closed at exit 3. */
@@ -98,6 +104,41 @@ export function appendStateEvent(
   state.events.push(event);
   state.snapshot.phase = phase;
   writeFileSync(path, serializeState(state), 'utf8');
+}
+
+/**
+ * Best-effort (invariant 11): record a recomputed tier decision into
+ * `snapshot.tier` so `status` can display it (design phase-2.md §2 — the
+ * populator P2-02 deferred to "the diff edge in P2-03"). Convenience only: it
+ * NEVER creates a state.yaml (an absent file is left absent), never advances the
+ * phase, and is never read to make an enforcement decision (invariant 1 — CI
+ * recomputes the authoritative tier). A parse/write failure is swallowed by the
+ * caller: a display cache must never block the verdict. Returns whether it wrote.
+ */
+export function recordSnapshotTier(path: string, tier: State['snapshot']['tier']): boolean {
+  const state = readState(path);
+  if (state === undefined) return false;
+  state.snapshot.tier = tier;
+  writeFileSync(path, serializeState(state), 'utf8');
+  return true;
+}
+
+/**
+ * Record the change type into `snapshot.change_type` so `status` can display it
+ * (design phase-2.md §4). Best-effort convenience (invariant 11), like
+ * `recordSnapshotTier`: it NEVER creates a state.yaml (absent → left absent),
+ * never advances the phase, and is never read to make an enforcement decision
+ * (invariant 1 — verify re-reads the `.openspec.yaml` pin). Returns whether it wrote.
+ */
+export function recordSnapshotType(
+  path: string,
+  changeType: State['snapshot']['change_type'],
+): boolean {
+  const state = readState(path);
+  if (state === undefined) return false;
+  state.snapshot.change_type = changeType;
+  writeFileSync(path, serializeState(state), 'utf8');
+  return true;
 }
 
 /** Read + parse state.yaml, or `undefined` if it does not exist yet. */

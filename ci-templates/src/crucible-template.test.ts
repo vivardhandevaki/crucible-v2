@@ -14,31 +14,51 @@ import { CI_TEMPLATE_PATH } from './index.js';
 //   - a red verify verdict fails the check — no error-swallowing anywhere on the
 //     gate (fail-closed, invariant #3).
 //
-// The *executable* proof (a PR that loosens a glob and still fails) needs verify
-// to consume `--config-from`, which is P2-03; that proof is tracked as P2-18.
+// As of P2-03 verify CONSUMES `--config-from`, so the executable behavioral proof
+// (a PR that loosens a glob and still routes to human) is delivered by P2-18's
+// hermetic target-branch-rule test. This file asserts the workflow's *structure*:
+// target-branch sourcing, the fail-closed gate, and the new `route` job that holds
+// a critical change red until a non-author approves (design phase-2.md §2).
 
 interface Step {
   name?: string;
   uses?: string;
   run?: string;
   id?: string;
+  env?: Record<string, unknown>;
+  'continue-on-error'?: boolean;
+}
+
+interface Job {
+  steps?: Step[];
+  needs?: string | string[];
+  outputs?: Record<string, string>;
+  permissions?: Record<string, string>;
   'continue-on-error'?: boolean;
 }
 
 interface Workflow {
   name?: string;
   on?: Record<string, unknown>;
-  jobs?: Record<string, { steps?: Step[]; 'continue-on-error'?: boolean }>;
+  permissions?: Record<string, string>;
+  jobs?: Record<string, Job>;
 }
 
 const workflow = parseYaml(readFileSync(CI_TEMPLATE_PATH, 'utf8')) as Workflow;
 const steps = workflow.jobs?.verify?.steps ?? [];
 
-/** The first step whose name contains `fragment` (case-insensitive). */
-function stepNamed(fragment: string): Step {
-  const found = steps.find((s) => (s.name ?? '').toLowerCase().includes(fragment.toLowerCase()));
-  if (!found) throw new Error(`no step named like "${fragment}" in the workflow`);
+/** The first step of `job` whose name contains `fragment` (case-insensitive). */
+function stepOf(job: Job | undefined, fragment: string): Step {
+  const found = (job?.steps ?? []).find((s) =>
+    (s.name ?? '').toLowerCase().includes(fragment.toLowerCase()),
+  );
+  if (!found) throw new Error(`no step named like "${fragment}" in the job`);
   return found;
+}
+
+/** The first verify-job step whose name contains `fragment`. */
+function stepNamed(fragment: string): Step {
+  return stepOf(workflow.jobs?.verify, fragment);
 }
 
 describe('crucible.yml — a pull-request enforcement gate', () => {
@@ -109,5 +129,100 @@ describe('crucible.yml — fail-closed gate (verify red → check red, invariant
     // verify aborts the step rather than continuing past the error.
     expect(stepNamed('target-branch enforcement config').run ?? '').toContain('set -euo pipefail');
     expect(stepNamed('verify').run ?? '').toContain('set -euo pipefail');
+  });
+});
+
+describe('crucible.yml — tier routing (P2-03, design phase-2.md §2)', () => {
+  const route = workflow.jobs?.route;
+
+  it('diffs against the target branch so the tier is computed vs origin/<base_ref>', () => {
+    const cmd = (stepNamed('verify').run ?? '')
+      .split('\n')
+      .find((l) => l.includes('npx') && l.includes('verify '));
+    expect(cmd, 'an `npx crucible ... verify` invocation line').toBeTruthy();
+    // --diff-base is a verify subcommand option (after `verify <change>`) pointed
+    // at the target branch — the tier/cap are judged against origin/<base_ref>.
+    expect(cmd).toContain('--diff-base');
+    expect(cmd).toContain('origin/');
+  });
+
+  it('the verify job exposes the routing decision as a job output', () => {
+    // route (a separate job) consumes routing via a job output — the verify step
+    // writes it to $GITHUB_OUTPUT and the job re-exports it.
+    expect(workflow.jobs?.verify?.outputs?.routing).toBeTruthy();
+    expect(stepNamed('verify').run ?? '').toContain('GITHUB_OUTPUT');
+  });
+
+  it('re-evaluates when a review lands (pull_request_review trigger)', () => {
+    // So the check flips green the moment the required approval arrives.
+    expect(workflow.on && 'pull_request_review' in workflow.on).toBe(true);
+  });
+
+  it('has a required `route` job gated on verify with pull-requests: read', () => {
+    expect(route, 'a route job').toBeTruthy();
+    // route depends on verify (only routes an already-green change).
+    const needs = route?.needs;
+    expect(Array.isArray(needs) ? needs.includes('verify') : needs === 'verify').toBe(true);
+    // The reviews query needs pull-requests: read (job- or workflow-level).
+    const perms = route?.permissions ?? workflow.permissions ?? {};
+    expect(perms['pull-requests']).toBe('read');
+  });
+
+  it('critical → human: route stays red until a NON-AUTHOR APPROVED review exists', () => {
+    const run = stepOf(route, 'routing').run ?? '';
+    // Only human routing blocks; auto passes.
+    expect(run).toContain('human');
+    // It queries reviews for an APPROVED state from someone other than the author.
+    expect(run).toContain('APPROVED');
+    expect(run.toLowerCase()).toContain('author');
+    // Blocking is a hard failure (exit 1) — the required check stays red.
+    expect(run).toContain('exit 1');
+  });
+
+  it('the route gate is fail-closed — no swallowed failure', () => {
+    const run = stepOf(route, 'routing').run ?? '';
+    expect(run).not.toContain('|| true');
+    expect(run).not.toContain('|| exit 0');
+    expect(route?.['continue-on-error']).not.toBe(true);
+    for (const step of route?.steps ?? []) {
+      expect(step['continue-on-error']).not.toBe(true);
+    }
+  });
+});
+
+describe('crucible.yml — override ratchet issue (P2-06, design phase-2.md §3)', () => {
+  it('grants issues: write so the override ratchet issue can be filed', () => {
+    // Workflow- or verify-job level. The forced-human teeth come from routing;
+    // this permission is only for the self-repairing paper trail.
+    const perms = workflow.jobs?.verify?.permissions ?? workflow.permissions ?? {};
+    expect(perms.issues).toBe('write');
+  });
+
+  it('captures the override issue payload verify emits in its --json report', () => {
+    // The verify loop stashes `.override.issue` for the filing step — CI never
+    // builds the payload itself; the core emits it (design §3, no token plumbing).
+    const run = stepNamed('verify').run ?? '';
+    expect(run).toContain('.override.issue');
+  });
+
+  it('files the ratchet issue idempotently, searching the crucible-override label first', () => {
+    const step = stepNamed('override ratchet');
+    const run = step.run ?? '';
+    // Searches OPEN crucible-override issues for the change before creating one.
+    expect(run).toContain('crucible-override');
+    expect(run).toContain('gh issue list');
+    expect(run).toContain('--state open');
+    // Only creates when none exists (idempotency: no duplicate on PR re-runs).
+    expect(run).toContain('gh issue create');
+    // Uses the ambient token, not any bespoke plumbing.
+    expect(step.env?.GH_TOKEN).toBeTruthy();
+  });
+
+  it('the filing step is fail-closed — no swallowed failure', () => {
+    const run = stepNamed('override ratchet').run ?? '';
+    expect(run).toContain('set -euo pipefail');
+    expect(run).not.toContain('|| true');
+    expect(run).not.toContain('|| exit 0');
+    expect(stepNamed('override ratchet')['continue-on-error']).not.toBe(true);
   });
 });

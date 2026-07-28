@@ -50,6 +50,44 @@ describe('buildProgram', () => {
     },
   );
 
+  it('registers the P2 `override` verb so it appears in help', async () => {
+    const cap = captureIO();
+    await runProgram(buildProgram(), ['--help'], cap.io);
+    expect(cap.out()).toContain('override');
+  });
+
+  it('override with a change but no <reason> → exit 2 (P2-06 acceptance)', async () => {
+    const cap = captureIO();
+    // A missing required argument is a commander usage error the runner maps to
+    // exit 2 — never a silent success or exit 4.
+    const code = await runProgram(buildProgram(), ['override', 'some-change'], cap.io);
+    expect(code).toBe(2);
+  });
+
+  it('registers the P2 `escalate` verb so it appears in help', async () => {
+    const cap = captureIO();
+    await runProgram(buildProgram(), ['--help'], cap.io);
+    expect(cap.out()).toContain('escalate');
+  });
+
+  it('escalate with a change but no --question → exit 2 (required option)', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['escalate', 'some-change'], cap.io);
+    expect(code).toBe(2);
+  });
+
+  it('registers the P2 `archive` verb so it appears in help', async () => {
+    const cap = captureIO();
+    await runProgram(buildProgram(), ['--help'], cap.io);
+    expect(cap.out()).toContain('archive');
+  });
+
+  it('archive with no <change> argument → exit 2 (required argument)', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['archive'], cap.io);
+    expect(code).toBe(2);
+  });
+
   it('unknown command against the real program → exit 2 with help + hint', async () => {
     const cap = captureIO();
     const code = await runProgram(buildProgram(), ['frobnicate'], cap.io);

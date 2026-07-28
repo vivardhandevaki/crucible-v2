@@ -6,6 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CrucibleError, isCrucibleError } from '../util/errors.js';
 import type { ResolveFn, TargetResolution } from '../lint/traceability.js';
 import { parseApproval } from '../artifacts/approval.js';
+import {
+  readGenerationIfPresent,
+  serializeGeneration,
+  stampGeneration,
+} from '../artifacts/generation.js';
+import { dependencyOrder } from './bundle.js';
 import { approve, type ApproveDeps, type ApproveResult } from './approve.js';
 
 // TCB: `approve` is the one human gate (charter §The Core Inversion). It must
@@ -259,5 +265,84 @@ describe('approve — appends a state event (design §3)', () => {
     );
     expect(result.approved).toBe(false);
     expect(existsSync(statePath(scratch))).toBe(false);
+  });
+});
+
+describe('approve — staleness gate (charter §Editing Artifacts; P2-05)', () => {
+  const changeDir = (root: string): string => join(root, CHANGE_REL);
+  const generationPath = (root: string): string => join(changeDir(root), 'generation.yaml');
+  const designPath = (root: string): string => join(changeDir(root), 'design.md');
+
+  /** Stamp a coherent generation ledger over the toy bundle (as propose would). */
+  function stampToy(root: string): void {
+    const gen = stampGeneration(
+      changeDir(root),
+      CHANGE,
+      dependencyOrder(changeDir(root)),
+      '2026-07-20T00:00:00Z',
+    );
+    writeFileSync(generationPath(root), serializeGeneration(gen), 'utf8');
+  }
+
+  it('refuses at exit 2 when design.md was edited after oracles was generated', async () => {
+    stampToy(scratch);
+    // Hand-edit an UPSTREAM artifact after generation → downstream may be stale.
+    writeFileSync(designPath(scratch), readFileSync(designPath(scratch), 'utf8') + '\nedited\n');
+    const err = await catchCrucible(() =>
+      approve({ root: scratch, change: CHANGE, yes: true }, deps()),
+    );
+    expect(err.exit).toBe(2);
+    expect(err.code).toBe('BUNDLE_STALE');
+    expect(err.message).toContain('design.md');
+    // The teaching hint names both escape hatches.
+    expect(err.hint).toContain('--revise');
+    expect(err.hint).toContain('--confirm-consistency');
+    expect(existsSync(approvalPath(scratch))).toBe(false);
+  });
+
+  it('--confirm-consistency proceeds and re-stamps the ledger to current bytes', async () => {
+    stampToy(scratch);
+    writeFileSync(designPath(scratch), readFileSync(designPath(scratch), 'utf8') + '\nedited\n');
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: true, confirmConsistency: true },
+      deps(),
+    );
+    expect(result.approved).toBe(true);
+    // The ledger now reflects the edited bytes — a re-check would be clean.
+    const gen = readGenerationIfPresent(generationPath(scratch))!;
+    const design = gen.artifacts.find((a) => a.path === 'design.md')!;
+    // Re-stamped at the frozen approve clock, not the original generation clock.
+    expect(gen.generated_at).toBe('2026-07-23T00:00:00Z');
+    // And the recorded hash matches the current (edited) design.md.
+    const fresh = stampGeneration(changeDir(scratch), CHANGE, ['design.md'], 'x');
+    expect(design.hash).toBe(fresh.artifacts[0]!.hash);
+  });
+
+  it('a leaf-only edit (oracles.md) is not stale — approve proceeds normally', async () => {
+    stampToy(scratch);
+    const oracles = join(changeDir(scratch), 'oracles.md');
+    writeFileSync(oracles, readFileSync(oracles, 'utf8') + '\n<!-- sharpened -->\n');
+    const result = await approve({ root: scratch, change: CHANGE, yes: true }, deps());
+    expect(result.approved).toBe(true);
+  });
+
+  it('a bundle with no generation ledger passes through (no lineage to check)', async () => {
+    // The toy fixture has no generation.yaml; approve seals it as before.
+    const result = await approve({ root: scratch, change: CHANGE, yes: true }, deps());
+    expect(result.approved).toBe(true);
+  });
+
+  it('a declined confirm under staleness re-stamps nothing (no writes)', async () => {
+    stampToy(scratch);
+    const before = readFileSync(generationPath(scratch), 'utf8');
+    writeFileSync(designPath(scratch), readFileSync(designPath(scratch), 'utf8') + '\nedited\n');
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: false, confirmConsistency: true },
+      deps({ confirm: () => Promise.resolve(false) }),
+    );
+    expect(result.approved).toBe(false);
+    expect(existsSync(approvalPath(scratch))).toBe(false);
+    // The ledger was NOT re-stamped — the decline wrote nothing.
+    expect(readFileSync(generationPath(scratch), 'utf8')).toBe(before);
   });
 });

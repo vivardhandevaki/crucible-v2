@@ -19,6 +19,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@crucible/fixtures": "*"
+    "@crucible/fixtures": "*",
+    "@crucible/schemas": "*"
   }
 }

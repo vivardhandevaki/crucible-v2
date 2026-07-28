@@ -9,7 +9,7 @@
 //   (c) the collectible target universe       (via an injected adapter `resolve`)
 // and runs three checks:
 //   1. coverage   — every REQ has ≥1 oracle (else "a wish, not a spec")
-//   2. orphan     — every oracle points at a REQ that exists in the delta
+//   2. orphan     — every oracle points at a REQ in the delta or the archived spec
 //   3. binding    — every target resolves (the adapter can collect it)
 // Every miss becomes a machine-readable Finding naming the EXACT id so verify /
 // approve can render + block on it. No tests are executed here — `resolve` is a
@@ -84,6 +84,7 @@ export async function lintTraceability(
   requirements: readonly SpecRequirement[],
   oracles: readonly Oracle[],
   resolve: ResolveFn,
+  archivedRequirementIds: ReadonlySet<string> = new Set(),
 ): Promise<LintReport> {
   const findings: Finding[] = [];
 
@@ -103,16 +104,20 @@ export async function lintTraceability(
     }
   }
 
-  // Check 2 — orphan: every oracle points at a REQ that exists in the delta.
+  // Check 2 — orphan: every oracle points at a REQ that exists in the delta OR in
+  // the archived spec (charter §ID grammar; design phase-2.md §1). The archived
+  // index is how a bugfix/ratchet oracle (e.g. ORC-refund-013) legally binds an
+  // OLD requirement id that carries no delta of its own this change — while an id
+  // in NEITHER set is still a real orphan (a typo or a promise that never existed).
   for (const oracle of oracles) {
     const requirement = oracle.binding.requirement;
-    if (!requirementIds.has(requirement)) {
+    if (!requirementIds.has(requirement) && !archivedRequirementIds.has(requirement)) {
       findings.push({
         kind: 'orphan-oracle',
         id: oracle.id,
         requirement,
         line: oracle.line,
-        message: `oracle ${oracle.id} points at ${requirement}, which is not a requirement in the spec delta`,
+        message: `oracle ${oracle.id} points at ${requirement}, which is not a requirement in the spec delta or the archived spec`,
       });
     }
   }

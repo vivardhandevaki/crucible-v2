@@ -20,13 +20,22 @@ import { z } from 'zod';
 import type { LintReport } from '../lint/traceability.js';
 import type { OracleResult } from '../adapters/types.js';
 import type { VerifyResult } from '../artifacts/approval.js';
+import { tierDecisionSchema, type TierDecision } from '../tier/tier.js';
 
 /** The check vocabulary, in report order. verify runs traceability → oracles →
  * approval (design §8); `bundle` (do the authored artifacts parse at all?) is
  * emitted by propose's post-session judgment (design §6), which reuses this
  * report as its verdict surface — one zod-guarded verdict shape for every
  * command that judges. */
-export const CHECK_NAMES = ['bundle', 'traceability', 'oracles', 'approval'] as const;
+export const CHECK_NAMES = [
+  'bundle',
+  'traceability',
+  'diff-cap',
+  'oracles',
+  'regression',
+  'reproduction',
+  'approval',
+] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 
 /** A check's binary outcome. `skip`/`error`/`void` all fold to `fail` upstream. */
@@ -51,6 +60,43 @@ export const checkResultSchema = z.strictObject({
 });
 export type CheckResult = z.infer<typeof checkResultSchema>;
 
+/** The merge-path decision (design phase-2.md §2): critical → human review;
+ * trivial/standard green → the auto-merge path. Carried in verify's report and
+ * consumed by CI's `route` job (charter §The Target-Branch Rule mechanics). */
+export const routingDecisionSchema = z.strictObject({
+  /** `human` iff the effective tier is critical OR an override is present; else `auto`. */
+  decision: z.enum(['auto', 'human']),
+  /** Deterministic "why" lines, tier reasons included, for status/CI display. */
+  reasons: z.array(z.string().min(1)),
+});
+export type RoutingDecision = z.infer<typeof routingDecisionSchema>;
+
+/** The ratchet issue CI files when an override bypassed the gate (charter §Override;
+ * design phase-2.md §3). Core emits the payload inside the report JSON; the CI-
+ * template step files it idempotently via the ambient GITHUB_TOKEN — no token
+ * plumbing in core (invariant 11: convenience never enforcement). */
+export const ratchetIssueSchema = z.strictObject({
+  /** Issue title — NAMES the change so CI can search for a duplicate before filing. */
+  title: z.string().min(1),
+  /** Issue body — reason + who/when + the closing condition (a retroactive proposal). */
+  body: z.string().min(1),
+  /** Labels applied; includes `crucible-override`, the label CI searches by. */
+  labels: z.array(z.string().min(1)).nonempty(),
+});
+export type RatchetIssue = z.infer<typeof ratchetIssueSchema>;
+
+/** The override record surfaced in a verify report (design phase-2.md §3): WHY the
+ * gate was bypassed and the ratchet issue CI must file. Its presence forces the
+ * verdict to `pass` (the bypass is permitted) and routing to `human` regardless of
+ * tier — loud, never quiet (charter row 5: visibility replaces prohibition). */
+export const overrideReportSchema = z.strictObject({
+  /** The human's stated reason for the bypass (from override.yaml). */
+  reason: z.string().min(1),
+  /** The ratchet issue payload CI files idempotently. */
+  issue: ratchetIssueSchema,
+});
+export type OverrideReport = z.infer<typeof overrideReportSchema>;
+
 /** The whole verify verdict (design §8). Strict — an unknown field fails closed. */
 export const verifyReportSchema = z.strictObject({
   /** The change being verified. */
@@ -59,8 +105,28 @@ export const verifyReportSchema = z.strictObject({
   checks: z.array(checkResultSchema),
   /** `pass` iff every check passed; else `fail` (any red source blocks). */
   verdict: z.enum(['pass', 'fail']),
+  /** The recomputed tier decision + the facts it rests on (design §2: "output
+   * includes the facts used"). Present only when verify was given enforcement
+   * config + diff facts (the authoritative CLI/CI path); a tier-less report
+   * (propose's bundle judgment, an inner-loop verify) omits it. */
+  tier: tierDecisionSchema.optional(),
+  /** The merge-path routing derived from the tier. Present iff `tier` is. */
+  routing: routingDecisionSchema.optional(),
+  /** The 2am escape hatch (design §3). Present iff an override.yaml is in the
+   * bundle: the verdict is forced `pass` (bypass permitted) and routing forced
+   * `human`. Its `issue` is the ratchet payload CI files. Absent on the common
+   * path — an override is the loud exception, not the rule. */
+  override: overrideReportSchema.optional(),
 });
 export type VerifyReport = z.infer<typeof verifyReportSchema>;
+
+/** The tier/routing/override extras threaded into an aggregated report. `tier` and
+ * `routing` travel together (both or neither); `override` is independent. */
+export interface ReportExtras {
+  tier?: TierDecision;
+  routing?: RoutingDecision;
+  override?: OverrideReport;
+}
 
 /**
  * Traceability check: green iff the lint is green. Each lint finding becomes a
@@ -98,6 +164,113 @@ export function oraclesCheck(results: readonly OracleResult[]): CheckResult {
 }
 
 /**
+ * Regression check (charter §The Regression Suite; design phase-2.md §1): green
+ * iff every ARCHIVED oracle re-run by verify still passes. Structurally identical
+ * to `oraclesCheck` — same joined `OracleResult` shape, same skip→fail coercion
+ * already applied by the client — but attributed to `regression` so the report
+ * distinguishes a broken PAST promise (a refactor that changed pinned behavior)
+ * from a failing current-change oracle. Findings follow oracle input order. An
+ * empty suite (nothing archived yet) is vacuously green.
+ */
+export function regressionCheck(results: readonly OracleResult[]): CheckResult {
+  const findings: VerifyFinding[] = [];
+  for (const result of results) {
+    if (result.status !== 'pass') {
+      const detail = result.targets.map((t) => `${t.target}=${t.status}`).join(', ');
+      findings.push({
+        check: 'regression',
+        id: result.oracleId,
+        message: `regression oracle ${result.oracleId} for ${result.requirement} failed: ${detail} — a past promise no longer holds`,
+      });
+    }
+  }
+  return { name: 'regression', status: findings.length === 0 ? 'pass' : 'fail', findings };
+}
+
+/**
+ * Reproduction check (charter §Change Types L251; design phase-2.md §4): the
+ * RED-ON-BASE half of a bugfix's red-on-base/green-on-fix rule. Its input is the
+ * result of running the bugfix's reproduction oracles against the MERGE-BASE
+ * checkout (the pre-fix source, with the new tests carried onto it). On base the
+ * bug is still present, so every reproduction oracle is EXPECTED to fail (a
+ * non-`pass` — including an `error`/`skip` the client already coerced to fail — is
+ * the correct outcome there: a reproduction that cannot even run against the old
+ * source has still not passed). An oracle that PASSES on base does not reproduce
+ * the bug at all, and that is the red — exit 1, "does not reproduce". The
+ * GREEN-ON-FIX half is the ordinary `oracles` check against HEAD (the reproduction
+ * oracles run there like any other). Findings follow oracle input order; an empty
+ * input (no reproduction oracles) is vacuously green.
+ */
+export function reproductionCheck(baseResults: readonly OracleResult[]): CheckResult {
+  const findings: VerifyFinding[] = [];
+  for (const result of baseResults) {
+    if (result.status === 'pass') {
+      const detail = result.targets.map((t) => `${t.target}=${t.status}`).join(', ');
+      findings.push({
+        check: 'reproduction',
+        id: result.oracleId,
+        message: `reproduction oracle ${result.oracleId} for ${result.requirement} PASSES on the merge-base (${detail}) — it does not reproduce the bug (a bugfix's reproduction must fail before the fix and pass after)`,
+      });
+    }
+  }
+  return { name: 'reproduction', status: findings.length === 0 ? 'pass' : 'fail', findings };
+}
+
+/**
+ * Diff-cap check (design phase-2.md §2; charter §Tier Definitions): green iff the
+ * change fits the effective tier's diff cap. A breach is a red check → verdict
+ * fail → exit 1, and the finding names the tier AND its cap (P2-03 acceptance:
+ * "cap breach → exit 1 naming tier + cap") so the operator sees which ceiling was
+ * hit. The tier + cap were computed upstream (the pure `tier/` module); this only
+ * reports `facts.cap_exceeded`.
+ */
+export function diffCapCheck(decision: TierDecision): CheckResult {
+  const { facts, tier } = decision;
+  if (!facts.cap_exceeded) {
+    return { name: 'diff-cap', status: 'pass', findings: [] };
+  }
+  return {
+    name: 'diff-cap',
+    status: 'fail',
+    findings: [
+      {
+        check: 'diff-cap',
+        id: tier,
+        message: `diff ${facts.diff_lines} lines exceeds the ${tier}-tier cap of ${facts.diff_cap}`,
+      },
+    ],
+  };
+}
+
+/**
+ * Derive the merge-path routing from a tier decision (design phase-2.md §2):
+ * critical → human review required; trivial/standard → the auto-merge path. The
+ * reasons carry the tier's own "why" lines so a `human` routing is explainable
+ * from the report alone. Pure — routing is a function of the tier, nothing else.
+ */
+export function routingFor(decision: TierDecision): RoutingDecision {
+  const human = decision.tier === 'critical';
+  const lead = human
+    ? `tier ${decision.tier} → human review required`
+    : `tier ${decision.tier} → auto-merge path`;
+  return { decision: human ? 'human' : 'auto', reasons: [lead, ...decision.reasons] };
+}
+
+/**
+ * Routing when an override is present (design §3): FORCED to `human` regardless of
+ * the computed tier — the override buys a gate bypass, and the compensating
+ * control is a mandatory human review. The tier's own routing reasons are folded
+ * in beneath so the report still explains what the tier would have decided. Pure.
+ */
+export function routingWithOverride(decision: TierDecision): RoutingDecision {
+  const base = routingFor(decision);
+  return {
+    decision: 'human',
+    reasons: ['override present → human review required regardless of tier', ...base.reasons],
+  };
+}
+
+/**
  * Approval-hash check: green iff the seal is valid. A void seal lists each
  * mismatched relpath (edited or missing since approval) as a finding — the
  * exact escape class invariant 6 exists to catch. The caller only runs this when
@@ -118,11 +291,28 @@ export function approvalCheck(result: VerifyResult): CheckResult {
 /**
  * Fold the executed checks into the final report. Verdict is `pass` iff every
  * check passed (an empty list is vacuously green — nothing promised, nothing to
- * disprove). Validated against the schema so a malformed report fails closed.
+ * disprove) — UNLESS an override is present, which forces the verdict to `pass`
+ * (the gate bypass is permitted; design §3). The per-check statuses are preserved
+ * verbatim either way, so an override report still shows exactly which checks it
+ * bypassed. Validated against the schema so a malformed report fails closed.
  */
-export function aggregate(change: string, checks: CheckResult[]): VerifyReport {
-  const verdict: CheckStatus = checks.every((c) => c.status === 'pass') ? 'pass' : 'fail';
-  return verifyReportSchema.parse({ change, checks, verdict });
+export function aggregate(
+  change: string,
+  checks: CheckResult[],
+  extras: ReportExtras = {},
+): VerifyReport {
+  const checksVerdict: CheckStatus = checks.every((c) => c.status === 'pass') ? 'pass' : 'fail';
+  // An override permits the bypass: the verdict is green-with-override, but the red
+  // checks remain visible in the report and routing is forced human (CI still gates).
+  const verdict: CheckStatus = extras.override ? 'pass' : checksVerdict;
+  return verifyReportSchema.parse({
+    change,
+    checks,
+    verdict,
+    ...(extras.tier ? { tier: extras.tier } : {}),
+    ...(extras.routing ? { routing: extras.routing } : {}),
+    ...(extras.override ? { override: extras.override } : {}),
+  });
 }
 
 /**
@@ -134,7 +324,18 @@ export function aggregate(change: string, checks: CheckResult[]): VerifyReport {
  */
 export function renderReport(report: VerifyReport, label = 'verify'): string {
   const lines: string[] = [];
-  lines.push(`${label} ${report.change}: ${report.verdict.toUpperCase()}`);
+  const overrideNote = report.override ? ' (OVERRIDE)' : '';
+  lines.push(`${label} ${report.change}: ${report.verdict.toUpperCase()}${overrideNote}`);
+  if (report.tier) {
+    lines.push(`  tier: ${report.tier.tier}`);
+  }
+  if (report.routing) {
+    lines.push(`  routing: ${report.routing.decision}`);
+  }
+  if (report.override) {
+    lines.push(`  override: ${report.override.reason}`);
+    lines.push('    ↳ gate bypassed — human review forced; a ratchet issue will be filed');
+  }
   for (const check of report.checks) {
     lines.push(`  [${check.status === 'pass' ? 'PASS' : 'FAIL'}] ${check.name}`);
     for (const finding of check.findings) {

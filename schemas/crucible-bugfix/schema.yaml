@@ -1,0 +1,75 @@
+name: crucible-bugfix
+version: 1
+description: >-
+  Crucible BUGFIX change type. A bugfix pins a regression: it REQUIRES at least
+  one new oracle marked `reproduces: true` — a reproduction test that fails on
+  the pre-fix commit and passes on the fix (the red-on-base/green-on-fix rule,
+  CI-checked, no honor system). Slim bundle: proposal → design → oracles → tasks;
+  the reproduction oracle usually binds an already-archived requirement id, so no
+  new spec delta is required. Crucible fails closed (exit 3) on a bugfix bundle
+  with no reproduction oracle.
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: The bug, its reproduction, and the fix — kept slim
+    template: proposal.md
+    instruction: |
+      Author a slim proposal: what the bug is, how it reproduces, and the fix.
+      Crucible still REQUIRES two enforced sections (neither may be empty; write
+      `None known.` if nothing):
+
+      - **## Unspecified** — anything held out of scope for this fix.
+      - **## Seams** — external systems touched, contracts crossed, in-flight work.
+    requires: []
+
+  - id: design
+    generates: design.md
+    description: Root cause + the fix approach
+    template: design.md
+    instruction: |
+      Author a short design: the root cause, why the bug slipped past existing
+      checks, and the fix approach. Reference the requirement (usually an archived
+      REQ id) the reproduction oracle re-asserts.
+    requires:
+      - proposal
+
+  - id: oracles
+    generates: oracles.md
+    description: The mandatory reproduction oracle(s), marked reproduces:true
+    template: oracles.md
+    instruction: |
+      Author at least one reproduction oracle:
+
+      - Heading: `## ORC-<slug>-<seq3>: <title>` (sequence is exactly 3 digits).
+      - Given / When / Then prose that describes the buggy behavior.
+      - Exactly one fenced ```yaml crucible-binding``` block with `reproduces: true`:
+          requirement: REQ-...   # usually an ALREADY-ARCHIVED requirement id
+          kind: unit|property|contract|integration
+          runner: <adapter runner name>
+          target: <opaque adapter target>
+          reproduces: true
+
+      The reproduction target MUST fail on the pre-fix commit and pass on the fix
+      (CI runs the red-on-base/green-on-fix check). A bugfix with no oracle marked
+      `reproduces: true` fails the bundle closed (exit 3).
+    requires:
+      - design
+
+  - id: tasks
+    generates: tasks.md
+    description: Implementation checklist (authored during implement, post-approval)
+    template: tasks.md
+    instruction: |
+      Break the fix into small, dependency-ordered, checkbox tasks
+      (`- [ ] X.Y ...`). The reproduction oracle should go red before the fix and
+      green after.
+    requires:
+      - oracles
+
+apply:
+  requires: [tasks]
+  tracks: tasks.md
+  instruction: |
+    Make the reproduction oracle pass without breaking the regression suite. On
+    any decision the fix's scope does not determine, STOP and run
+    `crucible escalate` — do not improvise.

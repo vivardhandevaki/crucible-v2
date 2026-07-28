@@ -271,6 +271,73 @@ describe('implement — local verify report (design §6)', () => {
   });
 });
 
+describe('implement — escalation halts + refuses to resume (charter §Escalation layer 2)', () => {
+  beforeEach(sealApproval);
+
+  const ESCALATION_REL = join(CHANGE_REL, 'escalation.yaml');
+  const ESCALATION_YAML = [
+    'version: 1',
+    `change: ${CHANGE}`,
+    'question: greeting for an unnamed caller is not derivable from the spec',
+    'options:',
+    '  - reuse the empty-name default',
+    '  - error out',
+    'filed_by: implement@crucible',
+    'filed_at: 2026-07-23T00:00:00Z',
+    '',
+  ].join('\n');
+
+  /** A substrate whose implement session files an escalation instead of code. */
+  function escalatingSubstrate(): FakeSubstrate {
+    let call = 0;
+    return new FakeSubstrate((): FakeScript => {
+      call += 1;
+      if (call === 1) return { files: { [TASKS_REL]: '# Tasks\n\n- [ ] implement greet\n' } };
+      // The implement agent hit an ambiguity and ran `crucible escalate`, which
+      // dropped escalation.yaml into the bundle (simulated here by the fake).
+      return { files: { [ESCALATION_REL]: ESCALATION_YAML } };
+    });
+  }
+
+  it('an implement run that escalates halts (exit 2, hint `crucible amend`) — never reaches verify', async () => {
+    let ran = false;
+    const err = await catchCrucible(() =>
+      implement(
+        options(),
+        deps({
+          substrate: escalatingSubstrate(),
+          run: (oracles) => {
+            ran = true;
+            return runAllPass(oracles);
+          },
+        }),
+      ),
+    );
+    expect(err.exit).toBe(2);
+    expect(err.hint).toContain('crucible amend');
+    // The escalation short-circuited before oracles were ever judged.
+    expect(ran).toBe(false);
+    expect(existsSync(join(scratch, ESCALATION_REL))).toBe(true);
+  });
+
+  it('refuses to resume while an unresolved escalation exists (exit 2, hint `crucible amend`)', async () => {
+    // Pre-existing escalation from a prior halted run.
+    writeFileSync(join(scratch, ESCALATION_REL), ESCALATION_YAML, 'utf8');
+    const d = deps();
+    const err = await catchCrucible(() => implement(options(), d));
+    expect(err.exit).toBe(2);
+    expect(err.hint).toContain('crucible amend');
+    // No session ran — the precondition refused before the first substrate call.
+    expect((d.substrate as FakeSubstrate).calls).toHaveLength(0);
+  });
+
+  it('fails closed (exit 3) on a malformed pending escalation.yaml', async () => {
+    writeFileSync(join(scratch, ESCALATION_REL), 'question: q\noptions: []\n', 'utf8');
+    const err = await catchCrucible(() => implement(options(), deps()));
+    expect(err.exit).toBe(3);
+  });
+});
+
 describe('implement — state events (invariant 1: audit, appended in order)', () => {
   beforeEach(sealApproval);
 
