@@ -33,6 +33,7 @@ export const CHECK_NAMES = [
   'diff-cap',
   'oracles',
   'regression',
+  'reproduction',
   'approval',
 ] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
@@ -184,6 +185,35 @@ export function regressionCheck(results: readonly OracleResult[]): CheckResult {
     }
   }
   return { name: 'regression', status: findings.length === 0 ? 'pass' : 'fail', findings };
+}
+
+/**
+ * Reproduction check (charter §Change Types L251; design phase-2.md §4): the
+ * RED-ON-BASE half of a bugfix's red-on-base/green-on-fix rule. Its input is the
+ * result of running the bugfix's reproduction oracles against the MERGE-BASE
+ * checkout (the pre-fix source, with the new tests carried onto it). On base the
+ * bug is still present, so every reproduction oracle is EXPECTED to fail (a
+ * non-`pass` — including an `error`/`skip` the client already coerced to fail — is
+ * the correct outcome there: a reproduction that cannot even run against the old
+ * source has still not passed). An oracle that PASSES on base does not reproduce
+ * the bug at all, and that is the red — exit 1, "does not reproduce". The
+ * GREEN-ON-FIX half is the ordinary `oracles` check against HEAD (the reproduction
+ * oracles run there like any other). Findings follow oracle input order; an empty
+ * input (no reproduction oracles) is vacuously green.
+ */
+export function reproductionCheck(baseResults: readonly OracleResult[]): CheckResult {
+  const findings: VerifyFinding[] = [];
+  for (const result of baseResults) {
+    if (result.status === 'pass') {
+      const detail = result.targets.map((t) => `${t.target}=${t.status}`).join(', ');
+      findings.push({
+        check: 'reproduction',
+        id: result.oracleId,
+        message: `reproduction oracle ${result.oracleId} for ${result.requirement} PASSES on the merge-base (${detail}) — it does not reproduce the bug (a bugfix's reproduction must fail before the fix and pass after)`,
+      });
+    }
+  }
+  return { name: 'reproduction', status: findings.length === 0 ? 'pass' : 'fail', findings };
 }
 
 /**

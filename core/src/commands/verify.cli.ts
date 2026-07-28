@@ -29,6 +29,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { verify, type DiffFacts, type VerifyDeps } from './verify.js';
+import { liveWorktreeGit, runReproductionOnBase } from '../reproduction/reproduction.js';
 import { renderReport } from '../verifyx/report.js';
 import {
   loadEnforcementConfig,
@@ -91,6 +92,20 @@ function liveDeps(root: string, diffBase: string | undefined): VerifyDeps {
     resolve: liveAdapterUnavailable,
     run: liveAdapterUnavailable,
     diffFacts: () => computeDiffFacts(root, diffBase),
+    // The bugfix red-on-base run: check out the merge-base into a throwaway
+    // worktree (real git edge) and run the reproduction oracles there. The
+    // adapter that resolves + runs the targets is still `init`-pinned (P2), so
+    // resolve/runIn fail closed exactly like the HEAD run above until then; the
+    // worktree plumbing is wired and proven by the P2-08 reproduction tests.
+    runOnBase: (oracles) =>
+      runReproductionOnBase(
+        { root, base: diffBase ?? defaultBase(root), oracles },
+        {
+          git: liveWorktreeGit(root),
+          resolve: liveAdapterUnavailable,
+          runIn: liveAdapterUnavailable,
+        },
+      ),
   };
 }
 

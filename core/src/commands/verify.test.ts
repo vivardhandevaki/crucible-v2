@@ -416,6 +416,144 @@ target: farewell::bye_for_a_name
   });
 });
 
+describe('verify — reproduction (bugfix red-on-base; P2-08)', () => {
+  // A separate bugfix change: schema `crucible-bugfix`, one reproduction oracle
+  // (marked `reproduces: true`) binding a REQ carried in its own spec delta so the
+  // traceability lint stays green. The reproduction target reuses a resolvable toy
+  // target so the injected resolver is happy.
+  const BUGFIX = 'fix-greeting';
+  const BUGFIX_REL = join('openspec', 'changes', BUGFIX);
+
+  const BUGFIX_SPEC = `# greeting
+
+## ADDED Requirements
+
+### Requirement: Greeting rejects null bytes [REQ-greeting-nullbyte-9]
+
+The system SHALL strip embedded null bytes before greeting.
+
+#### Scenario: A name contains a null byte
+
+- **WHEN** \`greet("a\\u0000b")\` is called
+- **THEN** it returns \`Hello, ab!\`
+`;
+
+  const BUGFIX_ORACLES = `# Oracles — fix-greeting
+
+## ORC-greeting-repro-001: Null byte is stripped (reproduction)
+**Given** a name with an embedded null byte
+**When** \`greet(name)\` is called
+**Then** the null byte is stripped
+
+\`\`\`yaml crucible-binding
+requirement: REQ-greeting-nullbyte-9
+kind: unit
+runner: stub
+target: greeting::returns_hello_for_a_name
+reproduces: true
+\`\`\`
+`;
+
+  /** Scaffold the bugfix bundle in scratch (pins the crucible-bugfix schema). */
+  function writeBugfix(): void {
+    const dir = join(scratch, BUGFIX_REL, 'specs', 'greeting');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(scratch, BUGFIX_REL, '.openspec.yaml'), 'schema: crucible-bugfix\n', 'utf8');
+    writeFileSync(join(scratch, BUGFIX_REL, 'oracles.md'), BUGFIX_ORACLES, 'utf8');
+    writeFileSync(join(dir, 'spec.md'), BUGFIX_SPEC, 'utf8');
+  }
+
+  /** A runOnBase spy returning the given base status for every reproduction oracle. */
+  function runOnBaseWith(status: 'pass' | 'fail'): {
+    runOnBase: (oracles: readonly Oracle[]) => Promise<OracleResult[]>;
+    seen: string[];
+  } {
+    const seen: string[] = [];
+    return {
+      seen,
+      runOnBase: (oracles) => {
+        for (const o of oracles) seen.push(o.id);
+        return Promise.resolve(
+          oracles.map((o): OracleResult => ({
+            oracleId: o.id,
+            requirement: o.binding.requirement,
+            status,
+            targets: o.binding.targets.map((t) => ({ target: t, status })),
+          })),
+        );
+      },
+    };
+  }
+
+  it('reproduction FAILS on base → green: the fixture bugfix passes (acceptance)', async () => {
+    writeBugfix();
+    const { runOnBase, seen } = runOnBaseWith('fail');
+    const report = await verify({ root: scratch, change: BUGFIX }, deps({ runOnBase }));
+    expect(report.verdict).toBe('pass');
+    const repro = report.checks.find((c) => c.name === 'reproduction');
+    expect(repro?.status).toBe('pass');
+    // ONLY the reproduction oracle was run on base (green-on-fix is the HEAD run).
+    expect(seen).toEqual(['ORC-greeting-repro-001']);
+  });
+
+  it('reproduction PASSES on base → red "does not reproduce" (exit-worthy 1)', async () => {
+    writeBugfix();
+    const { runOnBase } = runOnBaseWith('pass');
+    const report = await verify({ root: scratch, change: BUGFIX }, deps({ runOnBase }));
+    expect(report.verdict).toBe('fail');
+    const repro = report.checks.find((c) => c.name === 'reproduction');
+    expect(repro?.status).toBe('fail');
+    expect(repro?.findings[0]?.id).toBe('ORC-greeting-repro-001');
+    expect(repro?.findings[0]?.message).toContain('does not reproduce');
+    // The HEAD oracle run is unaffected — the red is purely the base run.
+    expect(report.checks.find((c) => c.name === 'oracles')?.status).toBe('pass');
+  });
+
+  it('reproduction FAILS on head → normal red via the ordinary oracles check', async () => {
+    writeBugfix();
+    // runFirstFails makes the HEAD oracle run red; the base run still reproduces.
+    const { runOnBase } = runOnBaseWith('fail');
+    const report = await verify(
+      { root: scratch, change: BUGFIX },
+      deps({ run: runFirstFails, runOnBase }),
+    );
+    expect(report.verdict).toBe('fail');
+    // green-on-fix failed: the ordinary oracles check is the red source.
+    expect(report.checks.find((c) => c.name === 'oracles')?.status).toBe('fail');
+    // red-on-base still held (the reproduction did fail on base).
+    expect(report.checks.find((c) => c.name === 'reproduction')?.status).toBe('pass');
+  });
+
+  it('a FEATURE change never runs the reproduction check (bugfix-only)', async () => {
+    // add-greeting is a feature; runOnBase must not be consulted for it.
+    const runOnBase = (): Promise<OracleResult[]> => {
+      throw new Error('runOnBase must not be called for a feature change');
+    };
+    const report = await verify({ root: scratch, change: CHANGE }, deps({ runOnBase }));
+    expect(report.checks.some((c) => c.name === 'reproduction')).toBe(false);
+  });
+
+  it('without runOnBase, a bugfix runs the P1 checks only (inner-loop verify)', async () => {
+    writeBugfix();
+    const report = await verify({ root: scratch, change: BUGFIX }, deps());
+    expect(report.verdict).toBe('pass');
+    expect(report.checks.some((c) => c.name === 'reproduction')).toBe(false);
+  });
+
+  it('a red lint short-circuits the base run too (no worktree for unresolved bindings)', async () => {
+    writeBugfix();
+    const runOnBase = (): Promise<OracleResult[]> => {
+      throw new Error('runOnBase must not run when the traceability gate is red');
+    };
+    const report = await verify(
+      { root: scratch, change: BUGFIX },
+      deps({ resolve: resolveAllMissing, run: runNeverCalled, runOnBase }),
+    );
+    expect(report.verdict).toBe('fail');
+    expect(report.checks.some((c) => c.name === 'reproduction')).toBe(false);
+  });
+});
+
 describe('verify — preconditions & fail-closed', () => {
   it('missing change bundle → exit 2 naming the next command', async () => {
     const err = await catchCrucible(() =>

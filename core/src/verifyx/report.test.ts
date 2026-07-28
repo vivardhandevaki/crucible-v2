@@ -8,6 +8,7 @@ import {
   diffCapCheck,
   oraclesCheck,
   regressionCheck,
+  reproductionCheck,
   renderReport,
   routingFor,
   traceabilityCheck,
@@ -109,6 +110,49 @@ describe('regressionCheck', () => {
     expect(finding?.check).toBe('regression');
     expect(finding?.id).toBe('ORC-farewell-001');
     expect(finding?.message).toContain('past promise');
+  });
+});
+
+describe('reproductionCheck (bugfix red-on-base; P2-08)', () => {
+  const failedOnBase: OracleResult = {
+    oracleId: 'ORC-refund-013',
+    requirement: 'REQ-refund-dispute-7',
+    status: 'fail',
+    targets: [{ target: 'refund::disputed', status: 'fail' }],
+  };
+  const passedOnBase: OracleResult = {
+    oracleId: 'ORC-refund-013',
+    requirement: 'REQ-refund-dispute-7',
+    status: 'pass',
+    targets: [{ target: 'refund::disputed', status: 'pass' }],
+  };
+
+  it('an empty batch is vacuously green (no reproduction oracles to run on base)', () => {
+    expect(reproductionCheck([])).toEqual({ name: 'reproduction', status: 'pass', findings: [] });
+  });
+
+  it('a reproduction that FAILS on base is green — it reproduces the bug', () => {
+    const check = reproductionCheck([failedOnBase]);
+    expect(check).toEqual({ name: 'reproduction', status: 'pass', findings: [] });
+  });
+
+  it('a reproduction that PASSES on base is red — "does not reproduce", naming the oracle', () => {
+    const check = reproductionCheck([passedOnBase]);
+    expect(check.status).toBe('fail');
+    expect(check.name).toBe('reproduction');
+    const [finding] = check.findings;
+    expect(finding?.check).toBe('reproduction');
+    expect(finding?.id).toBe('ORC-refund-013');
+    expect(finding?.message).toContain('does not reproduce');
+    // The per-target evidence is surfaced so the trace shows WHY it is red.
+    expect(finding?.message).toContain('refund::disputed=pass');
+  });
+
+  it('only the reproductions that passed on base are findings (input order preserved)', () => {
+    const other: OracleResult = { ...passedOnBase, oracleId: 'ORC-refund-014' };
+    const check = reproductionCheck([failedOnBase, passedOnBase, other]);
+    expect(check.status).toBe('fail');
+    expect(check.findings.map((f) => f.id)).toEqual(['ORC-refund-013', 'ORC-refund-014']);
   });
 });
 

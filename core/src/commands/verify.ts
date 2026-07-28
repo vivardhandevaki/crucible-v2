@@ -54,6 +54,7 @@ import {
   diffCapCheck,
   oraclesCheck,
   regressionCheck,
+  reproductionCheck,
   routingFor,
   routingWithOverride,
   traceabilityCheck,
@@ -89,6 +90,18 @@ export interface VerifyDeps {
    * (the adapter client's `run`). skip→fail is coerced in the client, not here.
    */
   run: (oracles: readonly Oracle[]) => Promise<OracleResult[]>;
+  /**
+   * Run a bugfix's reproduction oracles against the MERGE-BASE checkout (a git
+   * worktree at the diff base, the new tests carried onto the old source) and join
+   * back to oracle ids — the RED-ON-BASE half of red-on-base/green-on-fix (charter
+   * §Change Types; design phase-2.md §4). Injected because it spawns git (worktree
+   * add/remove) + the adapter; supplied on the authoritative CLI/CI path alongside
+   * `diffFacts`. Omitted (inner-loop / pre-approve verify) → the reproduction check
+   * is skipped, exactly as tier is skipped without `diffFacts`. Green-on-fix needs
+   * no separate edge: the reproduction oracles run against HEAD in the ordinary
+   * `run` above like any other oracle.
+   */
+  runOnBase?: (oracles: readonly Oracle[]) => Promise<OracleResult[]>;
   /**
    * Assemble the diff facts (touched paths + changed lines) vs the diff base —
    * the git edge, injected so the core stays deterministic (design §2, following
@@ -222,6 +235,19 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
     checks.push(oraclesCheck(results.filter((r) => currentIds.has(r.oracleId))));
     if (regression.length > 0) {
       checks.push(regressionCheck(results.filter((r) => !currentIds.has(r.oracleId))));
+    }
+
+    // Reproduction check (bugfix RED-ON-BASE; charter §Change Types, design §4).
+    // Runs only for a bugfix on the authoritative path (the worktree edge is
+    // supplied). The reproduction oracles must FAIL against the pre-fix source;
+    // green-on-fix is the `oracles` check above (they ran against HEAD there).
+    // Conformance already guarantees a bugfix has ≥1 reproduction oracle, so this
+    // never runs an empty batch for a well-formed bundle. Gated on the green lint
+    // like the oracle run — a merge-base run against unresolved bindings is moot.
+    if (type === 'bugfix' && deps.runOnBase) {
+      const reproduction = oracles.filter((o) => o.binding.reproduces === true);
+      const baseResults = await deps.runOnBase(reproduction);
+      checks.push(reproductionCheck(baseResults));
     }
   }
 
