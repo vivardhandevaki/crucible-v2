@@ -95,7 +95,11 @@ function refactorBundle(extra: Record<string, string> = {}): Record<string, stri
 /** Resolver: every requested target is `found` (with a dummy file for hashing). */
 const resolveAllFound: ResolveFn = (targets) =>
   Promise.resolve(
-    targets.map((t): TargetResolution => ({ target: t, status: 'found', targetFile: 'src/greeting.ts' })),
+    targets.map((t): TargetResolution => ({
+      target: t,
+      status: 'found',
+      targetFile: 'src/greeting.ts',
+    })),
   );
 
 /** Runner: every oracle (here, only the archived one) passes. */
@@ -147,8 +151,19 @@ function diffFacts(): DiffFacts {
 
 async function doProposeRefactor(files: Record<string, string>, type?: 'refactor' | 'feature') {
   return propose(
-    { root: scratch, change: CHANGE, intent: 'Refactor the greeting module', model: 'm', ...(type ? { type } : {}) },
-    { substrate: new FakeSubstrate({ files }), scaffold: fakeScaffold(scratch), resolve: resolveAllFound, now },
+    {
+      root: scratch,
+      change: CHANGE,
+      intent: 'Refactor the greeting module',
+      model: 'm',
+      ...(type ? { type } : {}),
+    },
+    {
+      substrate: new FakeSubstrate({ files }),
+      scaffold: fakeScaffold(scratch),
+      resolve: resolveAllFound,
+      now,
+    },
   );
 }
 
@@ -162,7 +177,10 @@ describe('refactor change type — end to end on the regression suite alone', ()
 
   it('records the change type in the state snapshot (recorded like tier)', async () => {
     await doProposeRefactor(refactorBundle());
-    const state = parseState(readFileSync(join(scratch, CHANGE_REL, 'state.yaml'), 'utf8'), 'state');
+    const state = parseState(
+      readFileSync(join(scratch, CHANGE_REL, 'state.yaml'), 'utf8'),
+      'state',
+    );
     expect(state.snapshot.change_type).toBe('refactor');
   });
 
@@ -210,7 +228,9 @@ describe('refactor change type — end to end on the regression suite alone', ()
 describe('refactor conformance — fail closed (exit 3)', () => {
   it('a refactor bundle carrying a spec delta is exit 3 at propose', async () => {
     const err = await captureThrow(() =>
-      doProposeRefactor(refactorBundle({ [join(CHANGE_REL, 'specs', 'greeting', 'spec.md')]: A_SPEC_DELTA })),
+      doProposeRefactor(
+        refactorBundle({ [join(CHANGE_REL, 'specs', 'greeting', 'spec.md')]: A_SPEC_DELTA }),
+      ),
     );
     expect(isCrucibleError(err) && err.exit).toBe(3);
     expect((err as Error).message).toContain('spec delta');

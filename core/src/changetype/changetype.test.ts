@@ -120,7 +120,10 @@ describe('validateType — conformance rules (pure)', () => {
 
   it('a bugfix with a reproduction oracle is conformant', () => {
     expect(
-      validateType('bugfix', facts({ specDelta: false, oracleCount: 1, reproductionOracleCount: 1 })),
+      validateType(
+        'bugfix',
+        facts({ specDelta: false, oracleCount: 1, reproductionOracleCount: 1 }),
+      ),
     ).toEqual([]);
   });
 
@@ -132,7 +135,9 @@ describe('validateType — conformance rules (pure)', () => {
 
 describe('assertTypeConformance — fail-closed gate', () => {
   it('passes silently on a conformant bundle', () => {
-    expect(() => assertTypeConformance('refactor', facts({ specDelta: false, oracleCount: 0 }))).not.toThrow();
+    expect(() =>
+      assertTypeConformance('refactor', facts({ specDelta: false, oracleCount: 0 })),
+    ).not.toThrow();
   });
 
   it('refactor with a spec delta throws exit 3 (the P2-07 acceptance)', () => {
@@ -167,7 +172,10 @@ describe('readChangeType — the .openspec.yaml pin', () => {
 
   it('reads each shipped schema pin back to its type', () => {
     for (const type of CHANGE_TYPES) {
-      writeFileSync(join(dir, '.openspec.yaml'), `schema: ${schemaForType(type)}\ncreated: 2026-07-25\n`);
+      writeFileSync(
+        join(dir, '.openspec.yaml'),
+        `schema: ${schemaForType(type)}\ncreated: 2026-07-25\n`,
+      );
       expect(readChangeType(dir)).toBe(type);
     }
   });

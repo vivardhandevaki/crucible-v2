@@ -130,7 +130,10 @@ export function recordSnapshotTier(path: string, tier: State['snapshot']['tier']
  * never advances the phase, and is never read to make an enforcement decision
  * (invariant 1 — verify re-reads the `.openspec.yaml` pin). Returns whether it wrote.
  */
-export function recordSnapshotType(path: string, changeType: State['snapshot']['change_type']): boolean {
+export function recordSnapshotType(
+  path: string,
+  changeType: State['snapshot']['change_type'],
+): boolean {
   const state = readState(path);
   if (state === undefined) return false;
   state.snapshot.change_type = changeType;

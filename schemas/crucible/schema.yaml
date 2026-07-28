@@ -25,7 +25,7 @@ artifacts:
     requires: []
 
   - id: specs
-    generates: "specs/**/*.md"
+    generates: 'specs/**/*.md'
     description: The spec delta — normative requirements this change adds/changes
     template: spec.md
     instruction: |

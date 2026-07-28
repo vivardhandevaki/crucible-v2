@@ -179,9 +179,7 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
   // The change type (charter §Change Types): inferred from the intent in create
   // mode (or `--type`), read from the existing `.openspec.yaml` pin in revise mode
   // (the type is fixed once scaffolded — revise regenerates content, not the type).
-  const type: ChangeType = revise
-    ? readChangeType(changeDir)
-    : (options.type ?? inferType(intent));
+  const type: ChangeType = revise ? readChangeType(changeDir) : (options.type ?? inferType(intent));
 
   // Create mode scaffolds the OpenSpec change dir with the TYPE's schema pinned,
   // then verifies the scaffolder actually produced it — its silence is not success
@@ -239,7 +237,10 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
   // judgment boundary, invariant 2) rather than being reclassified as exit 3.
   const bundleParsed = report.checks.find((c) => c.name === 'bundle')?.status === 'pass';
   if (bundleParsed) {
-    assertTypeConformance(type, gatherTypeFacts(changeDir, loadOracles(join(changeDir, 'oracles.md'))));
+    assertTypeConformance(
+      type,
+      gatherTypeFacts(changeDir, loadOracles(join(changeDir, 'oracles.md'))),
+    );
   }
 
   // On a GREEN bundle, stamp the generation ledger (staleness tracking, charter

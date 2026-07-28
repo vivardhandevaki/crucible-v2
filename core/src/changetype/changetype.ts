@@ -197,9 +197,7 @@ export function readChangeType(changeDir: string): ChangeType {
     );
   }
   const schema =
-    typeof data === 'object' && data !== null
-      ? (data as { schema?: unknown }).schema
-      : undefined;
+    typeof data === 'object' && data !== null ? (data as { schema?: unknown }).schema : undefined;
   if (schema === undefined) return DEFAULT_CHANGE_TYPE;
   if (typeof schema !== 'string') {
     throw invalidInputError(
