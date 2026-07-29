@@ -50,6 +50,24 @@ describe('parseOracles — valid fixture', () => {
     });
   });
 
+  it('exposes each oracle scenario prose + section span (design phase-2.md §8)', () => {
+    const oracles = loadOracles(VALID_ORACLES);
+    // The section span [line, sectionEnd] runs from the heading to its closing fence.
+    expect(oracles[0]).toMatchObject({ line: 3, sectionEnd: 13 });
+    expect(oracles[1]).toMatchObject({ line: 15, sectionEnd: 25 });
+    // Prose is the raw slice from the heading through the line before the fence,
+    // with the fenced binding excluded and trailing blanks trimmed.
+    expect(oracles[0]?.prose).toBe(
+      [
+        '## ORC-greeting-001: Greeting names the person',
+        '**Given** a non-empty name',
+        '**When** `greet(name)` is called',
+        '**Then** the result is `Hello, <name>!`',
+      ].join('\n'),
+    );
+    expect(oracles[0]?.prose).not.toContain('crucible-binding');
+  });
+
   it('normalises a single `target` into a one-element targets list', () => {
     const [oracle] = parseOracles(
       [

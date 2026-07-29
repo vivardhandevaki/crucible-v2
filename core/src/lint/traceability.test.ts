@@ -46,6 +46,8 @@ function oracle(id: string, requirement: string, targets: string[], line = 1): O
     title: id,
     heading: `## ${id}`,
     line,
+    sectionEnd: line,
+    prose: `## ${id}`,
     binding: { requirement, kind: 'unit', runner: 'stub', targets },
   };
 }

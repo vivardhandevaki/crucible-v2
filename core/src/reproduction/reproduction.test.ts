@@ -26,6 +26,8 @@ function reproOracle(id: string, target: string): Oracle {
     title: 'repro',
     heading: `## ${id}: repro`,
     line: 1,
+    sectionEnd: 1,
+    prose: `## ${id}: repro`,
     binding: {
       requirement: 'REQ-bug-1',
       kind: 'unit',

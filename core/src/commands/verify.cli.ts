@@ -25,10 +25,10 @@
 // directly tested (verify.test.ts); the tracer (P1-16) wires a real stub-adapter
 // client into these deps.
 
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import { verify, type DiffFacts, type VerifyDeps } from './verify.js';
+import { verify, type VerifyDeps } from './verify.js';
+import { computeDiffFacts, defaultBase } from './diff-facts.js';
 import { review } from './review.js';
 import { gitHead, reviewModel } from './review.cli.js';
 import { ClaudeCodeSubstrate } from '../substrate/claude-code.js';
@@ -40,7 +40,7 @@ import {
   type EnforcementConfig,
 } from '../config/enforcement.js';
 import { recordSnapshotTier } from '../state/state.js';
-import { CheckFailure, invalidInputError, preconditionError } from '../util/errors.js';
+import { CheckFailure, preconditionError } from '../util/errors.js';
 
 /** Register the real `verify` subcommand on the program. */
 export function registerVerify(program: Command): void {
@@ -155,69 +155,3 @@ const liveAdapterUnavailable = (): never => {
     'Adapter pinning lands with `crucible init` (P2); until then verify runs only via its injectable core (see the P1-16 tracer).',
   );
 };
-
-/**
- * Assemble the diff facts (touched paths + changed lines) from git — the tier's
- * observable inputs. The base is `--diff-base` (CI passes `origin/<base_ref>`),
- * else the merge-base of HEAD and origin/HEAD (design §2). In this enforcement
- * context an uncomputable diff is exit 3 (fail-closed, invariant 3) — never
- * "assume trivial": a change we cannot size is a change we cannot judge.
- */
-function computeDiffFacts(root: string, diffBase: string | undefined): DiffFacts {
-  const base = diffBase ?? defaultBase(root);
-  const range = `${base}...HEAD`;
-
-  const names = git(root, ['diff', '--name-only', range]);
-  const touchedPaths = names
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-
-  // numstat rows: `<added>\t<deleted>\t<path>`; sum added + deleted. A binary
-  // file shows `-\t-\t<path>` — treat `-` as 0 (no line delta to cap).
-  const numstat = git(root, ['diff', '--numstat', range]);
-  let diffLines = 0;
-  for (const line of numstat.split('\n')) {
-    if (line.trim().length === 0) continue;
-    const [added, deleted] = line.split('\t');
-    diffLines += toCount(added) + toCount(deleted);
-  }
-
-  return { touchedPaths, diffLines };
-}
-
-/** The default diff base: merge-base of HEAD and origin/HEAD. Uncomputable → exit 3. */
-function defaultBase(root: string): string {
-  return git(root, ['merge-base', 'HEAD', 'origin/HEAD']).trim();
-}
-
-/** `-` (binary) → 0; otherwise the parsed integer line count. */
-function toCount(value: string | undefined): number {
-  if (value === undefined || value === '-') return 0;
-  const n = Number.parseInt(value, 10);
-  return Number.isNaN(n) ? 0 : n;
-}
-
-/**
- * Run a git command in `root`, returning stdout. Unlike status's best-effort git
- * edge, a failure here is fail-closed exit 3 (invariant 3): verify is enforcement,
- * and a diff it cannot compute must not be silently downgraded to trivial.
- */
-function git(root: string, args: string[]): string {
-  try {
-    return execFileSync('git', args, {
-      cwd: root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-  } catch (cause) {
-    throw invalidInputError(
-      'DIFF_UNCOMPUTABLE',
-      `Could not compute the diff for tier enforcement (git ${args.join(' ')} failed): ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      'Ensure the repo has full history (CI checks out with fetch-depth: 0) and the ' +
-        'diff base is fetched, or pass an explicit --diff-base <ref>.',
-    );
-  }
-}

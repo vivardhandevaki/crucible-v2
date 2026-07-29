@@ -54,6 +54,8 @@ function oracle(id: string, targets: string[], requirement = 'REQ-x-1'): Oracle 
     title: id,
     heading: `## ${id}`,
     line: 1,
+    sectionEnd: 1,
+    prose: `## ${id}`,
     binding: { requirement, kind: 'unit', runner: 'stub', targets },
   };
 }

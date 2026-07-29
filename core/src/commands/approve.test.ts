@@ -1,6 +1,14 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { TOY_REPO_ROOT } from '@crucible/fixtures';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CrucibleError, isCrucibleError } from '../util/errors.js';
@@ -11,8 +19,11 @@ import {
   serializeGeneration,
   stampGeneration,
 } from '../artifacts/generation.js';
+import { loadEnforcementConfig, type EnforcementConfig } from '../config/enforcement.js';
+import type { AgentSubstrate, SubstrateRequest, SubstrateResult } from '../substrate/types.js';
+import type { DiffFacts } from './verify.js';
 import { dependencyOrder } from './bundle.js';
-import { approve, type ApproveDeps, type ApproveResult } from './approve.js';
+import { approve, type ApproveDeps, type ApproveResult, type WalkAction } from './approve.js';
 
 // TCB: `approve` is the one human gate (charter §The Core Inversion). It must
 // refuse to seal an invalid bundle or a red lint (invariant 5 — preconditions
@@ -54,13 +65,22 @@ beforeEach(() => {
 
 afterEach(() => rmSync(scratch, { recursive: true, force: true }));
 
-/** Fixed deps: auto-confirm, frozen clock, deterministic approver. */
+/**
+ * Fixed deps: auto-confirm, frozen clock, deterministic approver, plus
+ * non-interactive defaults for the P2-14 walk edges — a no-op pager, a walk that
+ * always advances (never edits/acks), and edit edges that fail loudly if reached
+ * unexpectedly. Interactive tests override the specific edge they exercise.
+ */
 function deps(overrides: Partial<ApproveDeps> = {}): ApproveDeps {
   return {
     resolve: resolveAllFound,
     confirm: () => Promise.resolve(true),
     now: () => '2026-07-23T00:00:00Z',
     approvedBy: () => 'ada@example.com',
+    pager: () => {},
+    walk: () => Promise.resolve('next'),
+    openEditor: () => Promise.reject(new Error('openEditor not expected in this test')),
+    confirmDiff: () => Promise.resolve('accept'),
     ...overrides,
   };
 }
@@ -344,5 +364,239 @@ describe('approve — staleness gate (charter §Editing Artifacts; P2-05)', () =
     expect(existsSync(approvalPath(scratch))).toBe(false);
     // The ledger was NOT re-stamped — the decline wrote nothing.
     expect(readFileSync(generationPath(scratch), 'utf8')).toBe(before);
+  });
+});
+
+// ── P2-14: the rich review surface (design phase-2.md §8) ─────────────────────
+
+/** The toy repo's own enforcement config (risk globs + tier caps). */
+function toyConfig(root: string): EnforcementConfig {
+  return loadEnforcementConfig(root);
+}
+
+/** Diff facts that compute STANDARD: a spec-delta feature on a non-risk path. */
+const standardFacts = (): DiffFacts => ({ touchedPaths: ['src/greeting.ts'], diffLines: 20 });
+
+/** Diff facts that compute CRITICAL: a touched risk-glob path (crucible.yaml). */
+const criticalFacts = (): DiffFacts => ({ touchedPaths: ['crucible.yaml'], diffLines: 5 });
+
+/** A pager that records every surface it was asked to display. */
+function recordingPager(): { pager: (t: string) => void; shown: string[] } {
+  const shown: string[] = [];
+  return { pager: (t: string) => void shown.push(t), shown };
+}
+
+describe('approve — Stage 1/2 render (design §8)', () => {
+  it('renders each oracle scenario side-by-side with its bound test source', async () => {
+    const { pager, shown } = recordingPager();
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: false, config: toyConfig(scratch), width: 120 },
+      deps({ diffFacts: standardFacts, pager }),
+    );
+    expect(result.approved).toBe(true);
+    expect(result.tier).toBe('standard');
+
+    const all = shown.join('\n');
+    // The scenario prose (left pane) and the bound-test source (right pane) both appear.
+    expect(all).toContain('**Given** a non-empty name');
+    expect(all).toContain('returns hello for a name'); // from tests/greeting.test.ts
+    // At width ≥ 100 the panes split with a column gutter.
+    expect(all).toContain('│');
+    // The overview surfaces the proposal's honesty sections prominently.
+    expect(all).toContain('Unspecified');
+    expect(all).toContain('Seams');
+  });
+
+  it('stacks the panes (no gutter) below the side-by-side width threshold', async () => {
+    const { pager, shown } = recordingPager();
+    await approve(
+      { root: scratch, change: CHANGE, yes: false, config: toyConfig(scratch), width: 80 },
+      deps({ diffFacts: standardFacts, pager }),
+    );
+    const panels = shown.filter((s) => s.includes('**Given** a non-empty name'));
+    expect(panels.length).toBeGreaterThan(0);
+    expect(panels.join('\n')).not.toContain('│');
+  });
+});
+
+describe('approve — --yes fast path is non-critical only (design §8)', () => {
+  it('standard tier --yes seals with no acks and no walk', async () => {
+    let walked = false;
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: true, config: toyConfig(scratch) },
+      deps({ diffFacts: standardFacts, walk: () => ((walked = true), Promise.resolve('next')) }),
+    );
+    expect(result.approved).toBe(true);
+    expect(result.tier).toBe('standard');
+    expect(walked).toBe(false); // --yes skips the walk entirely
+    const approval = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
+    expect(approval.acks).toBeUndefined();
+  });
+
+  it('refuses --yes on the critical tier at exit 2', async () => {
+    const err = await catchCrucible(() =>
+      approve(
+        { root: scratch, change: CHANGE, yes: true, config: toyConfig(scratch) },
+        deps({ diffFacts: criticalFacts }),
+      ),
+    );
+    expect(err.exit).toBe(2);
+    expect(err.code).toBe('CRITICAL_NEEDS_GATE');
+    expect(existsSync(approvalPath(scratch))).toBe(false);
+  });
+});
+
+describe('approve — critical tier per-oracle acks (design §8)', () => {
+  it('records an ack per oracle in approval.yaml when all are acknowledged', async () => {
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: false, config: toyConfig(scratch) },
+      deps({ diffFacts: criticalFacts, walk: () => Promise.resolve('ack') }),
+    );
+    expect(result.approved).toBe(true);
+    expect(result.tier).toBe('critical');
+    const approval = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
+    expect(approval.acks?.map((a) => a.oracle)).toEqual(['ORC-greeting-001', 'ORC-greeting-002']);
+    for (const ack of approval.acks ?? []) expect(ack.at).toBe('2026-07-23T00:00:00Z');
+  });
+
+  it('blocks the seal confirm until every oracle is acked, then seals', async () => {
+    // A walk that advances on the initial pass (both oracles) and only acks once
+    // the ack gate re-enters — so the gate must loop back before confirm is reached.
+    let seq = 0;
+    const walk = (): Promise<WalkAction> => {
+      seq += 1;
+      return Promise.resolve(seq <= 2 ? 'next' : 'ack');
+    };
+
+    let confirmCalls = 0;
+    const { pager, shown } = recordingPager();
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: false, config: toyConfig(scratch) },
+      deps({
+        diffFacts: criticalFacts,
+        walk,
+        pager,
+        confirm: () => ((confirmCalls += 1), Promise.resolve(true)),
+      }),
+    );
+    expect(result.approved).toBe(true);
+    // The re-entry notice was shown (the gate refused to fall through to confirm).
+    expect(shown.join('\n')).toContain('still need acknowledgment');
+    expect(confirmCalls).toBe(1);
+    const approval = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
+    expect(approval.acks).toHaveLength(2);
+  });
+
+  it('a quit during the ack gate declines without sealing', async () => {
+    // Advance (never ack) on the first pass, then quit when the gate re-enters.
+    let seq = 0;
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: false, config: toyConfig(scratch) },
+      deps({
+        diffFacts: criticalFacts,
+        walk: () => {
+          seq += 1;
+          return Promise.resolve(seq <= 2 ? 'next' : 'quit');
+        },
+      }),
+    );
+    expect(result.approved).toBe(false);
+    expect(existsSync(approvalPath(scratch))).toBe(false);
+  });
+});
+
+/** A substrate that rewrites the bound test file (a regeneration) and stamps a transcript. */
+class RewriteSubstrate implements AgentSubstrate {
+  runs = 0;
+  constructor(
+    private readonly root: string,
+    private readonly newTestContent: string,
+  ) {}
+  run(req: SubstrateRequest): Promise<SubstrateResult> {
+    this.runs += 1;
+    mkdirSync(dirname(req.transcriptPath), { recursive: true });
+    writeFileSync(req.transcriptPath, '{}\n', 'utf8');
+    writeFileSync(join(this.root, 'tests', 'greeting.test.ts'), this.newTestContent, 'utf8');
+    return Promise.resolve({ exitCode: 0, transcriptPath: req.transcriptPath });
+  }
+}
+
+describe('approve — inline edit → revalidate → regen-test-diff loop (design §8)', () => {
+  it('edits a scenario, regenerates its bound test, shows the diff, and seals', async () => {
+    // The editor sharpens ORC-greeting-001's Then clause (a material prose change).
+    const oraclesPath = join(scratch, CHANGE_REL, 'oracles.md');
+    const openEditor = (): Promise<void> => {
+      const text = readFileSync(oraclesPath, 'utf8').replace('`Hello, <name>!`', '`Hi, <name>!`');
+      writeFileSync(oraclesPath, text, 'utf8');
+      return Promise.resolve();
+    };
+    // The regeneration rewrites the bound test file to match the sharpened scenario.
+    const newTest = readFileSync(join(scratch, 'tests', 'greeting.test.ts'), 'utf8').replace(
+      'Hello, Ada!',
+      'Hi, Ada!',
+    );
+    const substrate = new RewriteSubstrate(scratch, newTest);
+
+    // Walk: edit oracle 1 once, then advance; advance oracle 2. (Non-critical.)
+    let firstPanel = true;
+    const walk = (): Promise<WalkAction> => {
+      if (firstPanel) {
+        firstPanel = false;
+        return Promise.resolve('edit');
+      }
+      return Promise.resolve('next');
+    };
+
+    const { pager, shown } = recordingPager();
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: false, config: toyConfig(scratch) },
+      deps({
+        diffFacts: standardFacts,
+        substrate,
+        openEditor,
+        walk,
+        pager,
+        confirmDiff: () => Promise.resolve('accept'),
+      }),
+    );
+
+    expect(result.approved).toBe(true);
+    expect(substrate.runs).toBe(1); // the edit triggered exactly one regeneration
+    // The regeneration diff was shown, with the changed test lines.
+    const all = shown.join('\n');
+    expect(all).toContain('regenerated: tests/greeting.test.ts');
+    expect(all).toContain('- ');
+    expect(all).toContain('+ ');
+    // The seal covers the regenerated test file's NEW bytes.
+    const approval = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
+    expect(readFileSync(join(scratch, 'tests', 'greeting.test.ts'), 'utf8')).toBe(newTest);
+    expect(approval.files['tests/greeting.test.ts']).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('a red revalidation after an edit is not sealable — re-edit or abort', async () => {
+    const oraclesPath = join(scratch, CHANGE_REL, 'oracles.md');
+    // The editor corrupts the oracle grammar (a malformed id) → revalidation red.
+    let corrupted = false;
+    const openEditor = (): Promise<void> => {
+      if (!corrupted) {
+        corrupted = true;
+        writeFileSync(oraclesPath, '## ORC-BAD: nope\n\n(no binding)\n', 'utf8');
+      }
+      return Promise.resolve();
+    };
+    // Walk: edit (→ red findings), then on the re-prompt quit.
+    let calls = 0;
+    const walk = (): Promise<WalkAction> => {
+      calls += 1;
+      return Promise.resolve(calls === 1 ? 'edit' : 'quit');
+    };
+    const { pager, shown } = recordingPager();
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: false, config: toyConfig(scratch) },
+      deps({ diffFacts: standardFacts, openEditor, walk, pager }),
+    );
+    expect(result.approved).toBe(false);
+    expect(shown.join('\n')).toContain('red');
+    expect(existsSync(approvalPath(scratch))).toBe(false);
   });
 });
