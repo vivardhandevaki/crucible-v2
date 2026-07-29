@@ -1,4 +1,4 @@
-# Tracer runbook — real-substrate mode (P1-16)
+# Tracer runbook — real-substrate mode (P1-16, P2-17)
 
 The tracer (`core/test/tracer.test.ts`) is the P1 exit criterion: propose →
 approve → implement → verify on `fixtures/toy-repo`. CI runs it with the
@@ -66,3 +66,44 @@ a spike-notes addendum (the P1-08 idiom) and fix before relying on the
 substrate in later phases.
 
 Clean up inspected scratch dirs manually (`rm -rf /tmp/crucible-tracer-*`).
+
+## Worked examples (P2-17)
+
+The worked-examples suite (`core/test/worked-examples.test.ts`) is the **Phase 2
+exit-criterion anchor**: one integration test per charter §Worked Examples flow —
+standard feature (routes auto), pure refactor (correctness = the regression
+suite), and the critical path (escalate halts implement, `amend` resolves it,
+routing → human) with its follow-up `bugfix` (red-on-base / green-on-fix on a
+real `git worktree`). Like the tracer, CI runs it with the FakeSubstrate: only
+the agent sessions are scripted; the adapter client, stub adapter, seal, lint,
+tier/routing computation, the fail-closed verdict evaluator, and the worktree run
+are all real.
+
+These three flows are **skipped under `CRUCIBLE_REAL_SUBSTRATE=1`** (the same
+`describe.skipIf` guard the tracer uses). That is deliberate: their shared
+`propose → approve → implement → verify` spine is *already* what the tracer
+exercises against live Claude Code sessions above, so re-running each example
+live would only re-pay tokens for the same spine. Real-substrate validation is
+therefore layered:
+
+1. **The spine** — validated live by the tracer run at the top of this runbook.
+2. **The P2-only surfaces** (`escalate`, `amend`, `review`, `override`) — driven
+   manually against a kept tracer scratch, since they are thin commands over the
+   same substrate contract the tracer already proves. On the scratch repo printed
+   by a real tracer run (kept after the run):
+
+   ```sh
+   cd <scratch>                       # the printed crucible-tracer-* dir
+   crucible escalate add-greeting \
+     --question "…" --option "(a) …" --option "(b) …"   # writes escalation.yaml
+   crucible implement add-greeting     # refuses: exit 2, names `crucible amend`
+   crucible amend add-greeting "(a) …" # live regen via the propose role, re-seals
+   crucible review add-greeting --base origin/main       # live adversarial verdict
+   ```
+
+   A green `amend` clears the escalation and `implement` resumes; a `review` run
+   writes a verdict under `.crucible/verdicts/add-greeting/` that `verify
+   --review` then consumes. Nondeterminism is data, not flake (same rule as the
+   spine): a red is signal about the P2 role prompts or the verdict shape.
+
+Clean up inspected scratch dirs manually (`rm -rf /tmp/crucible-worked-*`).
