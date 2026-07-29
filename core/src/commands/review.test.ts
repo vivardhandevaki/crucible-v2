@@ -85,7 +85,13 @@ function verdictPathFromPayload(payload: string): string {
 }
 
 function options(): ReviewOptions {
-  return { root: scratch, change: CHANGE, model: 'claude-haiku-4-5-20251001', base: BASE, head: HEAD };
+  return {
+    root: scratch,
+    change: CHANGE,
+    model: 'claude-haiku-4-5-20251001',
+    base: BASE,
+    head: HEAD,
+  };
 }
 
 function deps(substrate: FakeSubstrate): ReviewDeps {
@@ -223,14 +229,18 @@ async function catchCrucible(fn: () => Promise<unknown>): Promise<CrucibleError>
 describe('review — fail-closed preconditions', () => {
   it('missing change bundle → exit 2 teaching propose', async () => {
     rmSync(join(scratch, CHANGE_REL), { recursive: true, force: true });
-    const err = await catchCrucible(() => review(options(), deps(reviewerSubstrate(cannedVerdict()))));
+    const err = await catchCrucible(() =>
+      review(options(), deps(reviewerSubstrate(cannedVerdict()))),
+    );
     expect(err.exit).toBe(2);
     expect(err.code).toBe('NO_CHANGE');
   });
 
   it('missing role prompt → exit 2 naming .crucible/context/review.md', async () => {
     rmSync(join(scratch, '.crucible', 'context', 'review.md'));
-    const err = await catchCrucible(() => review(options(), deps(reviewerSubstrate(cannedVerdict()))));
+    const err = await catchCrucible(() =>
+      review(options(), deps(reviewerSubstrate(cannedVerdict()))),
+    );
     expect(err.exit).toBe(2);
     expect(err.code).toBe('MISSING_ROLE_PROMPT');
   });

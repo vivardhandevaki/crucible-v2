@@ -328,7 +328,11 @@ function blockOutcome(): VerdictOutcome {
   const finding = {
     rubric: 'R-002',
     severity: 'block' as const,
-    evidence: { file: 'src/payments/RefundService.java', line: 141, excerpt: 'Math.abs(...) < 0.05' },
+    evidence: {
+      file: 'src/payments/RefundService.java',
+      line: 141,
+      excerpt: 'Math.abs(...) < 0.05',
+    },
     explanation: 'Tolerance widened; ORC-refund-002 measures this path.',
     remediation: 'Restore exact comparison per design.md §3.',
   };

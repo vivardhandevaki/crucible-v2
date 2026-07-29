@@ -57,13 +57,13 @@ on:
   # the required check flips green the moment a non-author approves.
   pull_request_review:
 
-# `route` reads the PR's reviews via the ambient GITHUB_TOKEN; verify only reads
-# the checked-out tree (plus `issues: write` so it can file an override ratchet
-# issue). Least privilege (invariant: harness is TCB).
+# `route` reads the PR's reviews via the ambient GITHUB_TOKEN (workflow-level
+# perms). `verify` escalates its own job-level perms: `issues: write` to file an
+# override ratchet issue, `pull-requests: write` to post the reviewer's
+# observations comment (P2-10). Least privilege (invariant: harness is TCB).
 permissions:
   contents: read
   pull-requests: read
-  issues: write
 
 jobs:
   # The green/red gate. A red verify verdict is exit 1; any non-zero step exit
@@ -72,6 +72,10 @@ jobs:
   # satisfiable (fail-closed, invariant #3). Its `routing` output feeds `route`.
   verify:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
     outputs:
       # Aggregated routing across every touched change: `human` if any is critical.
       routing: ${{ steps.verify.outputs.routing }}
@@ -126,10 +130,12 @@ jobs:
         # The required gate. `--config-from` points at the target-branch config
         # extracted above (invariant #7), NOT the PR working tree; `--diff-base`
         # points at origin/<base_ref> so the tier is computed against the target
-        # branch too. Global flags precede the subcommand, the form the CLI parses;
-        # --diff-base is a verify option (after `verify <change>`). A red verdict is
-        # exit 1 → this step fails → the required check is red (verify red → check
-        # red). No error-swallowing: the gate is fail-closed. The aggregated routing
+        # branch too; `--review` runs the adversarial reviewer — CI ALWAYS runs it
+        # (design phase-2.md §5; locally it is opt-in). Global flags precede the
+        # subcommand, the form the CLI parses; --diff-base/--review are verify
+        # options (after `verify <change>`). A red verdict is exit 1 → this step
+        # fails → the required check is red (verify red → check red). No
+        # error-swallowing: the gate is fail-closed. The aggregated routing
         # decision is written to $GITHUB_OUTPUT for the `route` job.
         run: |
           set -euo pipefail
@@ -147,10 +153,21 @@ jobs:
             # verdict must still fail the step (fail-closed), but we also want the
             # report printed and its routing read when green.
             set +e
-            report="$(npx crucible --json --config-from "$RUNNER_TEMP/crucible-target" verify "$change" --diff-base "origin/$BASE")"
+            report="$(npx crucible --json --config-from "$RUNNER_TEMP/crucible-target" verify "$change" --diff-base "origin/$BASE" --review)"
             code=$?
             set -e
             printf '%s\n' "$report"
+            # Reviewer observations (P2-10, the harvest channel — charter §530):
+            # stash them for the PR-comment step BEFORE the red-verdict exit, so a
+            # blocked change still surfaces what the reviewer noticed. Exit 0 and 1
+            # both printed a JSON report; tool errors (2/3) have nothing to harvest.
+            if [ "$code" -eq 0 ] || [ "$code" -eq 1 ]; then
+              obs="$(printf '%s' "$report" | jq -c '.review.observations // empty')"
+              if [ -n "$obs" ] && [ "$obs" != "[]" ]; then
+                mkdir -p "$RUNNER_TEMP/observations"
+                printf '%s' "$obs" > "$RUNNER_TEMP/observations/$change.json"
+              fi
+            fi
             if [ "$code" -ne 0 ]; then
               echo "::endgroup::"
               exit "$code"
@@ -198,6 +215,35 @@ jobs:
             fi
             gh issue create --title "$title" --body "$body" --label crucible-override
           done
+
+      - name: Post reviewer observations to the PR
+        # The harvest channel (P2-10; charter §Enumerated-blocking): everything
+        # the reviewer noticed that is NOT a rubric line — attached to the PR,
+        # promotable to rubric lines by humans via the ratchet. `always()` so a
+        # BLOCKED change still surfaces its observations (the stash step above
+        # ran before the red-verdict exit). ONE marker-tagged comment, edited in
+        # place on re-runs — no spam. Fail-closed like the override step: a
+        # harvest we cannot deliver should be loud, not silently dropped.
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/observations"
+          if [ ! -d "$dir" ]; then
+            echo "No reviewer observations on this PR — nothing to post."
+            exit 0
+          fi
+          marker="<!-- crucible-observations -->"
+          body="$marker"$'\n'"### Crucible reviewer observations"$'\n\n'
+          body+="_Non-blocking notes from the adversarial reviewer — candidates for new oracles or rubric lines (the ratchet)._"$'\n'
+          for f in "$dir"/*.json; do
+            change="$(basename "$f" .json)"
+            notes="$(jq -r '.[] | "- " + .note' "$f")"
+            body+=$'\n'"**${change}**"$'\n'"$notes"$'\n'
+          done
+          gh pr comment "$PR_NUMBER" --edit-last --create-if-none --body "$body"
 
   # The second required check. Auto-routed (trivial/standard) changes pass
   # immediately; critical changes stay RED until a non-author APPROVED review
