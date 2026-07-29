@@ -1,6 +1,6 @@
-# Tasks — Phase 3 — **DRAFT**
+# Tasks — Phase 3
 
-> **Do not execute until P3-00 re-ratification completes.** Rules as ever: test-first, done = named tests pass + committed.
+> **Ratified via P3-00 (2026-07-29)** — tasks below are executable. The `[P2-DEP]` resolution and contract-drift amendments live inline in `docs/design/phase-3.md` (marked *Resolved/Amended P3-00*). Rules as ever: test-first, done = named tests pass + committed.
 
 **P3-00 · Re-ratification of Phase 3 design** · Tier: Fable · Depends: P2-17 green
 Delivers: phase-3.md with `[P2-DEP]` markers resolved against frozen protocol + Phase 2 learnings.
