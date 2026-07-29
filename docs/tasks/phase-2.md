@@ -57,7 +57,8 @@ Acceptance: fresh repo → complete working setup (asserted file-by-file); re-ru
 
 **P2-13 · doctor** · Tier: Opus · Depends: P2-12
 Delivers: `commands/doctor.ts` per design §7.
-Acceptance: detects tampered schema bundle, stale CI template, out-of-range OpenSpec, bad adapter hash; all fixes offered as diffs; accepts/skips upstream rubric lines without silent merge.
+Acceptance: detects tampered schema bundle, stale CI template, out-of-range OpenSpec, ~~bad adapter hash~~ *(deferred → P3-09)*; all fixes offered as diffs; accepts/skips upstream rubric lines without silent merge.
+*(As-built P2-13.)* Shipped `commands/doctor.ts` + `doctor.cli.ts` + `openspec-support.ts` with a four-check registry (`CHECKS`): schema-bundle integrity, CI-template currency, OpenSpec version-range, upstream rubric-line offers — checked against the SAME shipped sources `init` installs from (`@crucible/schemas`, `@crucible/ci-templates`, `core/assets/rubric.default.yaml`, and the OpenSpec support window). doctor is read-only until confirmed: every fix (a `current → desired` diff) is routed through the injected `confirmFix` edge; upstream rubric lines are offered one at a time and appended only on an explicit yes (never silently merged). Exit 1 iff a `drift` finding is left unfixed; rubric offers never gate the exit. **The `bad adapter hash` clause was split to P3-09**, not folded in: the adapter lockfile-with-content-hash it would verify is minted by P3-06's pin flow and did not exist in Phase 2 (a can't-yet-run check would violate invariant 3's "no skipped checks pretending to pass"); the `CHECKS` registry is the seam it slots into. Design §7 records the same deferral.
 
 **P2-14 · Approve review surface** · Tier: Opus (UX ratified P2-14, design §8) · Depends: P2-05
 Delivers: rendered approve flow per design §8 incl. critical per-oracle acks; $EDITOR loop.
