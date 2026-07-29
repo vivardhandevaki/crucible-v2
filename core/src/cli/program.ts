@@ -13,6 +13,7 @@ import { registerApprove } from '../commands/approve.cli.js';
 import { registerArchive } from '../commands/archive.cli.js';
 import { registerEscalate } from '../commands/escalate.cli.js';
 import { registerImplement } from '../commands/implement.cli.js';
+import { registerInit } from '../commands/init.cli.js';
 import { registerOverride } from '../commands/override.cli.js';
 import { registerPropose } from '../commands/propose.cli.js';
 import { registerReview } from '../commands/review.cli.js';
@@ -77,6 +78,7 @@ export function buildProgram(): Command {
   registerArchive(program);
   registerEscalate(program);
   registerImplement(program);
+  registerInit(program);
   registerOverride(program);
   registerPropose(program);
   registerReview(program);

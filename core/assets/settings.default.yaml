@@ -1,0 +1,17 @@
+# Team convenience config (committed) — charter §Three Config Layers.
+#
+# NEVER read by any enforcement path: only model routing (`models:`) and team
+# notify channels (`notify:`) live here. Convenience never enforces, so nothing
+# in this file can change what merges. Personal overrides go in the gitignored
+# `.crucible/local.yaml`, which deep-merges over this file.
+models:
+  # Per-role model routing. Omit a role to use Crucible's built-in default.
+  # propose: claude-opus-4-8
+  # implement: claude-opus-4-8
+  # review: claude-haiku-4-5-20251001   # cheap, different family (charter §Learnings #2)
+  {}
+notify:
+  # Team notify channels (terminal is always on). Examples:
+  # slack: "#your-channel"
+  # webhook: "https://example.com/hook"
+  {}
