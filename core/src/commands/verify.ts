@@ -61,6 +61,7 @@ import {
   type CheckResult,
   type OverrideReport,
   type ReportExtras,
+  type ReviewReport,
   type VerifyReport,
 } from '../verifyx/report.js';
 import { collectArchivedRequirementIds, collectRegressionSuite } from '../regression/regression.js';
@@ -111,6 +112,19 @@ export interface VerifyDeps {
    * behaves as in P1 (the inner-loop / pre-approve verify).
    */
   diffFacts?: () => DiffFacts;
+  /**
+   * Run the adversarial reviewer and return its judged result — the whole
+   * `commands/review.ts` flow behind one edge (substrate session + fail-closed
+   * verdict evaluation; charter §Adversarial Reviewer; design phase-2.md §5).
+   * Injected because it spawns an agent (the one nondeterministic gate). The
+   * shipped CI template ALWAYS supplies it (`--review` on the verify
+   * invocation); locally it is opt-in via the same flag — "verify --review
+   * optional locally; CI always". Omitted → the review check is skipped, like
+   * tier without `diffFacts`. Gated on a green traceability lint like the
+   * oracle run: a bundle that does not even parse is already red, and no agent
+   * is spent reviewing it.
+   */
+  review?: () => Promise<{ check: CheckResult; review: ReviewReport }>;
 }
 
 /** verify invocation options. `root` is the repo root the seal is relative to. */
@@ -248,6 +262,18 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
       const reproduction = oracles.filter((o) => o.binding.reproduces === true);
       const baseResults = await deps.runOnBase(reproduction);
       checks.push(reproductionCheck(baseResults));
+    }
+
+    // Review check (adversarial reviewer; charter §Adversarial Reviewer, design
+    // §5) — the verdict is ONE INPUT to verify: CI always supplies this edge,
+    // locally it rides `--review`. The edge already ran the fail-closed
+    // evaluator (P2-09), so any malformed/invented/unpinned verdict arrives
+    // here as a red check, never a throw. Observations ride the report extras
+    // to the PR (the harvest channel) — present on pass and fail alike.
+    if (deps.review) {
+      const reviewed = await deps.review();
+      checks.push(reviewed.check);
+      extras.review = reviewed.review;
     }
   }
 

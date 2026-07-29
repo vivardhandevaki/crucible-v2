@@ -226,3 +226,46 @@ describe('crucible.yml — override ratchet issue (P2-06, design phase-2.md §3)
     expect(stepNamed('override ratchet')['continue-on-error']).not.toBe(true);
   });
 });
+
+describe('crucible.yml — adversarial reviewer (P2-10, design phase-2.md §5)', () => {
+  it('CI always runs the reviewer: the verify invocation passes --review', () => {
+    const cmd = (stepNamed('verify').run ?? '')
+      .split('\n')
+      .find((l) => l.includes('npx') && l.includes('verify '));
+    expect(cmd, 'an `npx crucible ... verify` invocation line').toBeTruthy();
+    // "verify --review optional locally; CI always" — the shipped gate opts in.
+    expect(cmd).toContain('--review');
+  });
+
+  it('captures the reviewer observations verify emits in its --json report', () => {
+    // The verify loop stashes `.review.observations` for the PR-comment step —
+    // CI never invents observations; the core emits them (design §5).
+    const run = stepNamed('verify').run ?? '';
+    expect(run).toContain('.review.observations');
+  });
+
+  it('grants pull-requests: write on the verify job so observations can be posted', () => {
+    const perms = workflow.jobs?.verify?.permissions ?? workflow.permissions ?? {};
+    expect(perms['pull-requests']).toBe('write');
+  });
+
+  it('posts observations as ONE marker-tagged PR comment, updated in place (no spam on re-runs)', () => {
+    const step = stepNamed('observations');
+    const run = step.run ?? '';
+    // A stable marker identifies the Crucible observations comment; --edit-last
+    // + --create-if-none updates it in place instead of stacking duplicates.
+    expect(run).toContain('crucible-observations');
+    expect(run).toContain('gh pr comment');
+    expect(run).toContain('--edit-last');
+    expect(run).toContain('--create-if-none');
+    expect(step.env?.GH_TOKEN).toBeTruthy();
+  });
+
+  it('the observations step is fail-closed — the harvest channel is not droppable', () => {
+    const run = stepNamed('observations').run ?? '';
+    expect(run).toContain('set -euo pipefail');
+    expect(run).not.toContain('|| true');
+    expect(run).not.toContain('|| exit 0');
+    expect(stepNamed('observations')['continue-on-error']).not.toBe(true);
+  });
+});

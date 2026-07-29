@@ -1,0 +1,1686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script>
+  // Set theme before paint to avoid a flash.
+  (function () {
+    try {
+      var saved = localStorage.getItem("theme");
+      var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      var theme = saved || (prefersDark ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "light");
+    }
+  })();
+</script>
+<title>Crucible — Approve the promise, never read the code</title>
+<meta name="description" content="Crucible is a framework for building software end-to-end with AI agents. Humans approve intent artifacts — specs and oracles — at a single ten-minute gate; agents write the code; deterministic machinery guarantees the code honors the approved promise. Extended TDD/BDD with one human gate, five commands, and tech-agnostic adapters." />
+<style>
+  :root {
+    --bg: #fbfaf8;
+    --bg-panel: #ffffff;
+    --bg-sunk: #f4f2ee;
+    --ink: #1c1b19;
+    --ink-soft: #55524c;
+    --ink-faint: #8a867e;
+    --line: #e7e3dc;
+    --line-strong: #d8d3ca;
+    --accent: #b8461f;
+    --accent-soft: #f7ede8;
+    --accent-ink: #9a3a19;
+    --ok: #2f6b43;
+    --ok-bg: #edf5ef;
+    --warn: #8a6d1a;
+    --warn-bg: #f8f2e2;
+    --mono: "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", "Georgia", serif;
+    --maxw: 760px;
+
+    /* semantic tokens (overridden in dark) */
+    --topbar-bg: rgba(251,250,248,0.85);
+    --accent-border: #eeddd3;
+    --eli5-ink: #4a2c1c;
+    --code-bg: #201f1d;
+    --code-ink: #e9e5dd;
+    --code-line: #34322e;
+    --code-c: #8f8a80;
+    --code-k: #e0966b;
+    --code-s: #a7c58b;
+    --code-t: #7fb0c9;
+    --code-bad: #ef9a86;
+    --code-good: #9fce9a;
+    --node-human-border: #e3b49f;
+    --node-human-small: #9a5b3f;
+    --node-agent-border: #bcd8c3;
+    --node-agent-small: #3f6b4d;
+    --node-gate-border: #e6cf99;
+    --node-gate-small: #7a641f;
+    --warn-strong: #d9822b;
+    --warn-ink: #b5670f;
+    --live-border: #cfe4d5;
+    --layer-l1: #fdfcfa;
+  }
+
+  /* ---------- Dark theme ---------- */
+  html[data-theme="dark"] {
+    --bg: #16161a;
+    --bg-panel: #1e1e24;
+    --bg-sunk: #26262e;
+    --ink: #edeae4;
+    --ink-soft: #b0aca4;
+    --ink-faint: #837f77;
+    --line: #34343d;
+    --line-strong: #45454f;
+    --accent: #e0703f;
+    --accent-soft: #35251d;
+    --accent-ink: #f0a173;
+    --ok: #7fc98f;
+    --ok-bg: #1d2b21;
+    --warn: #d7b24e;
+    --warn-bg: #2c2617;
+
+    --topbar-bg: rgba(22,22,26,0.85);
+    --accent-border: #4a3226;
+    --eli5-ink: #e6c9b6;
+    --code-bg: #101013;
+    --code-ink: #e9e5dd;
+    --code-line: #2b2b32;
+    --node-human-border: #7a4d38;
+    --node-human-small: #d9a184;
+    --node-agent-border: #3d5c46;
+    --node-agent-small: #93c79f;
+    --node-gate-border: #5f5426;
+    --node-gate-small: #cbb56a;
+    --warn-strong: #d7b24e;
+    --warn-ink: #dcb85a;
+    --live-border: #3a5641;
+    --layer-l1: #212128;
+  }
+  html { color-scheme: light; }
+  html[data-theme="dark"] { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection { background: var(--accent-soft); }
+
+  /* ---------- Layout ---------- */
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  section { padding: 64px 0; border-top: 1px solid var(--line); }
+  section:first-of-type { border-top: none; }
+
+  /* ---------- Nav ---------- */
+  header.topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: var(--topbar-bg);
+    backdrop-filter: saturate(180%) blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-inner {
+    max-width: 1080px; margin: 0 auto; padding: 12px 24px;
+    display: flex; align-items: center; gap: 20px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: -0.01em; }
+  .brand .mark {
+    width: 22px; height: 22px; border-radius: 5px;
+    background: var(--accent);
+    display: inline-block; position: relative; flex: none;
+  }
+  .brand .mark::after {
+    content: ""; position: absolute; inset: 6px 6px auto 6px; height: 3px;
+    background: var(--bg); border-radius: 2px;
+    box-shadow: 0 5px 0 var(--bg);
+  }
+  .topbar nav { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
+  .topbar nav a {
+    color: var(--ink-soft); text-decoration: none; font-size: 14px;
+    padding: 6px 10px; border-radius: 7px;
+  }
+  .topbar nav a:hover { color: var(--ink); background: var(--bg-sunk); }
+  /* hamburger — hidden on desktop, shown on mobile */
+  .nav-toggle {
+    display: none; margin-left: auto; flex: none;
+    width: 40px; height: 40px; border-radius: 8px;
+    border: 1px solid var(--line-strong); background: var(--bg-panel);
+    color: var(--ink-soft); cursor: pointer; padding: 0;
+    align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .nav-toggle svg { width: 20px; height: 20px; }
+  .nav-toggle .icon-x { display: none; }
+  .nav-toggle[aria-expanded="true"] .icon-bars { display: none; }
+  .nav-toggle[aria-expanded="true"] .icon-x { display: block; }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 92px 0 72px; text-align: left; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent-ink); margin-bottom: 22px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-size: clamp(38px, 6vw, 60px);
+    line-height: 1.05; letter-spacing: -0.02em; margin: 0 0 24px;
+    font-weight: 600;
+  }
+  .lede { font-size: 21px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 20px; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+  .hero-meta {
+    margin-top: 34px; display: flex; gap: 10px; flex-wrap: wrap;
+    font-family: var(--mono); font-size: 12.5px;
+  }
+  .chip {
+    border: 1px solid var(--line-strong); border-radius: 999px;
+    padding: 5px 13px; color: var(--ink-soft); background: var(--bg-panel);
+  }
+
+  /* ---------- Typography ---------- */
+  h2 {
+    font-family: var(--serif); font-weight: 600;
+    font-size: clamp(27px, 4vw, 34px); letter-spacing: -0.015em;
+    line-height: 1.15; margin: 0 0 6px;
+  }
+  .section-kicker {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent-ink); margin-bottom: 14px;
+  }
+  h3 {
+    font-size: 20px; letter-spacing: -0.01em; margin: 40px 0 10px; font-weight: 650;
+  }
+  h4 { font-size: 16px; margin: 26px 0 8px; font-weight: 650; }
+  p { margin: 0 0 16px; }
+  a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  strong { font-weight: 650; }
+  ul, ol { padding-left: 22px; margin: 0 0 16px; }
+  li { margin-bottom: 8px; }
+  code {
+    font-family: var(--mono); font-size: 0.86em;
+    background: var(--bg-sunk); border: 1px solid var(--line);
+    padding: 1px 6px; border-radius: 5px; white-space: nowrap;
+  }
+  .subhead { font-size: 18.5px; color: var(--ink-soft); margin: 8px 0 28px; }
+
+  /* ---------- ELI5 block ---------- */
+  .eli5 {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-border);
+    border-radius: 12px;
+    padding: 18px 20px 6px;
+    margin: 20px 0 26px;
+  }
+  .eli5 .tag {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--accent-ink); font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .eli5 .tag::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); display: inline-block;
+  }
+  /* ELI5 is now a collapsed-by-default disclosure. */
+  details.eli5 > summary.tag {
+    cursor: pointer; list-style: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  details.eli5 > summary.tag::-webkit-details-marker { display: none; }
+  details.eli5:not([open]) > summary.tag { margin-bottom: 0; }
+  details.eli5 > summary.tag::after {
+    content: ""; width: 6px; height: 6px; margin-left: 1px;
+    border-right: 2px solid var(--accent-ink);
+    border-bottom: 2px solid var(--accent-ink);
+    transform: translateY(-1px) rotate(-45deg);
+    transition: transform 0.15s ease;
+  }
+  details.eli5[open] > summary.tag::after { transform: translateY(-2px) rotate(45deg); }
+  details.eli5 > summary.tag:hover { color: var(--accent); }
+  .eli5 p { color: var(--eli5-ink); }
+  .eli5 p:last-child { margin-bottom: 12px; }
+
+  /* ---------- Drill-down ---------- */
+  details.drill {
+    border: 1px solid var(--line-strong);
+    border-radius: 12px; margin: 18px 0 24px; background: var(--bg-panel);
+    overflow: hidden;
+  }
+  details.drill > summary {
+    cursor: pointer; list-style: none; padding: 14px 18px;
+    font-weight: 600; font-size: 15px; color: var(--ink);
+    display: flex; align-items: center; gap: 10px;
+    user-select: none;
+  }
+  details.drill > summary::-webkit-details-marker { display: none; }
+  details.drill > summary .caret {
+    width: 16px; height: 16px; flex: none; transition: transform .18s ease;
+    color: var(--ink-faint);
+  }
+  details.drill[open] > summary .caret { transform: rotate(90deg); }
+  details.drill > summary .label-kind {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--accent-ink);
+    background: var(--accent-soft); border-radius: 5px; padding: 2px 7px;
+    margin-left: auto; font-weight: 600;
+  }
+  details.drill[open] > summary { border-bottom: 1px solid var(--line); }
+  .drill-body { padding: 4px 20px 6px; }
+  .drill-body > *:first-child { margin-top: 14px; }
+  /* drill variants */
+  details.drill.ex > summary .label-kind { color: var(--ok); background: var(--ok-bg); }
+  details.drill.why > summary .label-kind { color: var(--warn); background: var(--warn-bg); }
+  details.drill.diag > summary .label-kind { color: var(--ink-soft); background: var(--bg-sunk); }
+
+  /* ---------- Code blocks ---------- */
+  .code-cap {
+    font-family: var(--mono); font-size: 12px; color: var(--ink-faint);
+    margin: 18px 0 -8px; letter-spacing: 0.02em;
+  }
+  pre {
+    margin: 14px 0; background: var(--code-bg); color: var(--code-ink);
+    border-radius: 10px; padding: 15px 17px; overflow-x: auto;
+    font-family: var(--mono); font-size: 12.8px; line-height: 1.6;
+    border: 1px solid var(--code-line);
+  }
+  pre code { background: none; border: none; padding: 0; white-space: pre; color: inherit; font-size: inherit; }
+  pre .c { color: var(--code-c); font-style: italic; }
+  pre .k { color: var(--code-k); }
+  pre .s { color: var(--code-s); }
+  pre .t { color: var(--code-t); }
+  pre .bad { color: var(--code-bad); }
+  pre .good { color: var(--code-good); }
+
+  /* ---------- Diagrams ---------- */
+  .diagram {
+    background: var(--bg-sunk); border: 1px solid var(--line-strong);
+    border-radius: 12px; padding: 22px 20px; margin: 22px 0;
+  }
+  .diagram .dtitle {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-faint); margin-bottom: 18px; text-align: center;
+  }
+  .vflow { display: grid; gap: 0; justify-items: center; }
+  .vflow .node {
+    background: var(--bg-panel); border: 1px solid var(--line-strong); border-radius: 9px;
+    padding: 9px 16px; font-size: 14px; font-weight: 600; text-align: center;
+    max-width: 480px; width: 100%;
+  }
+  .vflow .node small { display: block; font-weight: 400; color: var(--ink-soft); font-size: 12.5px; margin-top: 2px; }
+  .vflow .node.human { border-color: var(--node-human-border); background: var(--accent-soft); color: var(--accent-ink); }
+  .vflow .node.human small { color: var(--node-human-small); }
+  .vflow .node.agent { border-color: var(--node-agent-border); background: var(--ok-bg); color: var(--ok); }
+  .vflow .node.agent small { color: var(--node-agent-small); }
+  .vflow .node.gate { border-color: var(--node-gate-border); background: var(--warn-bg); color: var(--warn); }
+  .vflow .node.gate small { color: var(--node-gate-small); }
+  .vflow .down { color: var(--ink-faint); font-size: 16px; line-height: 1.3; padding: 4px 0; text-align: center; }
+  .vflow .down small { font-family: var(--mono); font-size: 10.5px; margin-left: 8px; color: var(--ink-faint); }
+  .vflow .split { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); padding: 4px 0; text-align: center; }
+
+  /* ownership lanes */
+  .lanes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 22px 0; }
+  @media (max-width: 640px){ .lanes { grid-template-columns: 1fr; } }
+  .lane-col { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg-panel); }
+  .lane-col h5 { margin: 0; padding: 10px 14px; font-size: 12.5px; letter-spacing: 0.04em; text-align: center; text-transform: uppercase; }
+  .lane-col.human h5 { background: var(--accent-soft); color: var(--accent-ink); }
+  .lane-col.agent h5 { background: var(--ok-bg); color: var(--ok); }
+  .lane-col.auto h5 { background: var(--bg-sunk); color: var(--ink-soft); }
+  .lane-col ul { margin: 12px 14px; padding-left: 18px; font-size: 13.5px; }
+  .lane-col li { margin-bottom: 6px; color: var(--ink-soft); }
+
+  /* ---------- Dictionary ---------- */
+  .dict { display: grid; gap: 12px; margin: 24px 0; }
+  .dict .entry { border: 1px solid var(--line); border-radius: 12px; background: var(--bg-panel); padding: 15px 20px; }
+  .dict .term-h { font-weight: 650; font-size: 17px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .dict .pos { font-family: var(--serif); font-style: italic; color: var(--ink-faint); font-size: 14px; font-weight: 400; }
+  .dict .def { margin: 10px 0 0; font-size: 14.5px; color: var(--ink-soft); }
+  .dict .def .lbl {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+    font-weight: 600; margin-right: 9px; padding: 2px 7px; border-radius: 5px; white-space: nowrap;
+  }
+  .dict .def.plain .lbl { background: var(--bg-sunk); color: var(--ink-soft); }
+  .dict .def.ours .lbl { background: var(--accent-soft); color: var(--accent-ink); }
+  .dict .def.ours { color: var(--ink); }
+
+  /* ---------- Cards / principles ---------- */
+  .cards { display: grid; gap: 14px; margin: 24px 0; }
+  .card {
+    border: 1px solid var(--line); border-radius: 12px; background: var(--bg-panel);
+    padding: 18px 20px;
+  }
+  .card .num {
+    font-family: var(--mono); font-size: 12px; color: var(--accent-ink);
+    font-weight: 600;
+  }
+  .card h4 { margin: 4px 0 6px; font-size: 16.5px; }
+  .card p { margin: 0; color: var(--ink-soft); font-size: 15px; }
+
+  /* ---------- Callout ---------- */
+  .rule {
+    border-left: 3px solid var(--accent);
+    background: var(--bg-panel);
+    padding: 16px 20px; border-radius: 0 10px 10px 0; margin: 26px 0;
+    font-size: 17px;
+  }
+  .rule .rule-tag {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent-ink); display: block; margin-bottom: 4px;
+  }
+  .rule.warn { border-left-color: var(--warn-strong); background: rgba(217,130,43,0.07); }
+  .rule.warn .rule-tag { color: var(--warn-ink); }
+
+  /* ---------- Status badges (north-star vs. what's live) ---------- */
+  .badge { display: inline-block; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.07em;
+    text-transform: uppercase; border-radius: 999px; padding: 1px 8px; vertical-align: middle;
+    white-space: nowrap; font-weight: 600; }
+  .badge-wip  { color: var(--warn-ink); background: rgba(217,130,43,0.12); border: 1px solid rgba(217,130,43,0.38); }
+  .badge-live { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--live-border); }
+  .northstar { border: 1px solid var(--accent); background: linear-gradient(180deg, var(--accent-soft), var(--bg-panel));
+    border-radius: 14px; padding: 20px 22px; margin: 24px 0; }
+  .northstar .rule-tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent-ink); display: block; margin-bottom: 6px; }
+  /* WIP steps in a flow: dashed left rail so the eye can scan what's not live yet */
+  ol.steps li.is-wip { border-left: 2px dashed rgba(217,130,43,0.5); padding-left: 14px; margin-left: -16px; }
+  .roadmap-item { border: 1px solid var(--line); border-left: 3px solid var(--warn-strong); border-radius: 0 10px 10px 0;
+    background: var(--bg-panel); padding: 14px 18px; margin: 12px 0; }
+  .roadmap-item h4 { margin: 0 0 4px; }
+  .roadmap-item .today { color: var(--muted); font-size: 14px; margin-top: 6px; }
+
+  /* ---------- Tables ---------- */
+  .tablewrap { overflow-x: auto; margin: 22px 0; border: 1px solid var(--line); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--bg-sunk); font-weight: 650; font-size: 13px; letter-spacing: 0.01em; }
+  tr:last-child td { border-bottom: none; }
+  td code { white-space: normal; }
+
+  /* ---------- Pipeline diagram ---------- */
+  .flow {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch;
+    margin: 24px 0; font-family: var(--mono); font-size: 12.5px;
+  }
+  .flow .step {
+    background: var(--bg-panel); border: 1px solid var(--line-strong);
+    border-radius: 8px; padding: 8px 11px; display: flex; align-items: center; gap: 8px;
+  }
+  .flow .step .who {
+    font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 5px; border-radius: 4px; font-weight: 600;
+  }
+  .who.human { background: var(--accent-soft); color: var(--accent-ink); }
+  .who.auto { background: var(--bg-sunk); color: var(--ink-soft); }
+  .who.agent { background: var(--ok-bg); color: var(--ok); }
+  .flow .arrow { color: var(--ink-faint); align-self: center; }
+
+  /* ---------- Layer stack ---------- */
+  .layers { margin: 24px 0; display: grid; gap: 6px; }
+  .layer {
+    border: 1px solid var(--line-strong); border-radius: 10px; padding: 14px 18px;
+    background: var(--bg-panel);
+  }
+  .layer .lname { font-weight: 650; font-size: 15px; }
+  .layer .lname span { font-family: var(--mono); font-size: 11px; color: var(--accent-ink); margin-left: 8px; }
+  .layer p { margin: 4px 0 0; font-size: 14.5px; color: var(--ink-soft); }
+  .layer.l1 { background: var(--layer-l1); }
+
+  /* ---------- Steps (workflow) ---------- */
+  ol.steps { list-style: none; padding: 0; counter-reset: s; margin: 24px 0; }
+  ol.steps > li {
+    position: relative; padding: 0 0 22px 46px; margin: 0;
+    border-left: 2px solid var(--line); margin-left: 15px;
+  }
+  ol.steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  ol.steps > li::before {
+    counter-increment: s; content: counter(s);
+    position: absolute; left: -16px; top: -2px;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--bg-panel); border: 2px solid var(--line-strong);
+    color: var(--accent-ink); font-family: var(--mono); font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  ol.steps > li h4 { margin: 2px 0 6px; }
+  ol.steps > li p { font-size: 15.5px; color: var(--ink-soft); margin: 0 0 8px; }
+  .term {
+    font-family: var(--mono); font-size: 13px; color: var(--ink-soft);
+    background: var(--bg-sunk); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 11px; margin-top: 6px; display: block;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .term b { color: var(--accent-ink); font-weight: 600; }
+  .statepill {
+    display: inline-block; font-family: var(--mono); font-size: 11px;
+    background: var(--ok-bg); color: var(--ok); border-radius: 5px;
+    padding: 2px 8px; margin-top: 8px; font-weight: 600;
+  }
+
+  /* ---------- FAQ ---------- */
+  details.faq {
+    border-bottom: 1px solid var(--line); padding: 4px 0;
+  }
+  details.faq > summary {
+    cursor: pointer; list-style: none; padding: 16px 4px;
+    font-weight: 600; font-size: 17px; display: flex; gap: 12px; align-items: flex-start;
+  }
+  details.faq > summary::-webkit-details-marker { display: none; }
+  details.faq > summary .q { color: var(--accent-ink); font-family: var(--serif); flex: none; }
+  details.faq .a { padding: 0 4px 18px 30px; color: var(--ink-soft); }
+  details.faq .a p:last-child { margin-bottom: 0; }
+
+  /* ---------- Misc ---------- */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 640px){ .two-col { grid-template-columns: 1fr; } }
+  .muted { color: var(--ink-faint); font-size: 14px; }
+  hr.soft { border: none; border-top: 1px solid var(--line); margin: 36px 0; }
+  footer {
+    border-top: 1px solid var(--line); padding: 48px 0 72px; color: var(--ink-faint); font-size: 14px;
+  }
+  footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  .badge-ok { color: var(--ok); font-weight: 600; }
+  .badge-warn { color: var(--warn); font-weight: 600; }
+
+  /* ---------- Theme toggle ---------- */
+  .theme-toggle {
+    margin-left: auto; flex: none;
+    width: 34px; height: 34px; border-radius: 8px;
+    border: 1px solid var(--line-strong); background: var(--bg-panel);
+    color: var(--ink-soft); cursor: pointer; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color .15s ease, background .15s ease, border-color .15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .theme-toggle:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .theme-toggle svg { width: 17px; height: 17px; }
+  .topbar nav + .theme-toggle { margin-left: 0; }
+  /* show sun in dark mode, moon in light mode */
+  .theme-toggle .icon-sun { display: none; }
+  .theme-toggle .icon-moon { display: block; }
+  html[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
+  html[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+  /* ============================================================
+     MOBILE OPTIMIZATIONS  (<= 760px)  — desktop is unaffected
+     ============================================================ */
+  @media (max-width: 760px) {
+    /* --- Topbar: brand left, theme + hamburger right --- */
+    .nav-toggle { display: inline-flex; order: 3; margin-left: 8px; }
+    .theme-toggle { order: 2; margin-left: auto; }
+    .brand { order: 1; }
+    .topbar-inner { padding: 10px 18px; gap: 12px; flex-wrap: nowrap; }
+
+    /* --- Nav becomes a slide-down panel --- */
+    .topbar nav {
+      order: 4; position: absolute; left: 0; right: 0; top: 100%;
+      margin-left: 0; flex-direction: column; gap: 2px;
+      background: var(--bg-panel); border-bottom: 1px solid var(--line);
+      box-shadow: 0 12px 24px rgba(0,0,0,0.10);
+      padding: 8px 12px 12px;
+      max-height: 0; overflow: hidden;
+      opacity: 0; pointer-events: none;
+      transition: max-height .28s ease, opacity .2s ease, padding .28s ease;
+    }
+    .topbar nav.open {
+      max-height: 80vh; overflow-y: auto; opacity: 1; pointer-events: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .topbar nav a {
+      font-size: 16px; padding: 12px 14px; border-radius: 9px;
+      display: block; width: 100%;
+    }
+
+    /* --- Tighter, more readable spacing --- */
+    .wrap { padding: 0 18px; }
+    section { padding: 44px 0; }
+    .hero { padding: 52px 0 40px; }
+    body { font-size: 16.5px; }
+
+    /* keep large display type from overflowing narrow screens */
+    h1 { font-size: clamp(31px, 9vw, 44px); }
+    .lede { font-size: 18.5px; }
+    .subhead { font-size: 16.5px; }
+
+    /* --- No horizontal overflow from code / wide content --- */
+    pre { font-size: 12px; padding: 13px 14px; border-radius: 9px; -webkit-overflow-scrolling: touch; }
+    .flow { font-size: 12px; }
+    .tablewrap { -webkit-overflow-scrolling: touch; }
+    table { font-size: 13.5px; }
+    th, td { padding: 9px 11px; }
+
+    /* --- Bigger tap targets for disclosures --- */
+    details.faq > summary { padding: 15px 4px; }
+    details.drill > summary { padding: 15px 16px; }
+    details.eli5 > summary.tag { padding: 4px 0; }
+
+    /* --- Cards / panels: a touch less inner padding --- */
+    .card, .roadmap-item, .dict .entry, .layer, .rule, .northstar { padding-left: 16px; padding-right: 16px; }
+    .eli5 { padding: 16px 16px 4px; }
+
+    /* --- Prevent horizontal overflow --- */
+    html, body { overflow-x: hidden; }
+    /* inline code can wrap instead of forcing the page wider */
+    code { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+    /* but code INSIDE a scrolling <pre> keeps its formatting */
+    pre code { white-space: pre; overflow-wrap: normal; word-break: normal; }
+    /* the closed nav panel must not contribute to page width */
+    .topbar nav { width: 100%; max-width: 100vw; }
+    .topbar nav:not(.open) { visibility: hidden; }
+    .topbar nav.open { visibility: visible; }
+  }
+
+  @media (max-width: 420px) {
+    .wrap { padding: 0 15px; }
+    .hero-meta .chip { font-size: 11.5px; padding: 5px 10px; }
+    h1 { font-size: clamp(28px, 8.5vw, 38px); }
+  }
+
+  /* Respect users who prefer reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .topbar nav { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="brand"><span class="mark"></span> Crucible</span>
+    <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="site-nav" onclick="toggleNav()">
+      <svg class="icon-bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      <svg class="icon-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>
+    </button>
+    <nav id="site-nav">
+      <a href="#purpose">Purpose</a>
+      <a href="#vocab">Vocabulary</a>
+      <a href="#principles">Principles</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#how">Under the hood</a>
+      <a href="#tiers">Tiers</a>
+      <a href="#use">How to use</a>
+      <a href="#example">Examples</a>
+      <a href="#faq">FAQ</a>
+      <a href="#dictionary">Dictionary</a>
+      <a href="#roadmap">Roadmap</a>
+    </nav>
+    <button class="theme-toggle" type="button" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2"/>
+        <path d="M12 2v2.5M12 19.5V22M4.22 4.22l1.77 1.77M18.01 18.01l1.77 1.77M2 12h2.5M19.5 12H22M4.22 19.78l1.77-1.77M18.01 5.99l1.77-1.77"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="eyebrow">AI-driven development, verified</div>
+    <h1>Approve the promise.<br>Never read the code.</h1>
+    <p class="lede">
+      Crucible is a framework for building software end-to-end with AI agents, where the human's job
+      moves from <strong>approving code</strong> to <strong>approving intent</strong> — and deterministic
+      machinery guarantees the code honors it.
+    </p>
+    <p class="lede">
+      One human gate. Five commands. Agents write the implementation <em>and</em> draft the judges —
+      but a person seals the judges before any code exists, and after that,
+      <strong>the only path to green is through the code</strong>.
+    </p>
+    <div class="hero-meta">
+      <span class="chip">extended TDD/BDD, not a bureaucracy</span>
+      <span class="chip">one human gate: approve</span>
+      <span class="chip">oracles precede implementation</span>
+      <span class="chip">tech-agnostic via adapters</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PURPOSE ============ -->
+<section id="purpose">
+  <div class="wrap">
+    <div class="section-kicker">01 — Purpose &amp; thought process</div>
+    <h2>Why Crucible exists</h2>
+    <p class="subhead">The problem isn’t that AI can’t write the code. It’s that verification effort is conserved, not eliminated — so the verification had better be enjoyable to live inside.</p>
+
+    <details class="eli5">
+      <summary class="tag">ELI5</summary>
+      <p>
+        AI can write most code now, but somebody still has to make sure it's <em>right</em>. Reading every
+        line yourself is too slow — you'd lose the whole speed advantage. So Crucible's trick, from day one:
+        the AI takes the exam, but a person approves the <em>answer key</em> first. One answer key can grade
+        a thousand exams the same way, instantly.
+      </p>
+      <p>
+        The obvious way to enforce that is to build a fortress — guards at every door, cameras in every
+        corner, forms in triplicate. Fortresses work, and nobody wants to go to school there, so they quietly
+        stop being used. Crucible keeps exactly two hard things — the answer key and the locked grading
+        room — and makes everything else feel like a normal school day: you check the answer key once
+        (about ten minutes), and everything after that is automatic.
+      </p>
+    </details>
+
+    <p>
+      The premise: <strong>verification effort is conserved, not eliminated.</strong>
+      If humans stop reading code, trust must come from machine-checkable verification. Humans author and
+      approve <em>intent artifacts</em> — specs and oracles. Agents author implementation. Deterministic
+      infrastructure enforces the workflow.
+    </p>
+
+    <div class="card">
+      <p style="margin:0">
+        <strong>The whole architecture in one sentence:</strong> Crucible's job is to shrink the
+        <em>trusted computing base</em> from “all the code” down to “the specs, oracles, and harness” —
+        and then concentrate scarce human attention exclusively there.
+      </p>
+    </div>
+
+    <details class="drill why">
+      <summary>
+        <svg class="caret" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        The two naive responses — and the design requirements that follow
+      </summary>
+      <div class="drill-body">
+        <p><strong>Naive response #1: keep reviewing everything.</strong> Humans read every AI-written PR
+        line-by-line. The human becomes the bottleneck, the speed advantage evaporates, and review quality
+        decays with volume anyway — fatigue is not a security model.</p>
+        <p><strong>Naive response #2: stop reviewing, just trust it.</strong> Model + linters + its own tests.
+        But code and tests written by the same mind share the same blind spots, agents under optimization
+        pressure game their own checks, and “nobody looked” is not the same thing as “it’s right.”
+        Unchecked ≠ trusted.</p>
+        <p><strong>The resolution:</strong> relocate trust from the output to the judges. Agents draft both
+        code and judges — but a human seals the judges first, and machinery guarantees the code answers to
+        them. From that follow four design requirements, in priority order: <b>(1)</b> guarantees enforced by
+        machinery, never by vigilance — the workflow lives in artifacts and CI, not in anyone’s discipline;
+        <b>(2)</b> a developer experience people choose voluntarily — a framework nobody enjoys using
+        enforces nothing; <b>(3)</b> language- and stack-agnosticism, so the guarantees aren’t one
+        ecosystem’s privilege; <b>(4)</b> honesty about limits — every guarantee machine-checked, and
+        everything that can’t be guaranteed is named, not implied.</p>
+        <p>Two standing tests then govern every feature: <em>does this ask the human for information the
+        system could compute, or attention the system could defer?</em> (if yes, it’s a DX bug) — and the
+        meta-rule: <em>every convenience must be computed deterministically from artifacts, never
+        self-declared by an agent, or by a human under deadline pressure.</em></p>
+      </div>
+    </details>
+
+    <h3>The failure modes it's designed against</h3>
+    <ul>
+      <li><strong>Reward hacking.</strong> An agent that can touch its own tests will “pass” them. In Crucible the
+        oracles are sealed by hash before implementation starts; the implement agent literally cannot modify
+        what judges it, and a skipped test counts as a <em>failed</em> test.</li>
+      <li><strong>The grading-your-own-homework loop.</strong> If one pipeline writes the spec, the oracles,
+        <em>and</em> the code with no human touch, “correct” collapses into “internally consistent.” Crucible's
+        single human gate at <code>approve</code> breaks the loop exactly once, where leverage is highest.</li>
+      <li><strong>Improvised decisions.</strong> Ambiguity discovered mid-implementation is a spec bug. Agents
+        must stop and escalate — never guess — and the fix flows through a thirty-second <code>amend</code>,
+        so the decision lands in the spec forever instead of in one agent's context window.</li>
+      <li><strong>Judgment under deadline pressure.</strong> Humans asked to pick “how much verification does
+        this change need?” at 6&nbsp;PM on a Friday will pick wrong. So tiers are <em>computed</em> from
+        observable facts, and can be forced up but never down.</li>
+      <li><strong>Silent decay.</strong> Every escaped defect must ship a permanent commit — a new oracle,
+        rubric line, or rule. The system only ratchets stricter.</li>
+    </ul>
+
+    <details class="drill ex">
+      <summary>
+        <svg class="caret" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Example: why the agent's own green tests prove nothing
+      </summary>
+      <div class="drill-body">
+        <div class="code-cap">the code (has a bug: forgets quantity)</div>
+        <pre><code><span class="k">Money</span> refundFor(Item item, <span class="k">int</span> qty) {
+  <span class="k">return</span> item.price();            <span class="c">// BUG: should be price × qty</span>
+}</code></pre>
+        <div class="code-cap">the agent's own unit test (encodes the SAME misunderstanding — passes anyway)</div>
+        <pre><code><span class="bad">assertEquals(item.price(), refundFor(item, 3));  <span class="c">// green ✓ … and wrong</span></span></code></pre>
+        <div class="code-cap">the human-approved oracle, written before the code existed</div>
+        <pre><code><span class="good">assertEquals(item.price().times(3), refundFor(item, 3));  <span class="c">// red ✗ — bug caught</span></span></code></pre>
+        <p>Code and test written by the same mind share the same blind spots — that's true for humans and
+        doubly true for a model with one context window. Splitting <em>who writes the judge</em> from
+        <em>who writes the code</em>, with a human seal in between, is the entire trick.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ============ VOCAB ============ -->
+<section id="vocab">
+  <div class="wrap">
+    <div class="section-kicker">02 — A shared vocabulary</div>
+    <h2>Seven words that carry the whole system</h2>
+    <p class="subhead">Learn these and every diagram below reads itself. Full definitions live in the <a href="#dictionary">dictionary</a>.</p>
+
+    <details class="eli5">
+      <summary class="tag">ELI5</summary>
+      <p>
+        An <strong>oracle</strong> is the answer key: “given this, when that, then this must happen” — plus a
+        real test that checks it. A <strong>spec</strong> is the list of promises your software makes.
+        A <strong>tier</strong> is how careful the system is with a change (a typo fix and a payments change
+        are not treated the same). An <strong>adapter</strong> is a translator so Crucible can run tests in
+        any language. The <strong>ratchet</strong> means every escaped bug makes the rules permanently
+        stricter — the system only tightens, never loosens.
+      </p>
+    </details>
+
+    <div class="cards">
+      <div class="card"><h4>Oracle</h4><p>A human-readable scenario (<em>Given/When/Then</em>) bound to an executable test. The judge. Established testing-literature term: the mechanism that decides whether output is correct.</p></div>
+      <div class="card"><h4>Spec delta</h4><p>The change's new promises — <code>SHALL</code> statements with stable IDs like <code>[REQ-auth-lockout-1]</code>. A requirement without an oracle fails the build: it's a wish, not a spec.</p></div>
+      <div class="card"><h4>Approval</h4><p>The one human gate. Sealed as <code>approval.yaml</code>: SHA-256 hashes of every approved artifact and bound test. Any later edit voids it automatically.</p></div>
+      <div class="card"><h4>Tier</h4><p><em>trivial · standard · critical</em> — computed from facts (spec delta? risk paths? diff size?), never chosen. Scales ceremony and merge routing, never the safety net.</p></div>
+      <div class="card"><h4>Adapter</h4><p>A pinned, hash-locked executable that resolves and runs tests for one <em>runner</em> (JUnit, pytest…). Core never understands any test framework; adapters translate.</p></div>
+      <div class="card"><h4>Ratchet</h4><p>Every escaped defect's fix must ship a reproduction oracle (proven <em>red on the old code, green on the fix</em>). Every agent failure ships a harness fix. Monotonic strictness.</p></div>
+      <div class="card"><h4>TCB</h4><p>Trusted computing base: the small set that must be trusted — specs, oracles, rubric, adapters, harness, CI. Everything the implement agent <em>cannot touch</em>, which is why it can be fully untrusted.</p></div>
+    </div>
+
+    <h3>What an oracle actually looks like</h3>
+    <p>
+      One markdown file, <code>oracles.md</code>, in the change bundle. Humans read the prose; the linter reads
+      only the fenced block; the two live inches apart so drift is visible at the gate.
+    </p>
+    <div class="code-cap">oracles.md — one oracle, both halves</div>
+    <pre><code><span class="t">## ORC-lockout-001: Fifth failure locks the account</span>
+<span class="k">**Given**</span> an account with 4 consecutive failed login attempts
+<span class="k">**When**</span> a 5th attempt fails
+<span class="k">**Then**</span> the account is locked and correct-password logins are rejected
+
+<span class="c">```yaml crucible-binding</span>
+<span class="s">requirement:</span> REQ-auth-lockout-1
+<span class="s">kind:</span> unit
+<span class="s">runner:</span> junit
+<span class="s">target:</span> com.acme.auth.LockoutTest#fifthFailureLocks
+<span class="c">```</span></code></pre>
+    <p class="muted">
+      The bound test is real code, written by the propose agent <em>before</em> approval, covered by the
+      approval hash, immutable afterwards. The traceability linter enforces three-way integrity in
+      milliseconds: every <code>REQ</code> ↔ at least one <code>ORC</code> ↔ a test that actually exists and runs.
+    </p>
+
+    <h3>Three kinds of tests — who trusts what</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th></th><th>Test oracles</th><th>Unit tests</th><th>Regression suite</th></tr></thead>
+      <tbody>
+        <tr><td><b>Purpose</b></td><td>Prove code honors <em>human-approved intent</em></td><td>Help the agent build (scaffolding)</td><td>Prove past promises still hold</td></tr>
+        <tr><td><b>Written by</b></td><td>Propose agent, <em>before</em> approval</td><td>Implement agent, during coding</td><td>Nobody — accumulated: archived oracles roll in</td></tr>
+        <tr><td><b>Mutable?</b></td><td>Sealed by hash after approval</td><td>Freely, by the implement agent</td><td>Only grows (the ratchet adds here)</td></tr>
+        <tr><td><b>Trust weight</b></td><td><b>The verdict on the feature</b></td><td><b>Zero</b> — and that's fine</td><td><b>The verdict on everything else</b></td></tr>
+      </tbody>
+    </table></div>
+    <details class="drill">
+      <summary>
+        <svg class="caret" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Why “unit tests carry zero trust” is a feature, not an insult
+      </summary>
+      <div class="drill-body">
+        <p>The implement agent writes and edits its own unit tests freely — they're its red-green scaffolding,
+        the same way a human TDD practitioner uses throwaway tests to think. Nothing about merging depends on
+        them, so there's nothing to game. Judgment comes only from things the implement agent can't touch:
+        this change's sealed oracles, and every previous change's oracles (the regression suite). That split is
+        also what makes refactors safe: a pure refactor needs <em>no new oracles</em> — its correctness
+        criterion is simply “every past promise still passes, and the spec is untouched.”</p>
+      </div>
+    </details>
+  </div>
+</section>
+<!-- ============ PRINCIPLES ============ -->
+<section id="principles">
+  <div class="wrap">
+    <div class="section-kicker">03 — Principles</div>
+    <h2>The constitution</h2>
+    <p class="subhead">Eight invariants. Violating any of them is a bug, no matter how green the tests are.</p>
+
+    <details class="eli5">
+      <summary class="tag">ELI5</summary>
+      <p>
+        The rules of the game: the robot that writes the code can <em>never</em> touch the things that grade
+        it. Nobody gets to say “trust me, it's done” — done means the checker says so. If a form is filled
+        out wrong, the answer is “no,” not “probably fine.” And when anything is unclear, the robot must
+        stop and ask a person — guessing is against the rules.
+      </p>
+    </details>
+
+    <div class="cards">
+      <div class="card"><h4>1 · Artifacts are truth</h4><p>The workflow's state <em>is</em> the files on disk. <code>state.yaml</code> is a derived audit log; editing it changes nothing. Hand-offs are artifacts, never messages.</p></div>
+      <div class="card"><h4>2 · Self-report is worth zero</h4><p>“Done” = the artifact exists and validates / the named tests pass. An agent's claim of completion — including a confident one — carries no weight anywhere.</p></div>
+      <div class="card"><h4>3 · Fail closed, everywhere</h4><p>Malformed JSON, unparseable artifacts, a broken adapter, a <em>skipped</em> oracle test — all are failures, never warnings. A skipped judge is the cheapest hack there is, so <code>skip</code> = <code>fail</code>.</p></div>
+      <div class="card"><h4>4 · Preconditions gate every command</h4><p>Each command refuses to run unless the prior stage's artifact exists and validates — and its error names the exact next command. Errors teach the workflow.</p></div>
+      <div class="card"><h4>5 · Hashes seal; TCB is untouchable</h4><p><code>approve</code> seals content hashes of everything reviewed. Post-approval, any edit to specs, oracles, or bound tests voids the approval automatically. TCB paths are immutable to the implement agent.</p></div>
+      <div class="card"><h4>6 · Computed, never declared</h4><p>Tiers, routing, and every other convenience are derived from observable facts. You can force a tier <em>up</em>, never down. Rules that judge a PR come from the target branch, not the PR itself.</p></div>
+      <div class="card"><h4>7 · The reviewer may not invent rules</h4><p>The AI reviewer blocks only on enumerated, versioned rubric lines. Everything else it notices becomes an <em>observation</em> — harvested for the ratchet, never a veto.</p></div>
+      <div class="card"><h4>8 · Convenience is never enforcement</h4><p>Notify hooks, slash commands, status displays can all fail without blocking or unblocking anything. Deleting every convenience leaves the workflow enforced — just tedious.</p></div>
+    </div>
+
+    <details class="drill why">
+      <summary>
+        <svg class="caret" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Why one gate — isn't a second review after the tests are written safer?
+      </summary>
+      <div class="drill-body">
+        <p>It sounds safer, but Crucible already <em>is</em> test-first at the gate: when you run
+        <code>approve</code>, the scenarios <strong>and their executable test code both already exist</strong>,
+        rendered side-by-side in one sitting. Implementation starts from red, TDD-style. A second gate after
+        “oracle code is written” would show you nothing the first gate doesn't already contain — it would just
+        double interruptions. And moving oracle authoring <em>into</em> the implement step to justify that
+        second gate would hand the judges' pens to the judged. So: one gate, made rich — side-by-side
+        rendering, per-oracle acknowledgment on critical tier, and mutation testing as the mechanical backstop
+        against vacuous tests that no amount of human reading catches anyway.</p>
+      </div>
+    </details>
+
+    <details class="drill ex">
+      <summary>
+        <svg class="caret" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Example: “computed, never declared” in one exchange
+      </summary>
+      <div class="drill-body">
+        <pre><code><span class="c"># the agent (or you) claims a one-line payments change is trivial…</span>
+$ crucible propose "fix rounding in refund display" --tier trivial
+
+<span class="c"># CI recomputes from facts: the diff touches payments/**</span>
+<span class="bad">✗ tier mismatch: claimed trivial, computed critical (risk glob: src/**/payments/**)</span>
+<span class="good">→ re-run without --tier; critical ceremony applies (it's a payments change)</span></code></pre>
+        <p>Nobody argued. Nobody decided under pressure. A glob matched a path, and the answer was the same on
+        every machine, every time.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section id="architecture">
+  <div class="wrap">
+    <div class="section-kicker">04 — Architecture</div>
+    <h2>How it's built</h2>
+    <p class="subhead">Five stateless commands. One human moment. Two venues with one truth.</p>
+
+    <details class="eli5">
+      <summary class="tag">ELI5</summary>
+      <p>
+        Think of a relay race where the baton is a folder of files. Each runner (agent) picks up the folder,
+        does exactly one job, puts new files in, and leaves. No runner remembers anything, and no runner can
+        start unless the previous runner's files are actually there and correct. In the middle of the race,
+        one human checks the plan — after that, machines carry it home. Your laptop is for practicing;
+        the stadium (CI) is where results count.
+      </p>
+    </details>
+
+    <h3>The loop</h3>
+    <div class="diagram">
+      <div class="vflow">
+        <div class="node agent">explore <small>optional · chat freely, decide nothing binding</small></div>
+        <div class="down">↓</div>
+        <div class="node agent">propose <small>agent drafts: proposal · spec delta · design · oracles + bound tests · “unspecified” · seams</small></div>
+        <div class="down">↓</div>
+        <div class="node human">★ approve <small>the one human gate · ~10 min · read scenarios + tests side-by-side · seal hashes</small></div>
+        <div class="down">↓</div>
+        <div class="node agent">implement <small>fresh-context agent · refuses without approval · writes tasks.md first · red→green vs sealed oracles</small></div>
+        <div class="down">↓</div>
+        <div class="node auto">verify (local) <small>advisory · fast feedback · same command CI runs</small></div>
+        <div class="down">↓ push</div>
+        <div class="node gate">CI verify — the authority <small>oracles + full regression + traceability + hashes + static suite + AI reviewer + tier recompute</small></div>
+        <div class="down">↓</div>
+        <div class="split">tier routes the merge</div>
+        <div class="lanes" style="margin-top:8px;width:100%">
+          <div class="lane-col auto" style="grid-column: span 2"><h5>trivial / standard · green → auto-merge</h5><ul><li>Merges itself; oracles join the permanent regression suite on archive</li><li>Random 10% audit sample → weekly digest</li></ul></div>
+          <div class="lane-col human" style="grid-column: span 1"><h5>critical → human PR review</h5><ul><li>Never auto-merges</li><li>Focused summary: diff, covering oracles, reviewer notes</li></ul></div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Who owns what</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Command</th><th>Actor</th><th>Produces</th><th>Refuses unless</th></tr></thead>
+      <tbody>
+        <tr><td><code>explore</code></td><td>You + agent</td><td>Ephemeral notes (optional)</td><td>—</td></tr>
+        <tr><td><code>propose</code></td><td>Agent</td><td>Full bundle incl. oracles + bound tests</td><td>—</td></tr>
+        <tr><td><code>approve</code></td><td><b>Human</b></td><td><code>approval.yaml</code> (content hashes)</td><td>Bundle valid + lint green</td></tr>
+        <tr><td><code>implement</code></td><td>Agent (fresh context)</td><td><code>tasks.md</code>, then code</td><td>Valid, unvoided approval</td></tr>
+        <tr><td><code>verify</code></td><td>Deterministic script</td><td>Machine-parseable report</td><td>Implementation exists</td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted">Supporting cast: <code>status</code> (the git-status of the loop — always tells you the exact next command) · <code>amend</code> (30-second mid-flight spec fix with delta re-seal) · <code>escalate</code> (agent stops on ambiguity) · <code>override</code> (the loud 2 AM hatch) · <code>archive</code> · <code>init</code> · <code>doctor</code> · <code>why</code>.</p>
+
+    <h3>Local vs. CI — feedback vs. enforcement</h3>
+    <p>
+      The split is <em>not</em> “different checks in different places.” It's the <strong>same
+      <code>verify</code> command in two venues</strong> with different authority. Your machine is
+      agent-controlled and therefore untrusted: local green is a <em>signal</em>. CI re-runs everything —
+      plus the full regression suite, hash checks, tier recomputation from <em>target-branch</em> config, and
+      the adversarial reviewer — and only CI's verdict counts. That's what keeps the core property alive:
+      <strong>the only path to green is through the code.</strong>
+    </p>
+
+    <h3>Configuration: three files, three protection levels</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>File</th><th>Holds</th><th>Protected by</th></tr></thead>
+      <tbody>
+        <tr><td><code>crucible.yaml</code></td><td><b>Enforcement only:</b> risk globs, tiers, adapters, caps</td><td>Its own risk globs + the target-branch rule</td></tr>
+        <tr><td><code>.crucible/settings.yaml</code></td><td>Team convenience: model routing, team notify channels</td><td>Normal review; can't affect merges by construction</td></tr>
+        <tr><td><code>.crucible/local.yaml</code></td><td>Your personal hooks &amp; prefs</td><td>Gitignored — affects nobody</td></tr>
+      </tbody>
+    </table></div>
+    <details class="drill">
+      <summary>
+        <svg class="caret" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        The target-branch rule — self-referential tamper-proofing for free
+      </summary>
+      <div class="drill-body">
+        <p>One sentence: <strong>the rules that judge your PR are the rules already on main.</strong> CI reads
+        enforcement config from the branch being merged <em>into</em>, never from the PR. So an agent that
+        edits the risk globs to downgrade its own change achieves nothing — its edit isn't law until it merges,
+        and merging a <code>crucible.yaml</code> change is itself a critical-tier, human-reviewed event
+        (the file sits in its own risk globs). Bonus: when the team tightens a rule on main, it applies
+        <em>instantly</em> to every open PR — no stale per-change snapshots.</p>
+      </div>
+    </details>
+
+    <h3>Adapters — how one framework speaks every language</h3>
+    <p>
+      Crucible's core never imports a test framework. Oracle bindings name a <em>runner</em>
+      (<code>junit</code>, <code>pytest</code>…) and an opaque <em>target</em> in that runner's native
+      addressing; a pinned <strong>adapter</strong> — a separate executable speaking JSON over stdin/stdout —
+      honors two verbs: <code>resolve</code> (do these targets exist? no execution) and <code>run</code>
+      (execute, return normalized results). Adapters map to <em>runners, not frameworks</em>: one
+      <code>java-junit</code> adapter covers plain Java, Spring Boot, Quarkus — a <code>@SpringBootTest</code>
+      with Testcontainers is just a slow JUnit test. Adapters are TCB: version- and content-hash-pinned in a
+      lockfile, certified by a conformance suite, and installed exactly once — at <code>init</code>. After
+      that, <strong>the configuration is the repo</strong>: a teammate who clones runs nothing.
+    </p>
+
+    <h3>The adversarial reviewer — bounded judgment</h3>
+    <p>
+      A stateless, fresh-context AI reviews every diff against a versioned 12-line rubric
+      (<code>.crucible/rubric.yaml</code>) — vacuous assertions, weakening in oracle-measured paths, swallowed
+      errors, timing hacks, decisions the spec doesn't determine, out-of-scope hunks… Its verdict is strict
+      JSON, fail-closed three ways: malformed output = fail; “fail” with no blocking finding = fail; citing a
+      rubric line that doesn't exist = fail. It's the system's one nondeterministic gate, so it's kept on a
+      leash: <strong>it can block only on the enumerated list</strong>; novel concerns go to an
+      <em>observations</em> channel for humans to promote into rubric lines. The rubric grows into the
+      executable form of your institutional knowledge — “monetary amounts are never floats,” “webhook fields
+      are never removed, only deprecated.”
+    </p>
+  </div>
+</section>
+
+<!-- ============ HOW ============ -->
+<section id="how">
+  <div class="wrap">
+    <div class="section-kicker">05 — Under the hood</div>
+    <h2>What actually happens when you run a command</h2>
+    <p class="subhead">No magic — every step is a file appearing, a hash matching, or a check exiting 0 or 1.</p>
+
+    <details class="eli5">
+      <summary class="tag">ELI5</summary>
+      <p>
+        Every command does three things: check that the previous step's files are really there and really
+        correct, do its one job, and write its own files down. If anything's missing, it refuses — and tells
+        you exactly which command to run instead. That's why nothing ever gets “stuck in someone's head”:
+        the head <em>is</em> the folder.
+      </p>
+    </details>
+
+    <h3>Each command, mechanically</h3>
+    <ol class="steps">
+      <li>
+        <h4><code>propose</code> · <span style="color:var(--accent-ink)">Agent</span></h4>
+        <p>Scaffolds the change bundle, spawns a <em>fresh-context</em> agent with the propose role prompt.
+        The output is then <strong>judged, not trusted</strong>: parsers validate every artifact's grammar,
+        the traceability linter checks REQ↔ORC↔test integrity, the adapter dry-runs <code>resolve</code> on
+        every binding. Red → the propose fails before you ever see it. The bundle must include an explicit
+        <em>“Unspecified / out of scope”</em> section and a <em>“Seams”</em> list (systems touched, contracts
+        crossed) — ambiguity is surfaced <em>to</em> you, not expected <em>from</em> you.</p>
+      </li>
+      <li>
+        <h4><code>approve</code> · <span style="color:var(--accent-ink)">You — the one gate</span></h4>
+        <p>Renders the bundle as one review surface: scenarios and their bound test code side-by-side,
+        Unspecified and Seams up top. Edit anything inline → the affected bound test is regenerated and its
+        diff shown → validators re-run. Confirm → <code>approval.yaml</code> is written with SHA-256 hashes of
+        every artifact and bound test file. On critical tier, each oracle needs an explicit acknowledgment.
+        Reviewing declarative scenarios exploits <em>recognition over recall</em>: you're bad at enumerating
+        edge cases from scratch, and very good at spotting the missing one in a list.</p>
+      </li>
+      <li>
+        <h4><code>implement</code> · <span style="color:var(--accent-ink)">Agent (separate context)</span></h4>
+        <p>Refuses without a valid approval (exit 2: “run <code>crucible approve</code>”). Generates
+        <code>tasks.md</code> as its first action — the work breakdown is <em>downstream</em> of the gate, not
+        review material. Then plain red-green TDD against the sealed oracles: code → local <code>verify</code> →
+        read machine-parseable failures → fix → repeat → push. Hits ambiguity? It files
+        <code>escalation.yaml</code> and <em>stops</em>; implement cannot resume while it's unresolved.</p>
+      </li>
+      <li>
+        <h4><code>verify</code> · <span style="color:var(--accent-ink)">Script</span></h4>
+        <p>A deterministic pipeline, not an agent: parse bundle → traceability lint → adapter runs
+        (this change's oracles + the regression suite) → approval-hash check → tier recomputation →
+        (in CI) static suite, reviewer verdict, routing decision → one aggregated report, exit 0 or 1.
+        The AI reviewer's verdict is <em>one input</em> to this script — never the script itself.</p>
+      </li>
+      <li>
+        <h4><code>amend</code> / <code>override</code> · <span style="color:var(--accent-ink)">You, rarely</span></h4>
+        <p><b>amend:</b> shows approved-vs-current diff (or the escalation's options), you pick/edit, affected
+        artifacts + tests regenerate, you confirm <em>that</em> diff, a delta entry with fresh hashes is
+        appended. Thirty seconds; the decision now lives in the spec forever. <b>override:</b> works instantly
+        at 2 AM but is <em>loud</em> — CI forces human review regardless of tier and auto-files a ratchet
+        issue that stays open until a retroactive proposal lands. Bypass is possible, visible, and
+        self-repairing — because a prohibition that can't survive an outage just gets forked silently.</p>
+      </li>
+    </ol>
+
+    <h3>Where every fact lives</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Question</th><th>Answered by</th><th>Never by</th></tr></thead>
+      <tbody>
+        <tr><td>What did the human approve?</td><td><code>approval.yaml</code> hashes vs. files on disk</td><td>Anyone's memory or claim</td></tr>
+        <tr><td>Is this change done?</td><td>Named oracle tests passing in CI</td><td>The implement agent's summary</td></tr>
+        <tr><td>What tier is this?</td><td>Recomputed from diff + target-branch globs</td><td>A dropdown someone picked</td></tr>
+        <tr><td>Where are we / what's next?</td><td><code>crucible status</code>, derived from artifacts</td><td><code>state.yaml</code> as authority (it's an audit log)</td></tr>
+        <tr><td>Why did this fail?</td><td><code>crucible why</code> → oracle → binding → tool output</td><td>Scrolling raw CI logs</td></tr>
+        <tr><td>What are we promising users?</td><td><code>specs/</code> — every archived REQ, each still executable</td><td>Tribal knowledge</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ TIERS ============ -->
+<section id="tiers">
+  <div class="wrap">
+    <div class="section-kicker">06 — Proportional ceremony</div>
+    <h2>Tiers: a typo fix is not a payments change</h2>
+    <p class="subhead">Uniform ritual is how good processes get abandoned. Crucible scales the ceremony — never the safety net.</p>
+
+    <details class="eli5">
+      <summary class="tag">ELI5</summary>
+      <p>
+        Moving furniture inside your house? Quick nod. Adding a room? Proper plan, one real review. Touching
+        the electrical panel? Full inspection, and a person signs off at the end no matter what. You don't
+        choose which one applies — the house rules decide from what you're actually touching. And in every
+        case, <em>all</em> the smoke detectors stay on.
+      </p>
+    </details>
+
+    <div class="tablewrap"><table>
+      <thead><tr><th></th><th>trivial</th><th>standard</th><th>critical</th></tr></thead>
+      <tbody>
+        <tr><td><b>What it is</b></td><td>Promises nothing new: refactors, docs, chores</td><td>The default: new behavior, non-risk paths</td><td>Risk paths (auth, payments, migrations, deps, CI, harness) or forced up</td></tr>
+        <tr><td><b>Computed when</b></td><td>No spec delta ∧ no risk glob ∧ diff ≤ 150</td><td>Spec delta present ∧ no risk glob</td><td>Any risk-glob match — <em>dominates everything</em></td></tr>
+        <tr><td><b>Propose bundle</b></td><td>One paragraph; <b>no new oracles</b> — the regression suite is the criterion</td><td>Full bundle</td><td>Full bundle, deeper coverage, substantive seams</td></tr>
+        <tr><td><b>The gate</b></td><td>~1 minute confirm</td><td>One rich sitting</td><td>+ per-oracle acknowledgment</td></tr>
+        <tr><td><b>Extra checks</b></td><td>—</td><td>Mutation testing, diff-scoped, <em>async</em></td><td>Mutation testing, diff-scoped, <em>blocking</em></td></tr>
+        <tr><td><b>Merge</b></td><td>Auto on green</td><td>Auto on green (+ 10% audit)</td><td><b>Never auto</b> — human PR review</td></tr>
+      </tbody>
+    </table></div>
+
+    <p><strong>Three rules keep the table honest:</strong> a risk-glob match always wins (a “trivial” one-liner
+    in <code>payments/**</code> is critical); a spec delta guarantees at least standard (new promises always
+    get oracles and a real gate); and the executed-checks row barely varies by design — every tier still runs
+    the full regression suite, the static suite, and the reviewer. <em>Tiers scale authoring ceremony and merge
+    routing. The safety net is not a dial.</em></p>
+  </div>
+</section>
+<!-- ============ USE ============ -->
+<section id="use">
+  <div class="wrap">
+    <div class="section-kicker">07 — How to use it</div>
+    <h2>From an empty repo to shipping features</h2>
+    <p class="subhead">One interactive setup, ever. Then a loop of three commands you'll actually enjoy.</p>
+
+    <h3>Part 1 — One-time project setup</h3>
+    <details class="eli5">
+      <summary class="tag">ELI5</summary>
+      <p>
+        You answer questions <em>once</em> — “found your Java project, use the JUnit adapter?” — and Crucible
+        writes everything down as normal files in the repo. That's the whole trick: because the setup <em>is</em>
+        the files, a teammate who clones the repo sets up nothing. It's already configured for them.
+      </p>
+    </details>
+    <ol class="steps">
+      <li>
+        <h4>Initialize · <span style="color:var(--accent-ink)">You</span></h4>
+        <p>Detects your stack, proposes adapters (“Found <code>pom.xml</code> → <code>java-junit</code> v1.x — pin it?”),
+        writes the config trio, installs the schema bundle, role prompts, default rubric, and CI workflow —
+        then smoke-tests the adapter so misconfiguration surfaces now, not at first propose.</p>
+        <span class="term"><b>Terminal:</b> crucible init</span>
+      </li>
+      <li>
+        <h4>Edit the risk globs — deliberately · <span style="color:var(--accent-ink)">You</span></h4>
+        <p>The one config that matters: which paths are <em>critical</em>. Defaults cover auth, payments,
+        migrations, dependency manifests, CI, and Crucible's own files — tune them to your product's real risk
+        surface. This is the dial the whole routing system reads.</p>
+        <span class="term"><b>File:</b> crucible.yaml → risk.critical: ["src/**/payments/**", …]</span>
+      </li>
+      <li>
+        <h4>Turn on branch protection · <span style="color:var(--accent-ink)">You</span></h4>
+        <p>Make <code>crucible verify</code> a required check and enable auto-merge. From here, enforcement
+        lives in the platform — deleting every convenience tool leaves the workflow enforced, just tedious.</p>
+      </li>
+    </ol>
+
+    <h3>Part 2 — The everyday loop</h3>
+    <details class="eli5">
+      <summary class="tag">ELI5</summary>
+      <p>
+        Say what you want → read the plan and the answer key for ten minutes → say yes → go get coffee.
+        If the robot gets confused, it stops and asks you one question. If everything's fine, the change
+        merges itself and its tests guard the codebase forever.
+      </p>
+    </details>
+    <ol class="steps">
+      <li>
+        <h4>Explore (optional) · <span style="color:var(--accent-ink)">You + agent</span></h4>
+        <p>Chat freely in Claude Code / your editor — half-formed ideas, dead ends, tangents. Nothing here is
+        binding. When you're decided, the slash command <em>distills</em> the conversation's intent and hands
+        it to the CLI; the artifact author always starts with a clean context plus your decisions.</p>
+        <span class="term"><b>Chat:</b> /crucible:propose &nbsp;·&nbsp; <b>or Terminal:</b> crucible propose "lock account after 5 failed logins"</span>
+      </li>
+      <li>
+        <h4>Approve — your ten minutes · <span style="color:var(--accent-ink)">You</span></h4>
+        <p>Read the scenarios like a PRD, glance at each bound test beside its scenario, check the
+        <em>Unspecified</em> section for decisions the agent surfaced, fix anything inline. Confirm → sealed.
+        This is the last time you're needed unless something routes back.</p>
+        <span class="term"><b>Terminal:</b> crucible approve</span>
+      </li>
+      <li>
+        <h4>Implement + verify · <span style="color:var(--accent-ink)">Agents &amp; scripts</span></h4>
+        <p>Unattended. The agent red-greens against the sealed oracles and pushes; CI re-verifies everything
+        and routes the merge by tier. You get pinged only for escalations (Slack/desktop, your choice) and
+        critical-tier reviews.</p>
+        <span class="term"><b>Terminal:</b> crucible implement &nbsp;·&nbsp; then: git push</span>
+      </li>
+      <li>
+        <h4>When reality bites · <span style="color:var(--accent-ink)">You, 30 seconds</span></h4>
+        <p>Escalation? <code>crucible amend</code> — pick an option, confirm the regenerated diff, the loop
+        resumes, and the decision is in the spec permanently. Production incident? <code>crucible override</code>
+        ships now and files its own debt. Lost? <code>crucible status</code> always ends with the exact next
+        command.</p>
+      </li>
+    </ol>
+
+    <h3>Steady-state cheat sheet</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>You want to…</th><th>Run</th></tr></thead>
+      <tbody>
+        <tr><td>Start a feature</td><td><code>crucible propose "…"</code> (or <code>/crucible:propose</code> from chat)</td></tr>
+        <tr><td>Seal the plan</td><td><code>crucible approve</code></td></tr>
+        <tr><td>Build it</td><td><code>crucible implement</code></td></tr>
+        <tr><td>Check anything</td><td><code>crucible status</code> · <code>crucible why &lt;failure&gt;</code></td></tr>
+        <tr><td>Fix the spec mid-flight</td><td><code>crucible amend</code></td></tr>
+        <tr><td>Emergency ship</td><td><code>crucible override "reason"</code> (loud, self-repairing)</td></tr>
+        <tr><td>Land it in history</td><td><code>crucible archive</code> — oracles join the regression suite forever</td></tr>
+        <tr><td>After upgrading tools</td><td><code>crucible doctor</code> — offers fixes as diffs, never silent writes</td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted">Your steady-state attention budget: the ten-minute gate per feature, escalations (each a
+    thirty-second decision), critical-tier PRs (~the risky 15–20%), and a weekly audit digest of auto-merges.
+    That's the “precision, not coverage” promise, kept.</p>
+  </div>
+</section>
+
+<!-- ============ EXAMPLE ============ -->
+<section id="example">
+  <div class="wrap">
+    <div class="section-kicker">08 — Worked examples</div>
+    <h2>Three changes, end to end</h2>
+    <p class="subhead">A normal feature, a refactor, and a critical change where everything goes sideways — which is where the framework earns its keep.</p>
+
+    <h3>① Standard feature: “Lock accounts after 5 failed logins”</h3>
+    <div class="code-cap">you type one line; the agent drafts the whole bundle</div>
+    <pre><code>$ crucible propose "lock account after 5 failed logins, 15-min cooldown"
+
+$ crucible status
+  change: account-lockout   tier: <span class="good">standard</span> <span class="c">(computed: spec delta, no risk paths)</span>
+  ✓ proposal ✓ spec-delta ✓ design ✓ oracles (7, all bindings resolve)
+  ✗ approval — next: crucible approve</code></pre>
+    <p>
+      At <code>approve</code>, the <em>Unspecified</em> section surfaces a real product decision — “does a
+      successful login reset the counter? assumed yes.” You realize a flagged account shouldn't fully reset,
+      edit the scenario inline, the bound test regenerates, you confirm. Sealed. <code>implement</code> runs
+      unattended; CI re-verifies all of it (oracles, full regression, hashes, reviewer, trajectory) and —
+      standard tier, all green — <strong>auto-merges</strong>. On archive, the 7 oracles join the permanent
+      regression suite.
+    </p>
+    <p class="muted"><b>Your total involvement:</b> one sentence of intent, ten minutes of reading, one scenario fixed. Zero code written, zero code read.</p>
+
+    <h3>② Pure refactor: “Extract retry logic into a shared module”</h3>
+    <pre><code>$ crucible propose "extract duplicated retry logic from payment + email clients"
+  type: <span class="good">refactor</span> · tier: <span class="good">trivial</span> <span class="c">(no spec delta — promises nothing new)</span>
+  bundle: 1-paragraph proposal · <b>no new oracles</b></code></pre>
+    <p>
+      Approval takes a minute: “moving code, promising nothing new.” But <em>trivial</em> skipped only the
+      <em>authoring</em> ceremony — CI still runs the <strong>entire accumulated regression suite</strong>.
+      If the refactor subtly changes retry timing that any past oracle ever pinned → red, routed back.
+      This is the maintenance unlock: the “too risky to touch” refactor is finally safe, because every past
+      promise is executable.
+    </p>
+
+    <h3>③ Critical path, things go sideways: “Partial refunds”</h3>
+    <pre><code>$ crucible propose "support partial refunds on orders"
+  tier: <span class="bad">critical</span> <span class="c">(risk glob: src/**/payments/**)</span> · 12 oracles incl. property tests
+  seams: ledger service · merchant webhook contract</code></pre>
+    <p>
+      Mid-implementation the agent hits a question the spec doesn't answer — are fees recalculated on partial
+      refunds? It does <em>not</em> improvise:
+    </p>
+    <pre><code>$ crucible status
+  ⚠ <span class="bad">ESCALATION</span>: ORC-refund-007 underspecified — fee handling on partial refund
+    options: (a) proportional recalc  (b) no fee refund  (c) flat re-fee
+  next: crucible amend
+
+$ crucible amend        <span class="c"># you pick (a); spec + oracle + test regenerate; you confirm the diff</span>
+  <span class="good">✓ approval re-sealed (delta #1) — implementation resumed</span></code></pre>
+    <p>
+      Thirty seconds, and the decision now lives in the spec forever. CI adds critical-tier extras —
+      <em>blocking</em> mutation testing catches one vacuous assertion; the reviewer's verdict cites the exact
+      rubric line and remediation; the agent fixes it next iteration. All green — but critical tier
+      <strong>never auto-merges</strong>: the PR routes to you with a focused summary. You review <em>this
+      one</em> because the router decided it matters.
+    </p>
+    <p>
+      Two weeks later a customer hits an escaped edge case (refund against a disputed charge). The fix is a
+      <code>bugfix</code>-type change whose schema <em>mechanically requires</em> a reproduction oracle,
+      verified <strong>red on the pre-fix commit, green on the fix</strong> — CI-checked, no honor system.
+      The fix cannot merge without permanently encoding the failure: <code>ORC-refund-013</code> joins the
+      regression suite. That exact regression is now impossible, forever, for every future change. That's the
+      ratchet.
+    </p>
+
+    <div class="card">
+      <p style="margin:0"><strong>The pattern across all three:</strong> your commands were
+      <code>propose → approve → implement</code>, plus <code>amend</code> when reality bit. Tiers, hashes,
+      routing, and the gauntlet happened <em>to</em> the change, not <em>by</em> you — and at every moment,
+      <code>crucible status</code> could tell you exactly where things stood, because the state <em>is</em>
+      the files.</p>
+    </div>
+  </div>
+</section>
+<!-- ============ FAQ ============ -->
+<section id="faq">
+  <div class="wrap">
+    <div class="section-kicker">09 — FAQ</div>
+    <h2>Frequently asked questions</h2>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> Isn't this just TDD with extra steps?</summary>
+      <p>It's TDD's <em>shape</em> — tests exist and are red before code — extended in three ways: the scenarios
+      are business-readable (the BDD half), a human seals the tests before implementation so the coder can't
+      bend them, and the accumulated tests of every past change form a permanent, executable contract. Classic
+      TDD trusts the same person to write test and code; Crucible assumes the coder is an untrusted agent and
+      splits those roles with a hash between them.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> The AI writes the oracles too. Isn't it grading its own homework?</summary>
+      <p>It <em>drafts</em> the exam; it never grades its own. Three separations do the work: the propose agent
+      and implement agent are different, fresh-context invocations; a human reviews and seals the oracles
+      between them; and after sealing, the implement agent can't modify a single byte of them (hash + CI check).
+      Add mutation testing — which checks whether the tests would even notice a bug — and vacuous oracles get
+      caught mechanically too.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> Why review artifacts instead of just reviewing the code?</summary>
+      <p>Leverage and human nature. A scenario list is declarative — you verify it against <em>intent</em>,
+      which only you have. Code review verifies against the spec you're holding in your head, line by line,
+      and fatigues in minutes. And one reviewed oracle grades every future version of the code automatically;
+      one code review grades exactly one diff, once. Reviewing the judges scales; reviewing the output doesn't.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> Do I really need new oracles for a refactor?</summary>
+      <p>No — and this is a rule, not a courtesy: <strong>oracles are triggered by spec deltas, not code
+      changes.</strong> A pure refactor promises nothing new, so its correctness criterion is simply “every
+      past oracle still passes and the spec is untouched.” The honest residual: behavior no past oracle ever
+      pinned can drift unseen. That's a coverage gap — exactly the escape class the ratchet exists to close.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> What physically stops the agent from editing the tests?</summary>
+      <p>Layers. <code>approval.yaml</code> stores content hashes of every oracle and bound test; CI recomputes
+      them, so any edit voids the approval and the PR fails. Diffs touching oracle paths after approval fail a
+      dedicated check. A <em>skipped</em> test counts as failed. Even the <em>attempt</em> shows up in the
+      captured session trajectory. And enforcement config itself is read from the target branch, so editing the
+      rules in the PR is inert. The agent's cheapest path to green really is: write correct code.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> What if the spec itself is wrong or incomplete?</summary>
+      <p>Then Crucible can't save you from shipping the wrong thing — it verifies code against <em>approved
+      intent</em>, not against the market. What it does do: force the propose agent to surface an explicit
+      “Unspecified / out of scope” list and a “Seams” list at the gate (you're far better at spotting a missing
+      case in a list than enumerating from scratch); force agents to stop and escalate on mid-flight ambiguity;
+      and turn every escaped defect into a permanent oracle. Spec completeness is attacked, honestly, as a
+      ratchet — not claimed as a guarantee.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> Why can the AI reviewer only block on a fixed rubric? Let it use its judgment!</summary>
+      <p>Because it's the one nondeterministic gate in the system. Open-ended veto means the same diff passes
+      Tuesday and fails Thursday, blocks become unfalsifiable (“this feels fragile”), and the implement agent
+      can't learn the rules it's judged by. So: what can stop a merge is a fixed, versioned, human-owned list —
+      and everything else the model notices flows to an <em>observations</em> channel, where humans promote the
+      good ones into new rubric lines. Its judgment is harvested, not handed a veto.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> What happens at 2 AM when production is down?</summary>
+      <p><code>crucible override "payment outage"</code> — it works instantly, on purpose. But it's loud:
+      CI forces human PR review regardless of tier, and a ratchet issue is auto-filed that stays open until a
+      retroactive proposal lands. A rule that says “no exceptions, ever” is exactly the kind that gets violated silently — once, and then forever. Crucible’s bet: visible, self-repairing bypass beats theoretical
+      impossibility.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> Doesn't the human gate become the new bottleneck?</summary>
+      <p>It's ten minutes of reading per feature — deliberately the <em>only</em> synchronous human moment —
+      and it's proportional: trivial changes gate in about a minute. Compare against the alternative it
+      replaces: reviewing every PR line-by-line, forever. The gate concentrates your attention where one
+      sitting has permanent leverage (the judges), and everything else runs while you do something better.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> Are the implement agent's unit tests pointless, then?</summary>
+      <p>Not pointless — <em>trustless</em>, and those differ. They're the agent's scaffolding for building,
+      exactly like a human's throwaway TDD tests, and they make it faster and better at converging on green.
+      They just carry no weight in the merge decision, because the agent can edit them at will. Judgment comes
+      only from what it can't touch: this change's sealed oracles and every past change's regression suite.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> What languages and frameworks does it support?</summary>
+      <p>Anything with a test runner, via adapters — which map to <em>runners, not frameworks</em>. One
+      <code>java-junit</code> adapter covers plain Java, Spring Boot, Quarkus, Micronaut (a
+      <code>@SpringBootTest</code> with Testcontainers is just a slow JUnit test). Adapters are small, separate
+      executables (~a few hundred lines), certified by a conformance suite, pinned by content hash. First-party:
+      <code>java-junit</code> first, Python/TypeScript next; the community covers the long tail.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> How does this relate to OpenSpec? Is it a fork?</summary>
+      <p>A layer, not a fork. Crucible consumes OpenSpec's artifact conventions — <code>specs/</code> as current
+      truth, <code>changes/</code> as proposed deltas, custom schemas for the artifact sequence — and adds
+      everything OpenSpec deliberately doesn't have: oracles, the approval gate and hashes, the traceability
+      linter, the verify runner, tiers, routing, the reviewer, and the CI enforcement half. OpenSpec upgrades
+      are handled by a repeatable two-command procedure (<code>openspec update</code> + <code>crucible doctor</code>).</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> How is this different from “AI coding plus a good test suite”?</summary>
+      <p>Four things an ordinary suite doesn’t give you. <b>Ordering:</b> tests written after (or alongside)
+      the code inherit its blind spots; Crucible’s judges exist and are sealed before implementation starts.
+      <b>Custody:</b> nothing normally stops the coder — human or agent — from editing an inconvenient test;
+      here that voids the approval and fails CI. <b>Bookkeeping:</b> a suite can’t tell you which requirements
+      have no test at all; the traceability linter makes a requirement-without-oracle a build failure.
+      <b>Memory:</b> ordinary suites decay because nothing forces them to grow; here every archived change’s
+      oracles join the permanent regression suite, and every escaped defect must add one. Same ingredients —
+      tests, CI — arranged so the cheapest path to green is correct code.</p>
+    </details>
+
+    <details class="faq">
+      <summary><span class="q">Q</span> What does Crucible <em>not</em> guarantee?</summary>
+      <p>Honesty corner: it can't verify intent it was never told (spec completeness is ratcheted, not solved);
+      property and contract tests approximate correctness, they don't prove it; emergent behavior <em>between</em>
+      independently-verified features is only partially addressed (the seams section drags it into review);
+      and the first instance of a genuinely novel failure class can escape once before the ratchet closes it
+      forever. Every guarantee Crucible does make is machine-checked; everything it can't, it names.</p>
+    </details>
+  </div>
+</section>
+
+<!-- ============ DICTIONARY ============ -->
+<section id="dictionary">
+  <div class="wrap">
+    <div class="section-kicker">10 — Dictionary</div>
+    <h2>The words, decoded</h2>
+    <p class="subhead">Plain-dictionary meaning first, then what the word means inside Crucible.</p>
+
+    <div class="dict">
+
+      <div class="entry">
+        <div class="term-h">Oracle <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>In software testing (a decades-old term of art): the mechanism that decides whether a test's output is correct.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>A Given/When/Then scenario with a stable ID (<code>ORC-lockout-001</code>), bound to a real executable test. Drafted by the propose agent, sealed by the human at approve, immutable afterwards. The judges.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Spec delta <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Delta: the difference between two states.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>The change's new or modified promises — <code>SHALL</code> requirements with bracketed IDs (<code>[REQ-auth-lockout-1]</code>). On archive, deltas merge into <code>specs/</code>, the living contract. No delta → no new oracles needed (that's a refactor).</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Binding <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Something that ties one thing to another.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>The fenced YAML block linking an oracle to its executable check: requirement ID, kind, runner, and an opaque target in the runner's native addressing. The seam between human-readable intent and machine execution.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Traceability lint <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Lint: a static check that verifies structure without running anything.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>Three extractions and set arithmetic, in milliseconds: every REQ has ≥1 oracle; every oracle points at a real REQ; every binding resolves to a test that actually exists. A requirement without an oracle fails the build — it's a wish.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Approval artifact <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>A record that consent was given.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span><code>approval.yaml</code>: SHA-256 content hashes of every reviewed artifact and bound test, plus who and when. CI recomputes; any mismatch voids it. Tamper-<em>evidence</em>, not tamper-<em>prevention</em> — which turns out to be enough.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Amend <span class="pos">verb</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>To make minor corrections to a formal document.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>The thirty-second re-seal: fix a scenario mid-implementation, the affected artifacts and tests regenerate, you confirm the diff, a delta entry with fresh hashes is appended. Also how escalations resolve. Fixing the spec upstream only survives if it's this cheap.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Escalation <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Passing a problem to someone with more authority.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>What an agent must do on any decision the approved spec doesn't determine: file <code>escalation.yaml</code> with concrete options and <em>stop</em>. Implement cannot resume while one is unresolved. Ambiguity is a spec bug, fixed upstream — never improvised.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Override <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Using special authority to bypass a rule.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>The honest 2 AM hatch: instant to use, impossible to use quietly. CI forces human review regardless of tier and auto-files a ratchet issue that stays open until a retroactive proposal lands. Visible bypass beats forbidden bypass.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Tier <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>A level in a ranked series.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span><em>trivial · standard · critical</em> — computed from the diff (spec delta? risk globs? size?), recomputed at every stage, forceable up but never down. Scales authoring ceremony and merge routing; never the executed safety net.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Risk glob <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Glob: a wildcard path pattern, like <code>.gitignore</code> uses.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>The declaration of where danger lives: <code>src/**/payments/** → critical</code>. A match dominates every other tier signal. The friendliest file in the repo, because it's the dial teams turn as trust calibrates.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Adapter <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>A device that lets incompatible things work together.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>A pinned, hash-locked executable speaking JSON over stdin/stdout, honoring <code>resolve</code> and <code>run</code> for one test runner. Part of the TCB — it decides whether checks pass — so it's certified by a conformance suite. Maps to runners, not frameworks.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Regression suite <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Tests that catch reintroduced bugs.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>The union of every archived change's oracle bindings — nobody writes it; <em>archiving is registration</em>. The living, executable memory of every promise ever approved, and the entire correctness criterion for refactors.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Ratchet <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>A mechanism that turns one way and locks against reversing.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>The dual rule: every escaped defect ships a gate commit (reproduction oracle, rubric line, or rule); every agent failure ships a harness commit. Enforced mechanically for bugfixes — the reproduction must be <em>red on base, green on fix</em>, or it can't merge.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Rubric <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>The scoring criteria a grader must apply.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span><code>.crucible/rubric.yaml</code> — the AI reviewer's law: versioned lines, each with an ID and the observable <em>evidence</em> that constitutes a finding. Ships with 12 defaults; grows into your institutional knowledge. The reviewer may not block on anything else.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Observations <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Things noticed, short of a formal charge.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>The reviewer's channel for concerns outside the rubric — attached to the PR, surfaced in the audit digest, promotable into rubric lines by humans. How the model's genuine insight is harvested without granting it an unbounded veto.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Seams <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Where two pieces of material join — the classic weak point.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>A required propose section listing the boundaries this change crosses: services touched, external contracts affected, shared schemas, concurrent in-flight changes. The riskiest unknowns, dragged into the reviewed bundle where a human sees them.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">TCB <span class="pos">initialism</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Trusted computing base: the minimal set of components that must be trusted for a system's guarantees to hold.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>Specs, oracles + bound tests, rubric, adapters, role prompts, CI workflows, enforcement config, the harness. Everything the implement agent <em>cannot touch</em> — which is precisely why the implement agent can be fully untrusted.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Target-branch rule <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>—</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>“The rules that judge you are the rules already on main.” CI reads enforcement config from the merge target, never the PR — so editing the rules inside a PR is inert, and team rule-tightening applies instantly to every open PR. Self-referential tamper-proofing with zero ceremony.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Trajectory <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>The path something takes, not just where it lands.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>The agent's captured session log, stored as an artifact. Output checks ask “is the result right?”; trajectory checks ask “was the path sound?” — did it actually run local verify, did it <em>attempt</em> to touch sealed paths. Captured today; judged progressively.</p>
+      </div>
+
+      <div class="entry">
+        <div class="term-h">Mutation testing <span class="pos">noun</span></div>
+        <p class="def plain"><span class="lbl">Dictionary</span>Deliberately injecting small bugs to see whether the tests notice.</p>
+        <p class="def ours"><span class="lbl">In Crucible</span>The test of the tests — the mechanical answer to vacuous oracles. Diff-scoped for speed; blocking on critical tier, async elsewhere (surviving mutants file ratchet issues instead of blocking merges).</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============ ROADMAP ============ -->
+<section id="roadmap">
+  <div class="wrap">
+    <div class="section-kicker">11 — Roadmap</div>
+    <h2>The gap between the north star and today</h2>
+    <p class="subhead">Design is complete and chartered. The build runs as a tracer bullet: one thin slice end-to-end first, then deepen.</p>
+
+    <div class="northstar">
+      <p><strong>North star:</strong> you describe intent in a chat, spend ten minutes at one gate, and
+      production-grade software ships itself — with every promise it ever made still executable, forever.</p>
+    </div>
+
+    <div class="roadmap-item">
+      <h4>Phase 0 — Spike &amp; scaffold <span class="badge badge-wip">★ next</span></h4>
+      <p>Prove the OpenSpec custom-schema assumptions for real; pin the version range; scaffold the TypeScript
+      monorepo, toy fixture, and stub adapter. Reconnaissance whose explicit job is to find where the charter
+      is wrong.</p>
+    </div>
+
+    <div class="roadmap-item">
+      <h4>Phase 1 — Tracer bullet <span class="badge badge-wip">★ WIP</span></h4>
+      <p>The thin slice: minimal <code>propose → approve → implement → verify</code> + <code>status</code> +
+      one CI check, against a stub adapter. Ends at the permanent regression anchor: an integration test
+      proving the happy path <em>and</em> the enforcement (post-approval oracle edit → red; skipped oracle →
+      red; requirement without oracle → red).</p>
+    </div>
+
+    <div class="roadmap-item">
+      <h4>Phase 2 — Deepen the loop</h4>
+      <p>Tiers + routing, amend/override/escalate, change types with red-on-base/green-on-fix, the adversarial
+      reviewer, the rich approve surface, <code>init</code>/<code>doctor</code>/<code>why</code>, notify hooks.
+      Exit: all three worked examples above are executable, end to end.</p>
+    </div>
+
+    <div class="roadmap-item">
+      <h4>Phase 3 — Real adapter: <code>java-junit</code></h4>
+      <p>Conformance fixtures first (they define “correct adapter” — the stub must pass them too), then the
+      JUnit adapter: detect, run via JUnit XML, resolve via a small Launcher-API helper. Exit: a hello-world
+      Spring Boot change flows end to end.</p>
+    </div>
+
+    <div class="roadmap-item">
+      <h4>Phase 4 — Validation project</h4>
+      <p>The success criterion, made falsifiable: a production-grade, consumer-ready Spring Boot product built
+      entirely through Crucible — instrumented from day one (gate minutes, escalations, auto-merge rate,
+      override count ≈ 0, escaped defects, verify latency). Evidence, not an anecdote.</p>
+    </div>
+
+    <div class="roadmap-item">
+      <h4>Hardening — deliberately parked <span class="badge badge-wip">★ later</span></h4>
+      <p>Hermetic CI sandboxing (hashes + immutability carry tamper-evidence until then) · the reviewer's own
+      regression eval suite (“set the bar at the eval, not the demo”) · deterministic trajectory checks ·
+      native non-test runners (SQL constraints, architecture rules) · canary/SLO signals auto-filing ratchet
+      issues · org-scale platform hardening.</p>
+      <p class="today"><b>Today:</b> none of these weaken the design — each has a named interim mechanism, and
+      each is a listed backlog item, not a forgotten wish.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <strong style="color:var(--ink)">Crucible</strong> — approve the promise, never read the code.<br>
+      Agents draft the judges and the work; a human seals the judges; machines guarantee the rest.
+    </div>
+    <div class="muted">
+      Reference: <code>docs/charter.md</code> · <code>CLAUDE.md</code> · <code>PHASES.md</code> · <code>docs/design/*</code>
+    </div>
+  </div>
+</footer>
+
+
+<script>
+  function toggleNav() {
+    var nav = document.getElementById("site-nav");
+    var btn = document.querySelector(".nav-toggle");
+    var open = nav.classList.toggle("open");
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  function closeNav() {
+    var nav = document.getElementById("site-nav");
+    if (!nav || !nav.classList.contains("open")) return;
+    nav.classList.remove("open");
+    var btn = document.querySelector(".nav-toggle");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+  }
+  // Close the menu after tapping a link, or when tapping outside it.
+  (function () {
+    var nav = document.getElementById("site-nav");
+    if (nav) {
+      nav.addEventListener("click", function (e) {
+        if (e.target.tagName === "A") closeNav();
+      });
+    }
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest(".topbar")) closeNav();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeNav();
+    });
+  })();
+
+  function toggleTheme() {
+    var el = document.documentElement;
+    var next = el.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    el.setAttribute("data-theme", next);
+    try { localStorage.setItem("theme", next); } catch (e) {}
+  }
+  // Follow the OS setting if the user hasn't made an explicit choice.
+  try {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function (e) {
+      if (!localStorage.getItem("theme")) {
+        document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light");
+      }
+    });
+  } catch (e) {}
+</script>
+</body>
+</html>

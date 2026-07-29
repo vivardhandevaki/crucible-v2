@@ -8,7 +8,7 @@ import type { ResolveFn, TargetResolution } from '../lint/traceability.js';
 import type { Oracle } from '../artifacts/oracles.js';
 import type { OracleResult } from '../adapters/types.js';
 import { sealBundle, serializeApproval } from '../artifacts/approval.js';
-import { verifyReportSchema } from '../verifyx/report.js';
+import { verifyReportSchema, type CheckResult } from '../verifyx/report.js';
 import { loadEnforcementConfig, type EnforcementConfig } from '../config/enforcement.js';
 import { verify, type DiffFacts, type VerifyDeps } from './verify.js';
 
@@ -574,5 +574,68 @@ describe('verify — preconditions & fail-closed', () => {
     );
     const err = await catchCrucible(() => verify({ root: scratch, change: CHANGE }, deps()));
     expect(err.exit).toBe(3);
+  });
+});
+
+describe('verify — adversarial reviewer input (P2-10, design phase-2.md §5)', () => {
+  /** A canned review edge — what the CLI wires from `commands/review.ts`. */
+  const greenReview = () =>
+    Promise.resolve({
+      check: { name: 'review', status: 'pass', findings: [] } as CheckResult,
+      review: {
+        rubric_hash: 'c'.repeat(64),
+        model: 'claude-haiku-4-5-20251001',
+        observations: [{ note: 'Retry idempotency is untested.' }],
+      },
+    });
+
+  const redReview = () =>
+    Promise.resolve({
+      check: {
+        name: 'review',
+        status: 'fail',
+        findings: [
+          {
+            check: 'review',
+            id: 'R-002',
+            message: 'Tolerance widened — src/greeting.ts:14; fix: restore exact comparison',
+          },
+        ],
+      } as CheckResult,
+      review: { rubric_hash: 'c'.repeat(64), observations: [] },
+    });
+
+  it('with the review edge supplied, the report carries a `review` check + observations extras', async () => {
+    const report = await verify({ root: scratch, change: CHANGE }, deps({ review: greenReview }));
+    expect(report.verdict).toBe('pass');
+    expect(report.checks.some((c) => c.name === 'review')).toBe(true);
+    expect(report.review?.observations).toEqual([{ note: 'Retry idempotency is untested.' }]);
+    expect(() => verifyReportSchema.parse(report)).not.toThrow();
+  });
+
+  it('a reviewer block is a red verdict like any other failing check', async () => {
+    const report = await verify({ root: scratch, change: CHANGE }, deps({ review: redReview }));
+    expect(report.verdict).toBe('fail');
+    const check = report.checks.find((c) => c.name === 'review');
+    expect(check?.status).toBe('fail');
+    expect(check?.findings[0]?.id).toBe('R-002');
+  });
+
+  it('without the review edge, no review check runs (optional locally: `verify --review`)', async () => {
+    const report = await verify({ root: scratch, change: CHANGE }, deps());
+    expect(report.checks.some((c) => c.name === 'review')).toBe(false);
+    expect(report.review).toBeUndefined();
+  });
+
+  it('a red lint short-circuits the review edge (no agent run against an unparseable bundle)', async () => {
+    const reviewNeverCalled = (): never => {
+      throw new Error('deps.review must not be called when the traceability gate is red');
+    };
+    const report = await verify(
+      { root: scratch, change: CHANGE },
+      deps({ resolve: resolveAllMissing, run: runNeverCalled, review: reviewNeverCalled }),
+    );
+    expect(report.verdict).toBe('fail');
+    expect(report.checks.some((c) => c.name === 'review')).toBe(false);
   });
 });

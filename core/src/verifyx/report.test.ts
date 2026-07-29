@@ -10,12 +10,14 @@ import {
   regressionCheck,
   reproductionCheck,
   renderReport,
+  reviewCheck,
   routingFor,
   traceabilityCheck,
   verifyReportSchema,
   type CheckResult,
 } from './report.js';
 import type { TierDecision } from '../tier/tier.js';
+import type { VerdictOutcome } from '../review/verdict.js';
 
 // verifyx aggregates independently-computed check results into one machine-
 // readable VerifyReport whose verdict is fail iff any check failed. Findings are
@@ -300,5 +302,106 @@ describe('renderReport', () => {
     expect(text).toContain('traceability');
     expect(text).toContain('oracles');
     expect(text).toContain('ORC-greeting-002');
+  });
+});
+
+// ── Adversarial reviewer (P2-10; charter §Verdict Schema & Enumerated-Blocking) ──
+
+/** A verdict as `evaluateVerdict` would return it — see review/verdict.ts. */
+function passOutcome(observations: { note: string }[] = []): VerdictOutcome {
+  return {
+    status: 'pass',
+    verdict: {
+      change: 'c',
+      reviewed_sha: 'abc1234',
+      rubric_hash: 'a'.repeat(64),
+      model: 'claude-haiku-4-5-20251001',
+      verdict: 'pass',
+      findings: [],
+      observations,
+    },
+    observations,
+  };
+}
+
+function blockOutcome(): VerdictOutcome {
+  const finding = {
+    rubric: 'R-002',
+    severity: 'block' as const,
+    evidence: {
+      file: 'src/payments/RefundService.java',
+      line: 141,
+      excerpt: 'Math.abs(...) < 0.05',
+    },
+    explanation: 'Tolerance widened; ORC-refund-002 measures this path.',
+    remediation: 'Restore exact comparison per design.md §3.',
+  };
+  return {
+    status: 'fail',
+    code: 'REVIEWER_BLOCK',
+    reason: 'reviewer blocked on R-002',
+    blockingFindings: [finding],
+    observations: [{ note: 'Idempotency under retry is untested.' }],
+  };
+}
+
+describe('reviewCheck (P2-10)', () => {
+  it('a pass outcome is a green check with no findings', () => {
+    expect(reviewCheck(passOutcome())).toEqual({ name: 'review', status: 'pass', findings: [] });
+  });
+
+  it('a reviewer block is red: finding id = rubric line, message = explanation — file:line + remediation (the `why` trail)', () => {
+    const check = reviewCheck(blockOutcome());
+    expect(check.name).toBe('review');
+    expect(check.status).toBe('fail');
+    const finding = check.findings[0]!;
+    expect(finding.check).toBe('review');
+    expect(finding.id).toBe('R-002');
+    // The `why` path format (design §8: rubric line + evidence + remediation):
+    // evidence renders as file:line so P2-16 can walk finding → source.
+    expect(finding.message).toContain('src/payments/RefundService.java:141');
+    expect(finding.message).toContain('Tolerance widened');
+    expect(finding.message).toContain('Restore exact comparison');
+  });
+
+  it('a fail-closed outcome (malformed / no verdict / invented rule) is red, naming the machine code', () => {
+    const outcome: VerdictOutcome = {
+      status: 'fail',
+      code: 'MALFORMED_VERDICT',
+      reason: 'verdict is not valid JSON — Unexpected token',
+      blockingFindings: [],
+      observations: [],
+    };
+    const check = reviewCheck(outcome);
+    expect(check.status).toBe('fail');
+    expect(check.findings[0]!.id).toBe('MALFORMED_VERDICT');
+    expect(check.findings[0]!.message).toContain('not valid JSON');
+  });
+});
+
+describe('aggregate + review extras (observations ride the report)', () => {
+  const pass: CheckResult = { name: 'review', status: 'pass', findings: [] };
+  const review = {
+    rubric_hash: 'b'.repeat(64),
+    model: 'claude-haiku-4-5-20251001',
+    observations: [{ note: 'Candidate for a new oracle: retry idempotency.' }],
+  };
+
+  it('threads rubric_hash, model, and observations into a schema-valid report', () => {
+    const report = aggregate('c', [pass], { review });
+    expect(report.review).toEqual(review);
+    expect(() => verifyReportSchema.parse(report)).not.toThrow();
+  });
+
+  it('a report without review extras still validates (inner-loop verify)', () => {
+    const report = aggregate('c', [pass]);
+    expect(report.review).toBeUndefined();
+    expect(() => verifyReportSchema.parse(report)).not.toThrow();
+  });
+
+  it('renders observations as non-blocking notes', () => {
+    const text = renderReport(aggregate('c', [pass], { review }));
+    expect(text).toContain('observations');
+    expect(text).toContain('Candidate for a new oracle: retry idempotency.');
   });
 });
