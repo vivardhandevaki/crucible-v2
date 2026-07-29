@@ -115,6 +115,22 @@ export const reviewReportSchema = z.strictObject({
 });
 export type ReviewReport = z.infer<typeof reviewReportSchema>;
 
+/** The trajectory stamp carried on a verify report (P2-11; charter §278; design
+ * phase-2.md §6 — "Trajectory capture (checks parked)"). Present only on the
+ * authoritative CI path when `trajectory.require_local_verify` is set. It records
+ * whether a local verify ran before push (`local_verify_ran`, derived from the
+ * change's state events) plus any `advisories`. Deterministic trajectory *checks*
+ * are parked (backlog C17) — every advisory here is ADVISE-LEVEL: surfaced, never
+ * a block. Nothing in this section moves the verdict (invariant 11). */
+export const trajectoryReportSchema = z.strictObject({
+  /** Was a local verify recorded in state before push? (charter §278.) */
+  local_verify_ran: z.boolean(),
+  /** Non-blocking advisories (parked-check harvest): a machine `code` + message.
+   * Empty when the trajectory looks clean. Never blocks the merge. */
+  advisories: z.array(z.strictObject({ code: z.string().min(1), message: z.string().min(1) })),
+});
+export type TrajectoryReport = z.infer<typeof trajectoryReportSchema>;
+
 /** The whole verify verdict (design §8). Strict — an unknown field fails closed. */
 export const verifyReportSchema = z.strictObject({
   /** The change being verified. */
@@ -139,6 +155,9 @@ export const verifyReportSchema = z.strictObject({
    * (CI always; locally only under `verify --review`) — carries the pinned
    * rubric hash, the reviewing model, and the PR-bound observations. */
   review: reviewReportSchema.optional(),
+  /** The trajectory stamp (P2-11). Present only on the authoritative path when
+   * `trajectory.require_local_verify` is set. Advise-level — never a block. */
+  trajectory: trajectoryReportSchema.optional(),
 });
 export type VerifyReport = z.infer<typeof verifyReportSchema>;
 
@@ -149,6 +168,7 @@ export interface ReportExtras {
   routing?: RoutingDecision;
   override?: OverrideReport;
   review?: ReviewReport;
+  trajectory?: TrajectoryReport;
 }
 
 /**
@@ -323,6 +343,32 @@ export function reviewCheck(outcome: VerdictOutcome): CheckResult {
 }
 
 /**
+ * Trajectory stamp builder (P2-11; design phase-2.md §6). Turns the
+ * `local_verify_ran` fact into the report section: clean when a local verify was
+ * recorded, else a single ADVISE-LEVEL advisory nudging the operator to run
+ * verify locally before pushing. This is a parked check (capture now, judge
+ * later) — the advisory is surfaced but NEVER blocks (invariant 11), so it lives
+ * in `extras`, not in `checks` (which drive the verdict). Pure — a function of
+ * the one boolean fact the caller read from state.
+ */
+export function trajectoryStamp(localVerifyRan: boolean): TrajectoryReport {
+  return {
+    local_verify_ran: localVerifyRan,
+    advisories: localVerifyRan
+      ? []
+      : [
+          {
+            code: 'LOCAL_VERIFY_NOT_RUN',
+            message:
+              'no local `crucible verify` was recorded in state before push, but crucible.yaml ' +
+              'sets trajectory.require_local_verify — run verify locally before pushing ' +
+              '(advisory only: trajectory checks are parked, this never blocks the merge)',
+          },
+        ],
+  };
+}
+
+/**
  * Approval-hash check: green iff the seal is valid. A void seal lists each
  * mismatched relpath (edited or missing since approval) as a finding — the
  * exact escape class invariant 6 exists to catch. The caller only runs this when
@@ -365,6 +411,7 @@ export function aggregate(
     ...(extras.routing ? { routing: extras.routing } : {}),
     ...(extras.override ? { override: extras.override } : {}),
     ...(extras.review ? { review: extras.review } : {}),
+    ...(extras.trajectory ? { trajectory: extras.trajectory } : {}),
   });
 }
 
@@ -393,6 +440,14 @@ export function renderReport(report: VerifyReport, label = 'verify'): string {
     lines.push(`  [${check.status === 'pass' ? 'PASS' : 'FAIL'}] ${check.name}`);
     for (const finding of check.findings) {
       lines.push(`      ✗ ${finding.id}: ${finding.message}`);
+    }
+  }
+  // Trajectory stamp (P2-11) — advise-level, never a block. Rendered so a green
+  // report still surfaces "was local verify run before push?" and any advisory.
+  if (report.trajectory) {
+    lines.push(`  local verify ran: ${report.trajectory.local_verify_ran ? 'yes' : 'no'}`);
+    for (const advisory of report.trajectory.advisories) {
+      lines.push(`      ⚠ ${advisory.code}: ${advisory.message}`);
     }
   }
   // Reviewer observations — the harvest channel (charter §530). Non-blocking by

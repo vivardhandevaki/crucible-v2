@@ -21,11 +21,17 @@ import { invalidInputError } from '../util/errors.js';
 import { tierDecisionSchema } from '../tier/tier.js';
 import { CHANGE_TYPES } from '../changetype/changetype.js';
 
-/** One append-only audit event: when, which command, a one-line summary. */
+/** One append-only audit event: when, which command, a one-line summary, and —
+ * for an event produced by an agent session (P2-11 trajectory indexing) — the
+ * repo-relative path of that session's transcript. `transcript` is OPTIONAL: a
+ * P1-era event, or any event not tied to a session (a local-verify verdict, an
+ * archive), simply omits it. Like every derived field it is never read to gate
+ * (invariant 1) — it indexes the captured trajectory for later inspection. */
 const stateEventSchema = z.strictObject({
   at: z.string().min(1),
   cmd: z.string().min(1),
   summary: z.string(),
+  transcript: z.string().min(1).optional(),
 });
 
 /**
@@ -139,6 +145,44 @@ export function recordSnapshotType(
   state.snapshot.change_type = changeType;
   writeFileSync(path, serializeState(state), 'utf8');
   return true;
+}
+
+/**
+ * The summary prefix `implement` writes for its local-verify step (design §6).
+ * A single stable constant so the WRITER (implement's final audit event) and the
+ * READER (the P2-11 trajectory stamp below) never drift apart on a magic string.
+ */
+export const LOCAL_VERIFY_SUMMARY_PREFIX = 'local verify';
+
+/**
+ * Was a local verify recorded in this change's state.yaml before this run? — the
+ * P2-11 trajectory stamp (design phase-2.md §6; charter §278 "was local verify
+ * actually run before push?"). CI reads this to SURFACE an advise-level finding,
+ * never to gate.
+ *
+ * BEST-EFFORT by construction (invariant 11): it feeds a NON-BLOCKING advisory (a
+ * parked trajectory check — capture now, judge later), so an absent OR malformed
+ * state.yaml is treated as "not run" rather than thrown. This deliberately does
+ * NOT fail closed: it is never read to make an enforcement decision (invariant 1),
+ * and the authoritative fail-closed on a corrupt audit log stays `status`'s job
+ * (which reconciles it from the artifacts). A verify VERDICT must never move on a
+ * display-trail read. The signal is `implement`'s local-verify event: CI runs
+ * `verify`, not `implement`, so this never sees its own run (no self-stamping).
+ */
+export function localVerifyRecorded(statePath: string): boolean {
+  let text: string;
+  try {
+    text = readFileSync(statePath, 'utf8');
+  } catch {
+    return false;
+  }
+  let state: State;
+  try {
+    state = parseState(text, statePath);
+  } catch {
+    return false;
+  }
+  return state.events.some((e) => e.summary.startsWith(LOCAL_VERIFY_SUMMARY_PREFIX));
 }
 
 /** Read + parse state.yaml, or `undefined` if it does not exist yet. */
