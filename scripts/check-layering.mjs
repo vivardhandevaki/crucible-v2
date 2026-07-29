@@ -36,6 +36,7 @@ const LAYER_ORDER = [
     'lint',
     'tier',
     'changetype',
+    'review',
     'verifyx',
     'substrate',
     'adapters',

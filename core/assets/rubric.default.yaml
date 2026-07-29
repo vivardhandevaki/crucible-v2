@@ -1,0 +1,58 @@
+# Crucible default rubric — the reviewer's law (charter §".crucible/rubric.yaml").
+#
+# The framework-shipped default (~12 lines). `crucible init` (P2-12) copies this
+# into a target repo as `.crucible/rubric.yaml`, where it becomes TCB: hash-pinned,
+# immutable to the implement agent, grown only by the ratchet. Each line is an
+# operationalized tenet, not an aspiration — the `evidence:` field names the
+# observable signal that constitutes a finding, or the line is a vibes-veto.
+# `severity: block` lines can stop a merge; `advise` lines only surface.
+version: 1
+lines:
+  - id: R-001
+    severity: block
+    criterion: Vacuous or tautological test assertions
+    evidence: an assertion that passes regardless of implementation behavior
+  - id: R-002
+    severity: block
+    criterion: Weakening in oracle-measured paths
+    evidence: widened tolerances, loosened conditions, or relaxed checks in code an oracle exercises
+  - id: R-003
+    severity: block
+    criterion: Silently swallowed errors
+    evidence: caught exception with no handling, logging, or propagation
+  - id: R-004
+    severity: block
+    criterion: Unjustified new dependency
+    evidence: dependency added without mention in the approved design
+  - id: R-005
+    severity: block
+    criterion: Concurrency hazard
+    evidence: shared mutable state without synchronization on a concurrent path
+  - id: R-006
+    severity: block
+    criterion: Embedded secrets or environment-specific values
+    evidence: credentials, tokens, or hardcoded env URLs in the diff
+  - id: R-007
+    severity: block
+    criterion: Decision the approved spec does not determine
+    evidence: behavioral choice not derivable from spec delta or archived spec, and no escalation filed
+  - id: R-008
+    severity: block
+    criterion: Spec contradiction outside oracle coverage
+    evidence: code behavior contradicting spec prose where no oracle measures it
+  - id: R-009
+    severity: block
+    criterion: Timing hacks to satisfy tests
+    evidence: sleeps, retries, or ordering tricks whose purpose is making a test pass
+  - id: R-010
+    severity: advise
+    criterion: Dead code or disabled checks
+    evidence: unreachable code, commented-out logic, or disabled lint/type suppressions
+  - id: R-011
+    severity: block
+    criterion: Missing validation at trust boundaries
+    evidence: external input reaching logic without validation on a new/changed path
+  - id: R-012
+    severity: block
+    criterion: Out-of-scope changes
+    evidence: diff hunks unrelated to the approved proposal's scope
