@@ -40,6 +40,7 @@ import {
   type EnforcementConfig,
 } from '../config/enforcement.js';
 import { recordSnapshotTier } from '../state/state.js';
+import { createLiveNotifier } from '../notify/live.js';
 import { CheckFailure, preconditionError } from '../util/errors.js';
 
 /** Register the real `verify` subcommand on the program. */
@@ -88,6 +89,18 @@ export function registerVerify(program: Command): void {
       } else {
         process.stdout.write(renderReport(report) + '\n');
       }
+
+      // Announce the verdict (charter §Notify Hooks; P2-15). Fire-and-forget from
+      // the CLI edge so the deterministic verify core (invariant 12) stays pure of
+      // the notify seam. The dispatcher never throws (invariant 11); we await it so
+      // pending hooks complete before the process exits on a red verdict. The
+      // working-tree convenience config drives it — notify is not enforcement, so
+      // invariant 7's target-branch rule does not apply to the announcement channel.
+      await createLiveNotifier(root)({
+        kind: 'verify',
+        change,
+        summary: `${report.verdict.toUpperCase()}${report.tier ? ` — tier ${report.tier}` : ''}`,
+      });
 
       // A red verdict exits 1 (architecture.md §2) — a verdict, not an error. The
       // report is already printed; CheckFailure carries the exit code silently.

@@ -42,6 +42,7 @@ const LAYER_ORDER = [
     'adapters',
     'config',
     'state',
+    'notify',
   ],
   ['util'],
 ];

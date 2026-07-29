@@ -22,6 +22,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { OVERRIDE_VERSION, buildOverride, serializeOverride } from '../artifacts/override.js';
 import { appendStateEvent } from '../state/state.js';
+import type { NotifyFn } from '../notify/types.js';
 import { preconditionError } from '../util/errors.js';
 
 /** Injected non-deterministic edges — so the command's core stays reproducible. */
@@ -30,6 +31,8 @@ export interface OverrideDeps {
   now: () => string;
   /** Who is overriding (e.g. git user email). Injected for determinism. */
   overriddenBy: () => string;
+  /** Convenience notify dispatcher (invariant 11) — fire-and-forget, may throw. */
+  notify: NotifyFn;
 }
 
 /** override invocation options. `root` is the repo root the bundle lives under. */
@@ -53,10 +56,14 @@ export interface OverrideResult {
 /**
  * Record a gate bypass. Throws `CrucibleError` (exit 2) if a precondition is
  * unmet — the change bundle is absent, or the reason is missing/blank — naming
- * the fix. On success it writes override.yaml + a state event and returns the
- * written path. Idempotent-ish: re-running overwrites with a fresh timestamp.
+ * the fix. On success it writes override.yaml + a state event, fires the notify
+ * hooks (failures swallowed, invariant 11), and returns the written path.
+ * Idempotent-ish: re-running overwrites with a fresh timestamp.
  */
-export function override(options: OverrideOptions, deps: OverrideDeps): OverrideResult {
+export async function override(
+  options: OverrideOptions,
+  deps: OverrideDeps,
+): Promise<OverrideResult> {
   const { root, change } = options;
   const changeRel = join('openspec', 'changes', change);
   const changeDir = join(root, changeRel);
@@ -90,13 +97,22 @@ export function override(options: OverrideOptions, deps: OverrideDeps): Override
   const overrideRel = join(changeRel, 'override.yaml');
   writeFileSync(join(root, overrideRel), serializeOverride(artifact), 'utf8');
 
-  // Append the audit event last (design §3 / invariant 1 — never read to gate).
+  // Append the audit event (design §3 / invariant 1 — never read to gate).
   appendStateEvent(
     join(changeDir, 'state.yaml'),
     change,
     { at: deps.now(), cmd: 'override', summary: `gate bypass recorded: ${reason}` },
     'overridden',
   );
+
+  // Announce (charter §Notify Hooks). Fire-and-forget: a throwing or rejecting
+  // hook is swallowed here (invariant 11) — the override.yaml on disk is what
+  // forces human review + the ratchet issue, never the notification.
+  try {
+    await deps.notify({ kind: 'override', change, summary: `OVERRIDE: ${reason}` });
+  } catch {
+    /* convenience-never-enforcement: a broken hook cannot fail an override. */
+  }
 
   return { path: overrideRel, reason };
 }

@@ -10,15 +10,17 @@
 // as verify.cli / propose.cli). Genuine precondition failures (no change, no
 // approval, empty resolution, missing role prompt) throw `CrucibleError`.
 //
-// Two edges are still stubbed, exactly as in approve.cli / escalate.cli: the
-// binding resolver fails closed until the adapter pin lands (P1-11/P2 init), and
-// the notify dispatcher is a no-op until P2-15. Neither is load-bearing — the
-// re-seal on disk is the outcome, not the announcement (invariant 11).
+// One edge is still stubbed, exactly as in approve.cli / escalate.cli: the binding
+// resolver fails closed until the adapter pin lands (P1-11/P2 init). The notify
+// dispatcher is now the config-driven P2-15 dispatcher — fire-and-forget, and not
+// load-bearing: the re-seal on disk is the outcome, not the announcement
+// (invariant 11).
 
 import { createInterface } from 'node:readline/promises';
 import type { Command } from 'commander';
 import { amend, type AmendDeps } from './amend.js';
 import { loadConvenienceConfig } from '../config/convenience.js';
+import { createLiveNotifier } from '../notify/live.js';
 import { ClaudeCodeSubstrate } from '../substrate/claude-code.js';
 import type { ResolveFn } from '../lint/traceability.js';
 import { CheckFailure, preconditionError } from '../util/errors.js';
@@ -39,7 +41,7 @@ export function registerAmend(program: Command): void {
       const root = process.cwd();
       const result = await amend(
         { root, change, resolution, model: amendModel(root), yes: opts.yes === true },
-        liveDeps(),
+        liveDeps(root),
       );
 
       const json = program.opts().json === true;
@@ -70,16 +72,17 @@ function amendModel(root: string): string {
 }
 
 /** The live dependencies for a real amend invocation. */
-function liveDeps(): AmendDeps {
+function liveDeps(root: string): AmendDeps {
   return {
     substrate: new ClaudeCodeSubstrate(),
     resolve: liveResolveUnavailable,
     confirm: promptConfirm,
     now: () => new Date().toISOString(),
     amendedBy: () => process.env.GIT_AUTHOR_EMAIL ?? process.env.USER ?? 'unknown',
-    // Convenience notify (invariant 11): the real dispatcher lands in P2-15. A
-    // no-op is safe — the re-seal already written is the outcome.
-    notify: () => {},
+    // Convenience notify (invariant 11): the config-driven dispatcher (P2-15). The
+    // re-seal already written is the outcome; a broken hook is swallowed by the
+    // core and cannot stop the amend.
+    notify: createLiveNotifier(root),
   };
 }
 
