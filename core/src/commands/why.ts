@@ -469,7 +469,9 @@ function isReportRequirement(report: VerifyReport, id: string): boolean {
 /** Current sha256 of a file, or undefined if missing/unreadable (a void signal). */
 function safeHash(path: string): string | undefined {
   try {
-    return createHash('sha256').update(readFileSync(path) as BinaryLike).digest('hex');
+    return createHash('sha256')
+      .update(readFileSync(path) as BinaryLike)
+      .digest('hex');
   } catch {
     return undefined;
   }

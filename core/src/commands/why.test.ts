@@ -68,7 +68,10 @@ const runFirstSkips = (oracles: readonly Oracle[]): Promise<OracleResult[]> =>
           target: t,
           status: skipped ? ('skip' as const) : ('pass' as const),
           ...(skipped
-            ? { message: 'localization not implemented; skipped', location: 'tests/greeting.test.ts:42' }
+            ? {
+                message: 'localization not implemented; skipped',
+                location: 'tests/greeting.test.ts:42',
+              }
             : {}),
         })),
       };
@@ -127,7 +130,10 @@ describe('why — tracer negative 1: REQ without an oracle (traceability class)'
         'The system SHALL greet in the configured locale.\n',
     );
 
-    const trace = await why({ root: scratch, change: CHANGE, id: 'REQ-greeting-localized-3' }, deps());
+    const trace = await why(
+      { root: scratch, change: CHANGE, id: 'REQ-greeting-localized-3' },
+      deps(),
+    );
     expect(trace.kind).toBe('requirement');
     expect(trace.status).toBe('fail');
     // Source with a file path: the spec delta the requirement lives in.
@@ -208,7 +214,8 @@ describe('why — reviewer findings (rubric class)', () => {
         {
           check: 'review',
           id: 'R-001',
-          message: 'the assertion passes regardless of behavior — src/greeting.ts:7; fix: assert the actual output',
+          message:
+            'the assertion passes regardless of behavior — src/greeting.ts:7; fix: assert the actual output',
         },
       ],
     };

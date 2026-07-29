@@ -35,7 +35,10 @@ export function registerWhy(program: Command): void {
     .command('why')
     .description('Trace a verify finding back to its source (oracle → binding → adapter → rubric)')
     .argument('<change>', 'the change name whose verdict to trace (openspec/changes/<change>/)')
-    .argument('<id>', 'the subject to explain: a check name, an ORC/REQ id, a rubric line, or a sealed file')
+    .argument(
+      '<id>',
+      'the subject to explain: a check name, an ORC/REQ id, a rubric line, or a sealed file',
+    )
     .option(
       '--diff-base <ref>',
       'the git ref to diff against for tier/cap computation ' +
