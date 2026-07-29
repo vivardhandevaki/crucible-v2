@@ -59,7 +59,7 @@ Acceptance: fresh repo → complete working setup (asserted file-by-file); re-ru
 Delivers: `commands/doctor.ts` per design §7.
 Acceptance: detects tampered schema bundle, stale CI template, out-of-range OpenSpec, bad adapter hash; all fixes offered as diffs; accepts/skips upstream rubric lines without silent merge.
 
-**P2-14 · Approve review surface** · Tier: Fable (UX) + Opus (impl) · Depends: P2-05
+**P2-14 · Approve review surface** · Tier: Opus (UX ratified P2-14, design §8) · Depends: P2-05
 Delivers: rendered approve flow per design §8 incl. critical per-oracle acks; $EDITOR loop.
 Acceptance: side-by-side render for tracer bundle; edit→revalidate→regen-test-diff loop; critical tier blocks confirm until all acks; `--yes` still works for tests (non-critical only).
 

@@ -44,6 +44,20 @@ export interface Oracle {
   heading: string;
   /** 1-based line number of the heading. */
   line: number;
+  /**
+   * 1-based line of this oracle's closing binding fence — the end of its
+   * *section span* `[line, sectionEnd]` (design phase-2.md §8). Together with
+   * `line` this is what the approve edit loop uses to locate the oracle for
+   * `$EDITOR +<line>` and what `crucible why` (P2-16) anchors on.
+   */
+  sectionEnd: number;
+  /**
+   * The oracle's human-readable *scenario prose* — the raw `oracles.md` slice
+   * from its `##` heading through the line before its binding fence (design
+   * phase-2.md §8, the approve surface's left pane). Trailing blank lines are
+   * trimmed; the fenced binding is NOT included (that is `binding`).
+   */
+  prose: string;
   binding: OracleBinding;
 }
 
@@ -73,6 +87,8 @@ const bindingSchema = z
 interface Fence {
   /** 1-based line of the opening ```` ```yaml crucible-binding ````. */
   openLine: number;
+  /** 1-based line of the closing ```` ``` ```` fence. */
+  closeLine: number;
   /** 1-based line of the first content line inside the fence. */
   contentStartLine: number;
   contentLines: string[];
@@ -138,7 +154,7 @@ export function parseOracles(markdown: string, source: string): Oracle[] {
           `oracle has an unterminated \`\`\`yaml crucible-binding fence`,
         );
       }
-      fences.push({ openLine, contentStartLine: j + 2, contentLines });
+      fences.push({ openLine, closeLine: k + 1, contentStartLine: j + 2, contentLines });
       j = k + 1;
     }
 
@@ -151,12 +167,21 @@ export function parseOracles(markdown: string, source: string): Oracle[] {
       );
     }
 
+    const fence = fences[0]!;
+    // Prose = the raw slice from the heading (index i) through the line before
+    // the binding fence opens (design phase-2.md §8). Trailing blanks trimmed.
+    const prose = lines
+      .slice(i, fence.openLine - 1)
+      .join('\n')
+      .replace(/\s+$/, '');
     oracles.push({
       id,
       title,
       heading: headingLine,
       line: headingNum,
-      binding: parseBinding(fences[0]!, headingLine, headingNum, source),
+      sectionEnd: fence.closeLine,
+      prose,
+      binding: parseBinding(fence, headingLine, headingNum, source),
     });
     seen.set(id, headingNum);
     i = j;

@@ -37,6 +37,17 @@ const amendmentSchema = z.strictObject({
   files: fileMap,
 });
 
+/**
+ * One per-oracle acknowledgment recorded on a CRITICAL-tier approval (charter
+ * §Tier Definitions "per-oracle test acknowledgment"; design phase-2.md §8). The
+ * ack is part of what the human attested at the gate, so it lives in the sealed
+ * record — but it is audit, NOT hash scope: `verifyApproval` never consults it.
+ */
+const ackSchema = z.strictObject({
+  oracle: z.string().min(1),
+  at: z.string().min(1),
+});
+
 /** approval.yaml (design §3), strict — an unknown key fails closed at exit 3. */
 export const approvalSchema = z.strictObject({
   version: z.number().int(),
@@ -45,10 +56,14 @@ export const approvalSchema = z.strictObject({
   approved_at: z.string().min(1),
   files: fileMap,
   amendments: z.array(amendmentSchema),
+  /** Present only on a critical-tier seal; absent for trivial/standard (schema
+   * version is unchanged — an older reader simply never sees the key). */
+  acks: z.array(ackSchema).optional(),
 });
 
 export type Approval = z.infer<typeof approvalSchema>;
 export type Amendment = z.infer<typeof amendmentSchema>;
+export type Ack = z.infer<typeof ackSchema>;
 
 /** The who/when/what metadata a caller supplies; hashes are computed here. */
 export interface ApprovalMeta {
@@ -56,6 +71,9 @@ export interface ApprovalMeta {
   change: string;
   approved_by: string;
   approved_at: string;
+  /** Critical-tier per-oracle acks to record (design phase-2.md §8); omitted
+   * for other tiers. Sorted by oracle id here for byte-stable serialization. */
+  acks?: Ack[];
 }
 
 /** verifyApproval result: valid, or void with every offending relpath named. */
@@ -80,6 +98,10 @@ export function sealBundle(root: string, relpaths: string[], meta: ApprovalMeta)
     approved_at: meta.approved_at,
     files,
     amendments: [],
+    // Acks are recorded only on a critical seal; sorted for byte-stable output.
+    ...(meta.acks && meta.acks.length > 0
+      ? { acks: [...meta.acks].sort((a, b) => a.oracle.localeCompare(b.oracle)) }
+      : {}),
   };
 }
 
