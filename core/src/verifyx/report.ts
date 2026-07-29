@@ -20,6 +20,7 @@ import { z } from 'zod';
 import type { LintReport } from '../lint/traceability.js';
 import type { OracleResult } from '../adapters/types.js';
 import type { VerifyResult } from '../artifacts/approval.js';
+import type { VerdictOutcome } from '../review/verdict.js';
 import { tierDecisionSchema, type TierDecision } from '../tier/tier.js';
 
 /** The check vocabulary, in report order. verify runs traceability → oracles →
@@ -34,6 +35,7 @@ export const CHECK_NAMES = [
   'oracles',
   'regression',
   'reproduction',
+  'review',
   'approval',
 ] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
@@ -97,6 +99,22 @@ export const overrideReportSchema = z.strictObject({
 });
 export type OverrideReport = z.infer<typeof overrideReportSchema>;
 
+/** The adversarial-reviewer record carried on a verify report (P2-10; charter
+ * §Verdict Schema; design phase-2.md §5). Present iff the review check ran.
+ * `rubric_hash` is the hash of the law the review was adjudicated against —
+ * computed by CORE from .crucible/rubric.yaml, never taken from the verdict.
+ * `model` is the verdict's self-declared reviewer identity (the v2.0-light drift
+ * guard: pinned for audit, not enforcement — absent when no verdict parsed).
+ * `observations` is the harvest channel (charter §530): everything the reviewer
+ * noticed that is NOT a rubric line, attached to the report so CI can surface it
+ * on the PR — promotable to rubric lines by humans, never a block. */
+export const reviewReportSchema = z.strictObject({
+  rubric_hash: z.string().min(1),
+  model: z.string().min(1).optional(),
+  observations: z.array(z.strictObject({ note: z.string().min(1) })),
+});
+export type ReviewReport = z.infer<typeof reviewReportSchema>;
+
 /** The whole verify verdict (design §8). Strict — an unknown field fails closed. */
 export const verifyReportSchema = z.strictObject({
   /** The change being verified. */
@@ -117,15 +135,20 @@ export const verifyReportSchema = z.strictObject({
    * `human`. Its `issue` is the ratchet payload CI files. Absent on the common
    * path — an override is the loud exception, not the rule. */
   override: overrideReportSchema.optional(),
+  /** The adversarial-reviewer record (P2-10). Present iff the review check ran
+   * (CI always; locally only under `verify --review`) — carries the pinned
+   * rubric hash, the reviewing model, and the PR-bound observations. */
+  review: reviewReportSchema.optional(),
 });
 export type VerifyReport = z.infer<typeof verifyReportSchema>;
 
-/** The tier/routing/override extras threaded into an aggregated report. `tier` and
- * `routing` travel together (both or neither); `override` is independent. */
+/** The tier/routing/override/review extras threaded into an aggregated report.
+ * `tier` and `routing` travel together (both or neither); the rest are independent. */
 export interface ReportExtras {
   tier?: TierDecision;
   routing?: RoutingDecision;
   override?: OverrideReport;
+  review?: ReviewReport;
 }
 
 /**
@@ -271,6 +294,35 @@ export function routingWithOverride(decision: TierDecision): RoutingDecision {
 }
 
 /**
+ * Review check (P2-10; charter §Verdict Schema & the Enumerated-Blocking Rule;
+ * design phase-2.md §5): green iff the fail-closed evaluator (review/verdict.ts)
+ * decided `pass`. Every failure shape is a red CHECK, never a throw — a
+ * malformed verdict is a reviewer block (charter §528), and enforcement lives in
+ * this deterministic code, never in the reviewer's prompt.
+ *
+ * Finding format is the `why` trail (design §8: "rubric line + evidence +
+ * remediation"): id = the rubric line, message = explanation — file:line; fix.
+ * P2-16's `crucible why <R-id>` walks exactly these fields back to the source. A
+ * fail-closed outcome (NO_VERDICT / MALFORMED_VERDICT / UNKNOWN_RUBRIC_ID /
+ * INCONSISTENT_VERDICT / RUBRIC_HASH_MISMATCH) has no rubric line to cite; its
+ * finding id is the machine code so the failure class is still addressable.
+ */
+export function reviewCheck(outcome: VerdictOutcome): CheckResult {
+  if (outcome.status === 'pass') {
+    return { name: 'review', status: 'pass', findings: [] };
+  }
+  const findings: VerifyFinding[] =
+    outcome.blockingFindings.length > 0
+      ? outcome.blockingFindings.map((f): VerifyFinding => ({
+          check: 'review',
+          id: f.rubric,
+          message: `${f.explanation} — ${f.evidence.file}:${f.evidence.line}; fix: ${f.remediation}`,
+        }))
+      : [{ check: 'review', id: outcome.code, message: outcome.reason }];
+  return { name: 'review', status: 'fail', findings };
+}
+
+/**
  * Approval-hash check: green iff the seal is valid. A void seal lists each
  * mismatched relpath (edited or missing since approval) as a finding — the
  * exact escape class invariant 6 exists to catch. The caller only runs this when
@@ -312,6 +364,7 @@ export function aggregate(
     ...(extras.tier ? { tier: extras.tier } : {}),
     ...(extras.routing ? { routing: extras.routing } : {}),
     ...(extras.override ? { override: extras.override } : {}),
+    ...(extras.review ? { review: extras.review } : {}),
   });
 }
 
@@ -340,6 +393,14 @@ export function renderReport(report: VerifyReport, label = 'verify'): string {
     lines.push(`  [${check.status === 'pass' ? 'PASS' : 'FAIL'}] ${check.name}`);
     for (const finding of check.findings) {
       lines.push(`      ✗ ${finding.id}: ${finding.message}`);
+    }
+  }
+  // Reviewer observations — the harvest channel (charter §530). Non-blocking by
+  // construction; rendered so a green report still surfaces what was noticed.
+  if (report.review && report.review.observations.length > 0) {
+    lines.push('  observations (reviewer, non-blocking):');
+    for (const obs of report.review.observations) {
+      lines.push(`      · ${obs.note}`);
     }
   }
   return lines.join('\n');
