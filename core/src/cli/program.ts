@@ -11,6 +11,7 @@ import { internalError } from '../util/errors.js';
 import { registerAmend } from '../commands/amend.cli.js';
 import { registerApprove } from '../commands/approve.cli.js';
 import { registerArchive } from '../commands/archive.cli.js';
+import { registerDoctor } from '../commands/doctor.cli.js';
 import { registerEscalate } from '../commands/escalate.cli.js';
 import { registerImplement } from '../commands/implement.cli.js';
 import { registerInit } from '../commands/init.cli.js';
@@ -76,6 +77,7 @@ export function buildProgram(): Command {
   registerAmend(program);
   registerApprove(program);
   registerArchive(program);
+  registerDoctor(program);
   registerEscalate(program);
   registerImplement(program);
   registerInit(program);

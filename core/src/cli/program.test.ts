@@ -88,6 +88,19 @@ describe('buildProgram', () => {
     expect(code).toBe(2);
   });
 
+  it('registers the P2 `doctor` verb so it appears in help', async () => {
+    const cap = captureIO();
+    await runProgram(buildProgram(), ['--help'], cap.io);
+    expect(cap.out()).toContain('doctor');
+  });
+
+  it('doctor --help exposes the --yes fix-all flag (verb fully wired)', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['doctor', '--help'], cap.io);
+    expect(code).toBe(0);
+    expect(cap.out()).toContain('--yes');
+  });
+
   it('unknown command against the real program → exit 2 with help + hint', async () => {
     const cap = captureIO();
     const code = await runProgram(buildProgram(), ['frobnicate'], cap.io);

@@ -37,3 +37,8 @@ Acceptance: propose on a JVM toy change emits addressable oracle tests; Testcont
 **P3-08 · Hello-world Spring Boot end-to-end** · Tier: Fable · Depends: P3-07
 Delivers: scripted end-to-end on a minimal Spring Boot app (real substrate manual + Fake in CI); stub retired from default `init` detect.
 Acceptance: full loop green incl. CI; negative paths (post-approval oracle edit, skip) still red with real adapter; PHASES.md Phase 3 done.
+
+**P3-09 · doctor adapter-lockfile-hash check** · Tier: Opus · Depends: P3-06
+Reads: charter §Adapter §"Pinned by version and content hash in a lockfile"; design phase-2.md §7 (doctor); phase-3.md §P3-06 (lockfile pin flow).
+Delivers: the fourth `crucible doctor` check — adapter lockfile hash validity — added to `doctor.ts`'s `CHECKS` registry (the seam left for it in P2-13). Verifies the `init`/`adapter add`-written lockfile's pinned content hash still matches the installed adapter's packaged bytes; a mismatch is a `drift` finding whose fix re-pins (offered as a diff, never silent), matching the other three checks.
+Acceptance: a tampered/updated adapter whose bytes no longer match the lockfile pin → detected as `bad adapter hash`; re-pin offered as a diff and applied only on confirm; a matching lockfile → no finding. *(Split out of P2-13: doctor's other three checks shipped in Phase 2, but the lockfile-with-content-hash mechanism this check verifies is minted by P3-06's pin flow — it did not exist in Phase 2, so P2-13 deferred this clause here rather than fold a can't-yet-run check into doctor. See P2-13 note + design phase-2.md §7.)*
