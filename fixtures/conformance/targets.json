@@ -1,0 +1,59 @@
+{
+  "//": "JVM conformance target manifest (task P3-01, design phase-3.md §1). Declares the five categories the maven-basic + gradle-basic fixtures embody and, per target, the expected `resolve` classification (found|missing|unsupported) and `run` outcome (pass|fail|skip|error|null). Both fixtures carry identical Java sources, so one manifest describes both — each build tool supplies a different classpath, not a different truth. Loaded/validated by @crucible/fixtures loadConformanceTargets. Consumers: P3-03 (resolve classification), P3-02 (run expectations).",
+  "package": "com.crucible.conformance",
+  "canary": {
+    "systemProperty": "crucible.canary.dir",
+    "markerFilename": "canary-executed.txt",
+    "target": "com.crucible.conformance.CanaryTest#writesMarkerWhenExecuted"
+  },
+  "targets": [
+    {
+      "target": "com.crucible.conformance.CalculatorTest#addsTwoNumbers",
+      "category": "pass",
+      "resolve": "found",
+      "run": "pass"
+    },
+    {
+      "target": "com.crucible.conformance.CalculatorTest#subtractsTwoNumbers",
+      "category": "pass",
+      "resolve": "found",
+      "run": "pass"
+    },
+    {
+      "target": "com.crucible.conformance.CanaryTest#writesMarkerWhenExecuted",
+      "category": "pass",
+      "resolve": "found",
+      "run": "pass"
+    },
+    {
+      "target": "com.crucible.conformance.CalculatorTest#failsOnPurpose",
+      "category": "fail",
+      "resolve": "found",
+      "run": "fail"
+    },
+    {
+      "target": "com.crucible.conformance.CalculatorTest#skippedFeature",
+      "category": "skip",
+      "resolve": "found",
+      "run": "skip"
+    },
+    {
+      "target": "com.crucible.conformance.ParameterizedCalculatorTest#evensAreEven",
+      "category": "parameterized",
+      "resolve": "unsupported",
+      "run": null
+    },
+    {
+      "target": "com.crucible.conformance.CalculatorTest#doesNotExist",
+      "category": "missing",
+      "resolve": "missing",
+      "run": "error"
+    },
+    {
+      "target": "com.crucible.conformance.GhostTest#neverWritten",
+      "category": "missing",
+      "resolve": "missing",
+      "run": "error"
+    }
+  ]
+}

@@ -5,6 +5,14 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# JVM conformance fixtures + java-junit helper build outputs (Phase 3).
+# Fixture *sources* (pom.xml, build.gradle, src/**) are committed; their
+# compiled/test outputs are not.
+fixtures/conformance/*/target/
+fixtures/conformance/*/build/
+fixtures/conformance/*/.gradle/
+adapters/java-junit/**/target/
+
 # Test / coverage
 coverage/
 
