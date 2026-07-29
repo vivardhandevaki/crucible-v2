@@ -10,7 +10,8 @@
 // This file is only the CONTRACT the injected dispatcher satisfies. P2-04 (the
 // first producer, `escalate`) needs a spy-able seam; the concrete `notify/`
 // dispatcher — config-driven, with the real terminal/desktop/webhook/github hooks
-// — is built by P2-15 against exactly this shape.
+// — is built by P2-15 (`dispatcher.ts` + `runtime.ts` + `live.ts`) against exactly
+// this shape.
 
 /** The events that fire notify hooks (charter: escalations, overrides, verify). */
 export type NotifyEventKind = 'escalation' | 'override' | 'verify';

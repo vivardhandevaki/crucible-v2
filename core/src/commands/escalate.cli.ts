@@ -8,13 +8,15 @@
 // blank question or no actionable `--option` is caught by the core with the same
 // exit. `--option` is repeatable (collected into an array); `--oracle` is optional.
 //
-// The notify dispatcher is a NO-OP here for now: P2-15 delivers the concrete
-// config-driven `notify/` dispatcher and wires it in. Until then escalate still
-// writes the load-bearing escalation.yaml (the blocker is the artifact, invariant
-// 11) — only the convenience announcement is absent.
+// The notify dispatcher is the config-driven `notify/` dispatcher (P2-15): it fans
+// the escalation out to the terminal/desktop/webhook/github hooks configured in
+// the convenience config. It is fire-and-forget — escalate still writes the load-
+// bearing escalation.yaml (the blocker is the artifact, invariant 11), and a broken
+// hook is swallowed by the core and cannot stop the escalation.
 
 import type { Command } from 'commander';
 import { escalate, type EscalateDeps } from './escalate.js';
+import { createLiveNotifier } from '../notify/live.js';
 
 /** Collect a repeatable option into an array (commander accumulator). */
 function collect(value: string, previous: string[]): string[] {
@@ -45,7 +47,7 @@ export function registerEscalate(program: Command): void {
             options: opts.option,
             ...(opts.oracle !== undefined ? { oracle: opts.oracle } : {}),
           },
-          liveDeps(),
+          liveDeps(process.cwd()),
         );
         process.stdout.write(`Escalation filed for ${change}: ${result.path}\n`);
         process.stdout.write(`  question: ${result.question}\n`);
@@ -57,12 +59,13 @@ export function registerEscalate(program: Command): void {
 }
 
 /** The live dependencies for a real escalate invocation. */
-function liveDeps(): EscalateDeps {
+function liveDeps(root: string): EscalateDeps {
   return {
     now: () => new Date().toISOString(),
     filedBy: () => process.env.GIT_AUTHOR_EMAIL ?? process.env.USER ?? 'unknown',
-    // Convenience notify (invariant 11): a real dispatcher lands in P2-15. A no-op
-    // is safe — the escalation.yaml already written is the sole blocker.
-    notify: () => {},
+    // Convenience notify (invariant 11): the config-driven dispatcher (P2-15). The
+    // escalation.yaml already written is the sole blocker; a broken hook is
+    // swallowed by the core and cannot stop the escalation.
+    notify: createLiveNotifier(root),
   };
 }
