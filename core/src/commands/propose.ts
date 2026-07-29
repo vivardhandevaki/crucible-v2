@@ -22,7 +22,7 @@
 // touches no wall-clock or randomness itself.
 
 import { existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type { ResolveFn } from '../lint/traceability.js';
 import type { AgentSubstrate } from '../substrate/types.js';
 import { appendStateEvent, recordSnapshotType } from '../state/state.js';
@@ -264,6 +264,7 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
       at: deps.now(),
       cmd,
       summary: `bundle judged ${report.verdict} (${report.checks.length} check(s)) [type: ${type}]`,
+      transcript: relative(root, transcriptPath),
     },
     report.verdict === 'pass' ? (revise ? 'revised' : 'proposed') : 'propose-red',
   );

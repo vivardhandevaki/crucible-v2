@@ -32,7 +32,7 @@
 // 10): role prompt from `.crucible/context/implement.md` + a work-order payload.
 
 import { existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { loadApproval, verifyApproval } from '../artifacts/approval.js';
 import { readEscalationIfPresent } from '../artifacts/escalation.js';
 import type { CrucibleError } from '../util/errors.js';
@@ -42,7 +42,7 @@ import type { Oracle } from '../artifacts/oracles.js';
 import type { OracleResult } from '../adapters/types.js';
 import { verify } from './verify.js';
 import { renderReport, type VerifyReport } from '../verifyx/report.js';
-import { appendStateEvent } from '../state/state.js';
+import { LOCAL_VERIFY_SUMMARY_PREFIX, appendStateEvent } from '../state/state.js';
 import { invalidInputError, preconditionError } from '../util/errors.js';
 
 /** Injected non-deterministic edges — so implement's core stays reproducible. */
@@ -191,7 +191,12 @@ export async function implement(
   appendStateEvent(
     join(changeDir, 'state.yaml'),
     change,
-    { at: deps.now(), cmd: 'implement', summary: 'tasks.md generated' },
+    {
+      at: deps.now(),
+      cmd: 'implement',
+      summary: 'tasks.md generated',
+      transcript: relative(root, tasksTranscript),
+    },
     'implementing',
   );
 
@@ -217,7 +222,12 @@ export async function implement(
     appendStateEvent(
       join(changeDir, 'state.yaml'),
       change,
-      { at: deps.now(), cmd: 'implement', summary: 'halted — escalation filed' },
+      {
+        at: deps.now(),
+        cmd: 'implement',
+        summary: 'halted — escalation filed',
+        transcript: relative(root, implementTranscript),
+      },
       'escalated',
     );
     throw escalationPendingError(change);
@@ -231,7 +241,12 @@ export async function implement(
   appendStateEvent(
     join(changeDir, 'state.yaml'),
     change,
-    { at: deps.now(), cmd: 'implement', summary: `local verify ${report.verdict}` },
+    {
+      at: deps.now(),
+      cmd: 'implement',
+      summary: `${LOCAL_VERIFY_SUMMARY_PREFIX} ${report.verdict}`,
+      transcript: relative(root, implementTranscript),
+    },
     report.verdict === 'pass' ? 'implemented' : 'implement-red',
   );
 

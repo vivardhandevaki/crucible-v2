@@ -245,6 +245,73 @@ describe('verify — tier, routing & diff caps (config + diff-facts path)', () =
   });
 });
 
+describe('verify — trajectory stamp (P2-11, design phase-2.md §6)', () => {
+  // The toy config sets trajectory.require_local_verify: true.
+  function toyConfig(requireLocalVerify = true): EnforcementConfig {
+    const config = loadEnforcementConfig(scratch);
+    return {
+      ...config,
+      trajectory: { ...config.trajectory, require_local_verify: requireLocalVerify },
+    };
+  }
+
+  function facts(touchedPaths: string[], diffLines: number): () => DiffFacts {
+    return () => ({ touchedPaths, diffLines });
+  }
+
+  /** Write a state.yaml carrying the given event summaries (audit trail). */
+  function writeState(summaries: string[]): void {
+    const events = summaries.map((summary, i) => ({
+      at: `2026-07-29T00:00:0${i}Z`,
+      cmd: 'implement',
+      summary,
+    }));
+    writeFileSync(
+      join(scratch, CHANGE_REL, 'state.yaml'),
+      `change: ${CHANGE}\nevents:\n${events
+        .map((e) => `  - at: "${e.at}"\n    cmd: ${e.cmd}\n    summary: "${e.summary}"`)
+        .join('\n')}\nsnapshot:\n  phase: implemented\n`,
+      'utf8',
+    );
+  }
+
+  it('require_local_verify + no local verify recorded → stamp false + advise finding, verdict still pass', async () => {
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: toyConfig() },
+      deps({ diffFacts: facts(['src/greeting.ts'], 30) }),
+    );
+    expect(report.trajectory?.local_verify_ran).toBe(false);
+    expect(report.trajectory?.advisories.map((a) => a.code)).toContain('LOCAL_VERIFY_NOT_RUN');
+    // Advise-level: a parked trajectory check NEVER blocks the merge (invariant 11).
+    expect(report.verdict).toBe('pass');
+    expect(report.checks.some((c) => c.name === 'traceability' && c.status === 'pass')).toBe(true);
+  });
+
+  it('require_local_verify + a recorded local verify event → stamp true, no advisories', async () => {
+    writeState(['tasks.md generated', 'local verify pass']);
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: toyConfig() },
+      deps({ diffFacts: facts(['src/greeting.ts'], 30) }),
+    );
+    expect(report.trajectory?.local_verify_ran).toBe(true);
+    expect(report.trajectory?.advisories).toEqual([]);
+    expect(report.verdict).toBe('pass');
+  });
+
+  it('require_local_verify false → no trajectory section (project opted out)', async () => {
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: toyConfig(false) },
+      deps({ diffFacts: facts(['src/greeting.ts'], 30) }),
+    );
+    expect(report.trajectory).toBeUndefined();
+  });
+
+  it('without enforcement config (inner-loop verify) → no trajectory section', async () => {
+    const report = await verify({ root: scratch, change: CHANGE }, deps());
+    expect(report.trajectory).toBeUndefined();
+  });
+});
+
 describe('verify — override (the 2am hatch: design §3, P2-06)', () => {
   function toyConfig(): EnforcementConfig {
     return loadEnforcementConfig(scratch);

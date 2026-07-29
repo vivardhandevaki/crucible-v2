@@ -18,7 +18,7 @@
 // shapes the session (invariant 11); the verdict's model field is audit-grade.
 
 import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type { Command } from 'commander';
 import { review } from './review.js';
 import { aggregate, renderReport } from '../verifyx/report.js';
@@ -68,6 +68,7 @@ export function registerReview(program: Command): void {
             at: new Date().toISOString(),
             cmd: 'review',
             summary: `review ${report.verdict} (rubric ${result.rubricHash.slice(0, 12)})`,
+            transcript: relative(root, result.transcriptPath),
           },
           report.verdict === 'pass' ? 'reviewed' : 'review-red',
         );

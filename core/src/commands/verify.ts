@@ -58,6 +58,7 @@ import {
   routingFor,
   routingWithOverride,
   traceabilityCheck,
+  trajectoryStamp,
   type CheckResult,
   type OverrideReport,
   type ReportExtras,
@@ -67,6 +68,7 @@ import {
 import { collectArchivedRequirementIds, collectRegressionSuite } from '../regression/regression.js';
 import { computeTier } from '../tier/tier.js';
 import { buildRatchetIssue, loadOverride } from '../artifacts/override.js';
+import { localVerifyRecorded } from '../state/state.js';
 import type { EnforcementConfig } from '../config/enforcement.js';
 import { preconditionError } from '../util/errors.js';
 
@@ -217,6 +219,18 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   }
   // Carried on every path (inner-loop verify included) so a bypass is always flagged.
   if (override) extras.override = override;
+
+  // Trajectory stamp (P2-11; charter §278; design phase-2.md §6). ONLY when the
+  // project opted in via `trajectory.require_local_verify` (the authoritative
+  // config path — CI). ADVISE-LEVEL: the stamp + advisory ride `extras`, never a
+  // `check`, so they surface without ever moving the verdict (invariant 11 — a
+  // parked trajectory check, capture now judge later). The state read is
+  // best-effort (invariant 1: the derived audit trail is never read to gate) —
+  // an absent/malformed log reads as "not run" rather than failing verify closed.
+  if (options.config?.trajectory.require_local_verify) {
+    const ran = localVerifyRecorded(join(changeDir, 'state.yaml'));
+    extras.trajectory = trajectoryStamp(ran);
+  }
 
   const checks: CheckResult[] = [];
 
