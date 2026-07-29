@@ -20,6 +20,7 @@ import { registerPropose } from '../commands/propose.cli.js';
 import { registerReview } from '../commands/review.cli.js';
 import { registerStatus } from '../commands/status.cli.js';
 import { registerVerify } from '../commands/verify.cli.js';
+import { registerWhy } from '../commands/why.cli.js';
 
 // Placeholder until the version is sourced from package metadata in a later
 // task; kept off package.json imports because that file sits outside rootDir.
@@ -86,6 +87,7 @@ export function buildProgram(): Command {
   registerReview(program);
   registerStatus(program);
   registerVerify(program);
+  registerWhy(program);
 
   return program;
 }
