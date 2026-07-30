@@ -66,3 +66,10 @@ manual Codex/Claude Code mode. Oracle drift and JUnit skip remain independently
 Reads: charter §Adapter §"Pinned by version and content hash in a lockfile"; design phase-2.md §7 (doctor); phase-3.md §P3-06 (lockfile pin flow).
 Delivers: the fourth `crucible doctor` check — adapter lockfile hash validity — added to `doctor.ts`'s `CHECKS` registry (the seam left for it in P2-13). Verifies the `init`/`adapter add`-written lockfile's pinned content hash still matches the installed adapter's packaged bytes; a mismatch is a `drift` finding whose fix re-pins (offered as a diff, never silent), matching the other three checks.
 Acceptance: a tampered/updated adapter whose bytes no longer match the lockfile pin → detected as `bad adapter hash`; re-pin offered as a diff and applied only on confirm; a matching lockfile → no finding. *(Split out of P2-13: doctor's other three checks shipped in Phase 2, but the lockfile-with-content-hash mechanism this check verifies is minted by P3-06's pin flow — it did not exist in Phase 2, so P2-13 deferred this clause here rather than fold a can't-yet-run check into doctor. See P2-13 note + design phase-2.md §7.)*
+
+*(As-built P3-09.)* Added `adapter-lockfile-hash` to doctor's `CHECKS`
+registry. It strictly loads a present adapter lockfile, recomputes every pin with
+P3-06's shared manifest+executable package digest, and reports all mismatches as
+one blocking `bad adapter hash` drift finding. Its canonical lockfile re-pin is
+carried as a `current → desired` rewrite and reaches disk only through an
+explicit `confirmFix`; matching pins and projects without a lockfile stay quiet.
