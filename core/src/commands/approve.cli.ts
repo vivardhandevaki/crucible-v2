@@ -34,8 +34,7 @@ import {
   resolveEnforcementRoot,
   type EnforcementConfig,
 } from '../config/enforcement.js';
-import type { ResolveFn } from '../lint/traceability.js';
-import { preconditionError } from '../util/errors.js';
+import { loadPinnedAdapterClient } from '../adapters/runtime.js';
 
 /** Model used when convenience config routes nothing to `models.propose`. */
 
@@ -100,8 +99,9 @@ function proposeModel(root: string): string {
 
 /** The live dependencies for a real approve invocation. */
 function liveDeps(root: string, diffBase: string | undefined): ApproveDeps {
+  const adapter = loadPinnedAdapterClient(root);
   return {
-    resolve: liveResolve,
+    resolve: (targets) => adapter.resolve(targets),
     confirm: promptConfirm,
     now: () => new Date().toISOString(),
     approvedBy: () => process.env.GIT_AUTHOR_EMAIL ?? process.env.USER ?? 'unknown',
@@ -113,19 +113,6 @@ function liveDeps(root: string, diffBase: string | undefined): ApproveDeps {
     confirmDiff: promptDiff,
   };
 }
-
-/**
- * The binding resolver spawns the pinned adapter (P1-11 adapter client, recorded
- * by `crucible init` — P2-12). Until that pin exists, fail closed rather than run
- * the gate against no resolver.
- */
-const liveResolve: ResolveFn = () => {
-  throw preconditionError(
-    'NO_ADAPTER_PIN',
-    'The pinned adapter that resolves oracle bindings is not configured yet.',
-    'Adapter pinning lands with `crucible init` (P2); until then approve runs only via its injectable core.',
-  );
-};
 
 /**
  * Page a rendered surface through `$PAGER` (default `less -FRX` — `-F` lets short

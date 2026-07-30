@@ -18,8 +18,8 @@
 import type { Command } from 'commander';
 import { resolveAgentRuntime } from '../substrate/runtime.js';
 import { implement, type ImplementDeps } from './implement.js';
-import type { ResolveFn } from '../lint/traceability.js';
-import { CheckFailure, preconditionError } from '../util/errors.js';
+import { loadPinnedAdapterClient } from '../adapters/runtime.js';
+import { CheckFailure } from '../util/errors.js';
 
 /** Model used when convenience config routes nothing to `models.implement`. */
 
@@ -58,23 +58,11 @@ function implementModel(root: string): string {
 
 /** The live dependencies for a real implement invocation. */
 function liveDeps(root: string): ImplementDeps {
+  const adapter = loadPinnedAdapterClient(root);
   return {
     substrate: resolveAgentRuntime(root, 'implement').substrate,
-    resolve: liveAdapterUnavailable,
-    run: liveAdapterUnavailable,
+    resolve: (targets) => adapter.resolve(targets),
+    run: (oracles) => adapter.run(oracles),
     now: () => new Date().toISOString(),
   };
 }
-
-/**
- * The dry-run resolver and oracle runner both spawn the pinned adapter via the
- * P1-11 client, which `init` records in the project config (P2). Until that pin
- * exists, fail closed rather than run the local verify against no adapter.
- */
-const liveAdapterUnavailable = ((): never => {
-  throw preconditionError(
-    'NO_ADAPTER_PIN',
-    'The pinned adapter that resolves and runs oracle bindings is not configured yet.',
-    'Adapter pinning lands with `crucible init` (P2); until then implement runs only via its injectable core (see the P1-16 tracer).',
-  );
-}) as ResolveFn & ImplementDeps['run'];

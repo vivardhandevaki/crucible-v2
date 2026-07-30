@@ -27,7 +27,7 @@ import {
   resolveEnforcementRoot,
   type EnforcementConfig,
 } from '../config/enforcement.js';
-import { preconditionError } from '../util/errors.js';
+import { loadPinnedAdapterClient } from '../adapters/runtime.js';
 
 /** Register the real `why` subcommand on the program. */
 export function registerWhy(program: Command): void {
@@ -80,17 +80,19 @@ function liveDeps(
   diffBase: string | undefined,
   reviewOpts: { change: string; withReview: boolean },
 ): WhyDeps {
+  const adapter = loadPinnedAdapterClient(root);
   return {
-    resolve: liveAdapterUnavailable,
-    run: liveAdapterUnavailable,
+    resolve: (targets) => adapter.resolve(targets),
+    run: (oracles) => adapter.run(oracles),
     diffFacts: () => computeDiffFacts(root, diffBase),
     runOnBase: (oracles) =>
       runReproductionOnBase(
         { root, base: diffBase ?? defaultBase(root), oracles },
         {
           git: liveWorktreeGit(root),
-          resolve: liveAdapterUnavailable,
-          runIn: liveAdapterUnavailable,
+          resolve: (targets) => adapter.resolve(targets),
+          runIn: (worktreePath, reproductionOracles) =>
+            loadPinnedAdapterClient(root, worktreePath).run(reproductionOracles),
         },
       ),
     ...(reviewOpts.withReview
@@ -113,16 +115,3 @@ function liveDeps(
       : {}),
   };
 }
-
-/**
- * The dry-run resolver and oracle runner both spawn the pinned adapter via the
- * P1-11 client, which `init` records. Until that pin exists, fail closed rather
- * than trace against no adapter (mirrors verify.cli's stance).
- */
-const liveAdapterUnavailable = (): never => {
-  throw preconditionError(
-    'NO_ADAPTER_PIN',
-    'The pinned adapter that resolves and runs oracle bindings is not configured yet.',
-    'Adapter pinning lands with `crucible init` (P2); until then trace via the injectable core (see why.test.ts).',
-  );
-};

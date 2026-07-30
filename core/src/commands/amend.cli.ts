@@ -21,8 +21,8 @@ import type { Command } from 'commander';
 import { resolveAgentRuntime } from '../substrate/runtime.js';
 import { amend, type AmendDeps } from './amend.js';
 import { createLiveNotifier } from '../notify/live.js';
-import type { ResolveFn } from '../lint/traceability.js';
-import { CheckFailure, preconditionError } from '../util/errors.js';
+import { loadPinnedAdapterClient } from '../adapters/runtime.js';
+import { CheckFailure } from '../util/errors.js';
 
 /** Model used when convenience config routes nothing to `models.propose`
  * (amend regenerates through the propose role). */
@@ -71,9 +71,10 @@ function amendModel(root: string): string {
 
 /** The live dependencies for a real amend invocation. */
 function liveDeps(root: string): AmendDeps {
+  const adapter = loadPinnedAdapterClient(root);
   return {
     substrate: resolveAgentRuntime(root, 'propose').substrate,
-    resolve: liveResolveUnavailable,
+    resolve: (targets) => adapter.resolve(targets),
     confirm: promptConfirm,
     now: () => new Date().toISOString(),
     amendedBy: () => process.env.GIT_AUTHOR_EMAIL ?? process.env.USER ?? 'unknown',
@@ -83,19 +84,6 @@ function liveDeps(root: string): AmendDeps {
     notify: createLiveNotifier(root),
   };
 }
-
-/**
- * The binding resolver spawns the pinned adapter (P1-11 client), recorded by
- * `crucible init` (P2). Until that pin exists, fail closed rather than re-judge
- * against no resolver (invariant 3).
- */
-const liveResolveUnavailable: ResolveFn = () => {
-  throw preconditionError(
-    'NO_ADAPTER_PIN',
-    'The pinned adapter that resolves oracle bindings is not configured yet.',
-    'Adapter pinning lands with `crucible init` (P2); until then amend runs only via its injectable core.',
-  );
-};
 
 /** Interactive y/N confirmation on stdin/stdout. Empty / non-y → decline. */
 async function promptConfirm(): Promise<boolean> {
