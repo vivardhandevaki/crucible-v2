@@ -11,10 +11,19 @@
 // every conflicting file is shown and confirmed one at a time.
 
 import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import type { Command } from 'commander';
-import { init, type ConfirmOverwrite, type InitAnswers } from './init.js';
+import { invalidInputError } from '../util/errors.js';
+import {
+  init,
+  type AdapterPackageSource,
+  type ConfirmOverwrite,
+  type InitAnswers,
+} from './init.js';
+
+const require = createRequire(import.meta.url);
 
 /** Register the real `init` subcommand on the program. */
 export function registerInit(program: Command): void {
@@ -35,7 +44,11 @@ export function registerInit(program: Command): void {
       const detected = detectAnswers(root);
       const answers = yes ? detected : await confirmAnswers(detected);
 
-      const report = await init({ root, answers }, { confirmOverwrite: confirmOverwriteEdge(yes) });
+      const adapterPackage = shippedAdapterPackage(answers.adapter);
+      const report = await init(
+        { root, answers, ...(adapterPackage ? { adapterPackage } : {}) },
+        { confirmOverwrite: confirmOverwriteEdge(yes) },
+      );
 
       // File-by-file summary — created / updated / skipped surfaced, unchanged
       // rolled up so a clean re-run reads as a single reassuring line.
@@ -85,6 +98,25 @@ export function detectAnswers(root: string): InitAnswers {
     };
   }
   return { adapter: 'stub', runners: ['stub'], paths: ['**/*.ts'], unitCommand: 'npm test' };
+}
+
+/** Locate first-party packaged bytes without importing adapter implementation code. */
+export function shippedAdapterPackage(name: string): AdapterPackageSource | undefined {
+  if (name !== 'java-junit') return undefined;
+  let packageRoot: string;
+  try {
+    packageRoot = dirname(require.resolve('@crucible/adapter-java-junit/package.json'));
+  } catch (error) {
+    throw invalidInputError(
+      'ADAPTER_PACKAGE_UNAVAILABLE',
+      `The shipped java-junit package could not be resolved — ${String(error)}`,
+      'Reinstall Crucible with its first-party adapter packages.',
+    );
+  }
+  return {
+    manifestPath: join(packageRoot, 'package', 'crucible-adapter.yaml'),
+    executablePath: join(packageRoot, 'package', 'java-junit.mjs'),
+  };
 }
 
 /** Let the operator confirm / override the detected adapter + unit command. */

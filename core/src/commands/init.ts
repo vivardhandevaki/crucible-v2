@@ -35,12 +35,29 @@
 // parts (adapter detection, the unit-test command, the y/N prompts) are resolved
 // by the CLI into `answers` + `confirmOverwrite` before the core runs.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { CI_TEMPLATE_PATH } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES, schemaBundleDir } from '@crucible/schemas';
+import {
+  ADAPTER_LOCK_RELPATH,
+  hashAdapterPackage,
+  loadAdapterLock,
+  serializeAdapterLock,
+  type AdapterLock,
+} from '../adapters/lockfile.js';
+import { loadManifest } from '../adapters/manifest.js';
+import { invalidInputError } from '../util/errors.js';
 
 // core/src/commands/init.ts (or core/dist/commands/init.js) → core/ → assets/,
 // the same resolution `review/rubric.ts` uses for the shipped rubric default.
@@ -89,11 +106,18 @@ export interface InitDeps {
   confirmOverwrite: ConfirmOverwrite;
 }
 
+export interface AdapterPackageSource {
+  manifestPath: string;
+  executablePath: string;
+}
+
 export interface InitOptions {
   /** The repo root to install into. */
   root: string;
   /** The resolved install answers (adapter + unit command). */
   answers: InitAnswers;
+  /** First-party package selected by the CLI detection edge, when shipped. */
+  adapterPackage?: AdapterPackageSource;
 }
 
 /** What init did to one target path. `skipped` = a conflict the caller declined. */
@@ -115,6 +139,16 @@ export interface InitReport {
  */
 export async function init(options: InitOptions, deps: InitDeps): Promise<InitReport> {
   const { root, answers } = options;
+  if (options.adapterPackage !== undefined) {
+    const manifest = loadManifest(options.adapterPackage.manifestPath);
+    if (manifest.name !== answers.adapter) {
+      throw invalidInputError(
+        'ADAPTER_PACKAGE_MISMATCH',
+        `Detected adapter ${answers.adapter} does not match package ${manifest.name}.`,
+        'Select the package whose manifest name matches the detected adapter.',
+      );
+    }
+  }
   const actions: InitAction[] = [];
   const apply = (a: InitAction): void => {
     actions.push(a);
@@ -122,6 +156,12 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
 
   // 1. Enforcement config, rendered from the shipped reference shape + answers.
   await writeFullFile(root, 'crucible.yaml', renderCrucibleYaml(answers), deps, apply);
+
+  // 1.5. Install + pin the detected first-party adapter package. The package
+  // bytes and lockfile use init's existing diff-and-confirm edge on re-run.
+  if (options.adapterPackage !== undefined) {
+    await installAdapterPackage(root, options.adapterPackage, deps, apply);
+  }
 
   // 2. Convenience defaults + reviewer rubric + role prompts (the .crucible TCB).
   await writeFullFile(
@@ -188,6 +228,46 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
   ensureGitignore(root, apply);
 
   return { actions };
+}
+
+async function installAdapterPackage(
+  root: string,
+  source: AdapterPackageSource,
+  deps: InitDeps,
+  apply: (action: InitAction) => void,
+): Promise<void> {
+  const sourceManifest = loadManifest(source.manifestPath);
+  const manifestRel = `.crucible/adapters/${sourceManifest.name}.yaml`;
+  const executableRel = `.crucible/adapters/${sourceManifest.name}.mjs`;
+
+  await writeFullFile(root, manifestRel, readFileSync(source.manifestPath, 'utf8'), deps, apply);
+  let executableAction: InitAction | undefined;
+  await writeFullFile(
+    root,
+    executableRel,
+    readFileSync(source.executablePath, 'utf8'),
+    deps,
+    (action) => {
+      executableAction = action;
+      apply(action);
+    },
+  );
+  if (executableAction?.kind === 'created' || executableAction?.kind === 'updated') {
+    chmodSync(join(root, executableRel), 0o755);
+  }
+
+  const installedManifest = loadManifest(join(root, manifestRel));
+  const lockPath = join(root, ADAPTER_LOCK_RELPATH);
+  const lock: AdapterLock = existsSync(lockPath)
+    ? loadAdapterLock(lockPath)
+    : { version: 1, adapters: {} };
+  lock.adapters[installedManifest.name] = {
+    version: installedManifest.version,
+    manifest: manifestRel,
+    executable: executableRel,
+    content_hash: hashAdapterPackage(join(root, manifestRel), join(root, executableRel)),
+  };
+  await writeFullFile(root, ADAPTER_LOCK_RELPATH, serializeAdapterLock(lock), deps, apply);
 }
 
 /** Read a shipped asset from `core/assets/…` as UTF-8 (fail-closed if missing). */

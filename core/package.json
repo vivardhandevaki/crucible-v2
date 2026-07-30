@@ -14,6 +14,7 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@crucible/adapter-java-junit": "*",
     "@crucible/ci-templates": "*",
     "@crucible/schemas": "*",
     "commander": "^14.0.3",

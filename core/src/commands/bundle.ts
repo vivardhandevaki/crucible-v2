@@ -23,6 +23,7 @@ import { join, relative } from 'node:path';
 import { loadOracles, type Oracle } from '../artifacts/oracles.js';
 import { loadProposal } from '../artifacts/proposal.js';
 import { loadSpecDelta, type SpecRequirement } from '../artifacts/spec-delta.js';
+import { ADAPTER_LOCK_RELPATH } from '../adapters/lockfile.js';
 import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
 import { type ChangeType, type TypeFacts } from '../changetype/changetype.js';
 import {
@@ -220,6 +221,8 @@ export async function computeHashScope(
       covered.add(resolution.targetFile);
     }
   }
+
+  if (existsSync(join(root, ADAPTER_LOCK_RELPATH))) covered.add(ADAPTER_LOCK_RELPATH);
 
   return [...covered].sort();
 }
