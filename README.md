@@ -16,7 +16,7 @@ The framework and this repository support both OpenAI Codex and Claude Code.
 - `adapters/`: standalone JSON-over-stdin/stdout test adapters.
 - `schemas/`, `fixtures/`, `ci-templates/`: shipped workflow assets and executable proofs.
 
-Phase 1 and Phase 2 are complete. Phase 3 is complete through P3-07 and P3-10; P3-08 is next.
+Phases 1–3 have met their exit criteria. P3-09 remains an explicitly tracked doctor UX follow-up; Phase 4 validation is next.
 
 ## Agent prerequisites
 

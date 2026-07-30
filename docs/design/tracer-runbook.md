@@ -65,6 +65,42 @@ A started process always returns its exit code and preserves any partial transcr
 
 Read the transcript when propose or implement is red. The agent process exit status is never treated as proof of success; only the required artifacts and deterministic checks count.
 
+
+## P3-08 Spring Boot exit tracer
+
+`core/test/p3-08-spring-boot-flow.test.ts` repeats the consumer loop on
+`fixtures/spring-hello-world` with the packaged, project-installed
+`java-junit` adapter. Its normal test cases use FakeSubstrate and run in CI;
+only the agent sessions are faked. Init, lock hashing, JUnit discovery and
+execution, approval seals, local verify, tier computation, and review-verdict
+evaluation remain real.
+
+Build the monorepo and confirm Java 17+ plus Maven are available:
+
+```sh
+npm run build
+java -version
+mvn -v
+```
+
+Run the manual Codex path:
+
+```sh
+CRUCIBLE_REAL_SUBSTRATE=codex npx vitest run core/test/p3-08-spring-boot-flow.test.ts
+```
+
+Or Claude Code:
+
+```sh
+CRUCIBLE_REAL_SUBSTRATE=claude-code npx vitest run core/test/p3-08-spring-boot-flow.test.ts
+```
+
+`CRUCIBLE_REAL_MODEL` overrides the provider default. Manual mode initializes
+and commits a clean Spring baseline, asks the provider to author the proposal
+and oracle test, seals it, runs two implementation sessions, verifies locally,
+commits the result, and performs CI-style verify with a live adversarial review.
+The scratch repository is printed and retained for transcript and verdict
+inspection.
 ## P2-only manual surfaces
 
 After a retained real tracer run, the same selected provider can exercise the P2 command surfaces:

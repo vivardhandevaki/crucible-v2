@@ -54,6 +54,14 @@ adapter with exact `targetFile` grounding and a real Docker container.
 Delivers: scripted end-to-end on a minimal Spring Boot app (real substrate manual + Fake in CI); stub retired from default `init` detect.
 Acceptance: full loop green incl. CI; negative paths (post-approval oracle edit, skip) still red with real adapter; PHASES.md Phase 3 done.
 
+*(As-built P3-08.)* Shipped `fixtures/spring-hello-world` and
+`core/test/p3-08-spring-boot-flow.test.ts`: CI fakes only propose, implement,
+and review sessions while init, version+hash pinning, JUnit resolve/run, sealing,
+local verify, tier computation, and CI review evaluation use production paths.
+Every live command now loads and hash-verifies the installed adapter bytes; an
+unknown init target fails instead of installing the stub. The same test exposes
+manual Codex/Claude Code mode. Oracle drift and JUnit skip remain independently
+
 **P3-09 · doctor adapter-lockfile-hash check** · Tier: Opus / Terra · Depends: P3-06
 Reads: charter §Adapter §"Pinned by version and content hash in a lockfile"; design phase-2.md §7 (doctor); phase-3.md §P3-06 (lockfile pin flow).
 Delivers: the fourth `crucible doctor` check — adapter lockfile hash validity — added to `doctor.ts`'s `CHECKS` registry (the seam left for it in P2-13). Verifies the `init`/`adapter add`-written lockfile's pinned content hash still matches the installed adapter's packaged bytes; a mismatch is a `drift` finding whose fix re-pins (offered as a diff, never silent), matching the other three checks.

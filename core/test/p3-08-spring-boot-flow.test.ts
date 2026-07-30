@@ -42,6 +42,7 @@ const FRAMEWORK_CI = join(MONOREPO_ROOT, '.github', 'workflows', 'ci.yml');
 const ADAPTER_PACKAGE = join(MONOREPO_ROOT, 'adapters', 'java-junit', 'package');
 
 const CHANGE = 'greet-world';
+const PHASE_LEDGER = join(MONOREPO_ROOT, 'PHASES.md');
 const CHANGE_REL = join('openspec', 'changes', CHANGE);
 const TASKS_REL = join(CHANGE_REL, 'tasks.md');
 const ORACLES_REL = join(CHANGE_REL, 'oracles.md');
@@ -288,6 +289,13 @@ describe('P3-08 CI contract', () => {
     const workflow = readFileSync(FRAMEWORK_CI, 'utf8');
     expect(workflow).toContain('actions/setup-java@v4');
     expect(workflow).toContain("java-version: '17'");
+  });
+
+  it('records the Phase 3 exit criterion as done without hiding follow-up work', () => {
+    const phaseThree = readFileSync(PHASE_LEDGER, 'utf8')
+      .split('\n')
+      .find((line) => line.startsWith('| 3 |'));
+    expect(phaseThree).toContain('☑ done');
   });
 });
 
