@@ -3,8 +3,8 @@
 // §7). Where `init` (P2-12) WRITES the trusted-computing-base files from shipped
 // sources of truth, `doctor` CHECKS a project's copies against those same
 // sources and reports drift — a tampered schema bundle, a stale CI workflow, an
-// out-of-range OpenSpec pin — plus offers new upstream rubric lines the
-// framework has learned since install.
+// out-of-range OpenSpec pin, or a bad adapter hash — plus offers new upstream
+// rubric lines the framework has learned since install.
 //
 // Two properties are load-bearing:
 //
@@ -25,16 +25,20 @@
 // doctor produces the same findings and the same writes. The one non-deterministic
 // edge (the y/N prompt) is injected; the core touches no terminal and no clock.
 //
-// SCOPE (P2-13): the four checks below cover every Phase-2 install artifact. The
-// charter's fourth doctor check — adapter lockfile hash validity — is deferred
-// with the lockfile pin-flow that mints the hash it would check (docs/tasks/
-// phase-3.md; design phase-2.md §7 records the deferral). The check registry
-// (`CHECKS`) is the seam it slots into when that lands.
+// SCOPE (P2-13 + P3-09): the registry covers every installed artifact doctor can
+// maintain, including the adapter lockfile hash check added after P3-06 minted
+// the strict version+content-hash pin flow.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { ciTemplatePathForAdapter } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES, schemaBundleDir } from '@crucible/schemas';
+import {
+  ADAPTER_LOCK_RELPATH,
+  hashAdapterPackage,
+  loadAdapterLock,
+  serializeAdapterLock,
+} from '../adapters/lockfile.js';
 import { preconditionError } from '../util/errors.js';
 import { loadEnforcementConfig } from '../config/enforcement.js';
 import {
@@ -51,7 +55,12 @@ import {
 } from './openspec-support.js';
 
 /** Which check produced a finding — the stable category the CLI groups by. */
-export type DoctorCheckId = 'schema-bundle' | 'ci-template' | 'openspec-version' | 'rubric-lines';
+export type DoctorCheckId =
+  | 'schema-bundle'
+  | 'ci-template'
+  | 'openspec-version'
+  | 'adapter-lockfile-hash'
+  | 'rubric-lines';
 
 /**
  * A finding's weight. `drift` = a shipped TCB file diverged from its source and
@@ -121,12 +130,12 @@ export interface DoctorOptions {
   root: string;
 }
 
-/** The check registry — each returns zero or more findings, read-only. The
- * deferred adapter-lockfile-hash check (Phase 3) slots in here. */
+/** The check registry — each returns zero or more findings, read-only. */
 const CHECKS: readonly ((root: string) => DoctorFinding[])[] = [
   checkSchemaBundles,
   checkCiTemplate,
   checkOpenspecVersion,
+  checkAdapterLockfileHash,
   checkRubricLines,
 ];
 
@@ -284,6 +293,50 @@ function checkOpenspecVersion(root: string): DoctorFinding[] {
  * touching only that value so the rest of package.json stays byte-stable. */
 function repinOpenspec(text: string): string {
   return text.replace(/("@fission-ai\/openspec"\s*:\s*)"[^"]*"/, `$1"${OPENSPEC_TESTED_VERSION}"`);
+}
+
+// --- Check: adapter lockfile hash validity ------------------------------------
+
+/**
+ * Recompute every installed adapter package digest using P3-06's canonical
+ * domain-separated, length-framed hash. An absent lockfile means this project
+ * has no pinned adapter for doctor to maintain. A present lockfile is parsed
+ * strictly, and unreadable package bytes fail closed through the shared TCB hash
+ * API. All mismatches are repaired in one canonical lockfile diff so confirming
+ * a multi-adapter repair cannot overwrite an earlier repair from the same scan.
+ */
+function checkAdapterLockfileHash(root: string): DoctorFinding[] {
+  const relpath = ADAPTER_LOCK_RELPATH;
+  const abs = join(root, relpath);
+  if (!existsSync(abs)) return [];
+
+  const current = readFileSync(abs, 'utf8');
+  const lock = loadAdapterLock(abs);
+  const mismatches: string[] = [];
+  for (const [name, pin] of Object.entries(lock.adapters).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    const actual = hashAdapterPackage(join(root, pin.manifest), join(root, pin.executable));
+    if (actual === pin.content_hash) continue;
+    mismatches.push(name);
+    pin.content_hash = actual;
+  }
+  if (mismatches.length === 0) return [];
+
+  return [
+    {
+      check: 'adapter-lockfile-hash',
+      id: 'adapter-lockfile-hash',
+      severity: 'drift',
+      summary: `bad adapter hash: ${mismatches.join(', ')} package bytes no longer match the lockfile pin`,
+      relpath,
+      fix: {
+        kind: 'rewrite',
+        current,
+        desired: serializeAdapterLock(lock),
+      },
+    },
+  ];
 }
 
 // --- Check: upstream rubric-line offers ----------------------------------------

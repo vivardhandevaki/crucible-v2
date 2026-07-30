@@ -4,6 +4,11 @@ import { join } from 'node:path';
 import { CI_TEMPLATE_PATH } from '@crucible/ci-templates';
 import { schemaBundleFile } from '@crucible/schemas';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  ADAPTER_LOCK_RELPATH,
+  hashAdapterPackage,
+  loadAdapterLock,
+} from '../adapters/lockfile.js';
 import { isCrucibleError } from '../util/errors.js';
 import { loadDefaultRubric } from '../review/rubric.js';
 import { init, type InitAnswers } from './init.js';
@@ -14,11 +19,10 @@ import { OPENSPEC_TESTED_VERSION } from './openspec-support.js';
 // against Crucible's SHIPPED sources of truth — the same sources init (P2-12)
 // installs from. It never writes silently: every fix is routed through the
 // injected `confirmFix` edge (design phase-2.md §7 "offers fixes as diffs, never
-// silent writes"). These tests pin the four Phase-2 checks — schema-bundle
-// integrity, CI-template currency, OpenSpec version-range, and upstream
-// rubric-line offers — plus the never-silent-merge and read-only guarantees.
-// (The adapter-lockfile-hash check is deferred to Phase 3 with the lockfile
-// pin-flow — see docs/tasks/phase-3.md.)
+// silent writes"). These tests pin the doctor checks — schema-bundle
+// integrity, CI-template currency, OpenSpec version-range, adapter-lockfile hash
+// validity, and upstream rubric-line offers — plus the never-silent-merge and
+// read-only guarantees.
 
 const ANSWERS: InitAnswers = {
   adapter: 'stub',
@@ -48,6 +52,40 @@ function write(relpath: string, text: string): void {
 /** Install a clean, fully-initialized Crucible setup into the scratch repo. */
 async function initClean(): Promise<void> {
   await init({ root: scratch, answers: ANSWERS }, { confirmOverwrite: () => true });
+}
+
+/** Install a tiny adapter package through P3-06's real init+pin flow. */
+async function initWithPinnedAdapter(): Promise<void> {
+  const manifestPath = join(scratch, 'source-adapter.yaml');
+  const executablePath = join(scratch, 'source-adapter.mjs');
+  writeFileSync(
+    manifestPath,
+    [
+      'name: java-junit',
+      'version: 0.0.0',
+      'runners: [junit]',
+      'capabilities: [unit]',
+      'invocations:',
+      "  resolve: 'crucible-adapter-java-junit resolve'",
+      "  run: 'crucible-adapter-java-junit run'",
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(executablePath, '#!/usr/bin/env node\n', 'utf8');
+  await init(
+    {
+      root: scratch,
+      answers: {
+        adapter: 'java-junit',
+        runners: ['junit'],
+        paths: ['**/*.java'],
+        unitCommand: 'mvn test',
+      },
+      adapterPackage: { manifestPath, executablePath },
+    },
+    { confirmOverwrite: () => true },
+  );
 }
 
 function findingsFor(report: DoctorReport, check: string): DoctorFinding[] {
@@ -111,6 +149,56 @@ describe('doctor — schema bundle integrity (tampered bundle)', () => {
     const finding = findingsFor(report, 'schema-bundle').find((f) => f.relpath === rel);
     expect(finding).toBeDefined();
     expect(finding!.summary).toMatch(/missing/i);
+  });
+});
+
+describe('doctor — adapter lockfile hash validity (P3-09)', () => {
+  it('reports no finding when every installed adapter package matches its pin', async () => {
+    await initWithPinnedAdapter();
+
+    const report = await doctor({ root: scratch }, { confirmFix: confirmNever });
+
+    expect(findingsFor(report, 'adapter-lockfile-hash')).toEqual([]);
+  });
+
+  it('detects bad adapter bytes, offers a lockfile diff, and writes nothing when declined', async () => {
+    await initWithPinnedAdapter();
+    const executableRel = '.crucible/adapters/java-junit.mjs';
+    write(executableRel, `${read(executableRel)}// updated after pin\n`);
+    const lockBefore = read(ADAPTER_LOCK_RELPATH);
+
+    const confirm = vi.fn<ConfirmFix>(() => false);
+    const report = await doctor({ root: scratch }, { confirmFix: confirm });
+
+    const finding = findingsFor(report, 'adapter-lockfile-hash')[0]!;
+    expect(finding).toBeDefined();
+    expect(finding.severity).toBe('drift');
+    expect(finding.summary).toMatch(/bad adapter hash/i);
+    expect(finding.relpath).toBe(ADAPTER_LOCK_RELPATH);
+    expect(finding.fix).toMatchObject({ kind: 'rewrite', current: lockBefore });
+    expect(finding.fix!.desired).not.toBe(lockBefore);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(resolutionOf(report, finding.id)).toBe('skipped');
+    expect(read(ADAPTER_LOCK_RELPATH)).toBe(lockBefore);
+  });
+
+  it('re-pins the installed package hash only after its diff is confirmed', async () => {
+    await initWithPinnedAdapter();
+    const manifestRel = '.crucible/adapters/java-junit.yaml';
+    const executableRel = '.crucible/adapters/java-junit.mjs';
+    write(executableRel, `${read(executableRel)}// replacement package\n`);
+
+    const report = await doctor({ root: scratch }, { confirmFix: () => true });
+
+    const finding = findingsFor(report, 'adapter-lockfile-hash')[0]!;
+    expect(resolutionOf(report, finding.id)).toBe('fixed');
+    const repaired = loadAdapterLock(join(scratch, ADAPTER_LOCK_RELPATH));
+    expect(repaired.adapters['java-junit']!.content_hash).toBe(
+      hashAdapterPackage(join(scratch, manifestRel), join(scratch, executableRel)),
+    );
+
+    const clean = await doctor({ root: scratch }, { confirmFix: confirmNever });
+    expect(findingsFor(clean, 'adapter-lockfile-hash')).toEqual([]);
   });
 });
 
