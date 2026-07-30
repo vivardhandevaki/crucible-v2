@@ -41,6 +41,15 @@ Acceptance: complete conformance run green on both fixtures; packaged hash byte-
 Delivers: propose prompt JVM conventions; JDK CI template variant; spring-testcontainers fixture proving integration-kind flow.
 Acceptance: propose on a JVM toy change emits addressable oracle tests; Testcontainers test flows through verify as ordinary (slow) oracle.
 
+*(As-built P3-07.)* The shipped propose prompt now selects conventions from the
+installed adapter and teaches JUnit's plain-`@Test`, fully-qualified
+`Class#method` addressable subset. `java-junit` init installs a distinct
+target-branch-safe workflow with Temurin 17 and a fail-closed Docker readiness
+check; doctor selects the same shipped bytes from enforcement config. The Spring
+Boot fixture binds one real Testcontainers method as `kind: integration`, and
+the acceptance test drives propose → approve → verify through the packaged
+adapter with exact `targetFile` grounding and a real Docker container.
+
 **P3-08 · Hello-world Spring Boot end-to-end** · Tier: Fable / Sol · Depends: P3-07
 Delivers: scripted end-to-end on a minimal Spring Boot app (real substrate manual + Fake in CI); stub retired from default `init` detect.
 Acceptance: full loop green incl. CI; negative paths (post-approval oracle edit, skip) still red with real adapter; PHASES.md Phase 3 done.

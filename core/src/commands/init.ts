@@ -47,7 +47,7 @@ import {
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { CI_TEMPLATE_PATH } from '@crucible/ci-templates';
+import { ciTemplatePathForAdapter } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES, schemaBundleDir } from '@crucible/schemas';
 import {
   ADAPTER_LOCK_RELPATH,
@@ -214,7 +214,7 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
   await writeFullFile(
     root,
     join('.github', 'workflows', 'crucible.yml'),
-    readFileSync(CI_TEMPLATE_PATH, 'utf8'),
+    readFileSync(ciTemplatePathForAdapter(answers.adapter), 'utf8'),
     deps,
     apply,
   );

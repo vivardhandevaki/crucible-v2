@@ -13,8 +13,19 @@ import { fileURLToPath } from 'node:url';
 /** Filename of the reusable Crucible CI workflow shipped from this workspace. */
 export const CI_TEMPLATE_FILE = 'crucible.yml';
 
+/** JVM variant: the same enforcement gate plus JDK and Docker readiness. */
+export const JAVA_JUNIT_CI_TEMPLATE_FILE = 'crucible-java-junit.yml';
+
 // src/index.ts (or dist/index.js) → workspace root, where crucible.yml lives.
 const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /** Absolute path to the reusable Crucible enforcement workflow. */
 export const CI_TEMPLATE_PATH = join(workspaceRoot, CI_TEMPLATE_FILE);
+
+/** Absolute path to the JVM/Testcontainers-ready enforcement workflow. */
+export const JAVA_JUNIT_CI_TEMPLATE_PATH = join(workspaceRoot, JAVA_JUNIT_CI_TEMPLATE_FILE);
+
+/** Select the shipped workflow from the enforcement adapter, never convenience config. */
+export function ciTemplatePathForAdapter(adapter: string): string {
+  return adapter === 'java-junit' ? JAVA_JUNIT_CI_TEMPLATE_PATH : CI_TEMPLATE_PATH;
+}

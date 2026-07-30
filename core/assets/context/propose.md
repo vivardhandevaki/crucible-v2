@@ -83,14 +83,36 @@ oracle points at a real REQ, every binding target resolves.
 
 ### 5. Bound test files — real, failing tests
 
-Every binding target must exist as a real test **written by you now**, in this
-repo's test convention:
+Every binding target must exist as a real test **written by you now**. Inspect
+`crucible.yaml`, the installed adapter manifest, and the repository's existing
+tests before choosing a runner or target. Follow the matching convention below;
+never invent a target syntax from the programming language alone.
+
+#### Stub / TypeScript fixture convention
 
 - Test files live in `tests/*.test.ts`.
 - Each test is registered in `tests.json` (the runner's inventory) as
   `{"id": "<suite>::<test_name>", "file": "tests/<file>.test.ts", "status": "fail"}` —
-  `status: fail` because the implementation does not exist yet. Implementation
-  starts from red; a passing oracle test at propose time is a defect.
+  `status: fail` because the implementation does not exist yet.
+- Bind it with `runner: stub` and `target: <suite>::<test_name>`.
+
+#### JVM / JUnit convention
+
+- Put JUnit tests under a configured test source root (normally
+  `src/test/java/`) with a package matching the directory.
+- Bind `runner: junit` targets as a fully-qualified class plus concrete method:
+  `com.acme.auth.LockoutTest#fifthFailureLocks`.
+- Oracle targets must be plain `@Test` methods with stable, concrete names.
+  Do not bind `@ParameterizedTest`, `@TestFactory`, dynamic tests, templates,
+  overloaded methods, or generated/display names: they are outside the
+  addressable subset and resolve as missing.
+- Use one assertion theme per oracle scenario. A Spring `@SpringBootTest` or
+  Testcontainers check still uses `runner: junit`; select `kind: integration`
+  to record that it is a slow integration oracle, not to choose another runner.
+
+Whichever convention applies, implementation starts from red: the new test must
+compile and fail for the missing behavior. A passing, disabled, or skipped oracle
+test at propose time is a defect.
 
 ## Boundaries
 
