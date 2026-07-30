@@ -1,5 +1,5 @@
 // CLI wiring for `crucible implement` — binds the deterministic core
-// (`implement`) to the real, non-deterministic edges: the ClaudeCode substrate,
+// (`implement`) to the real, non-deterministic edges: the selected agent substrate,
 // the adapter-backed resolver + oracle runner (for the local verify), the wall
 // clock, and model routing from the convenience config. The core stays testable
 // and reproducible (invariant 12); this file is the thin shim that supplies live
@@ -16,14 +16,12 @@
 // P1-16 tracer wires a real stub-adapter client into these deps).
 
 import type { Command } from 'commander';
+import { resolveAgentRuntime } from '../substrate/runtime.js';
 import { implement, type ImplementDeps } from './implement.js';
-import { loadConvenienceConfig } from '../config/convenience.js';
-import { ClaudeCodeSubstrate } from '../substrate/claude-code.js';
 import type { ResolveFn } from '../lint/traceability.js';
 import { CheckFailure, preconditionError } from '../util/errors.js';
 
 /** Model used when convenience config routes nothing to `models.implement`. */
-const DEFAULT_IMPLEMENT_MODEL = 'claude-opus-4-8';
 
 /** Register the real `implement` subcommand on the program. */
 export function registerImplement(program: Command): void {
@@ -33,7 +31,7 @@ export function registerImplement(program: Command): void {
     .argument('<change>', 'the change name to implement (openspec/changes/<change>/)')
     .action(async (change: string) => {
       const root = process.cwd();
-      const result = await implement({ root, change, model: implementModel(root) }, liveDeps());
+      const result = await implement({ root, change, model: implementModel(root) }, liveDeps(root));
 
       const json = program.opts().json === true;
       if (json) {
@@ -55,13 +53,13 @@ export function registerImplement(program: Command): void {
 /** Model routing: convenience `models.implement`, else the default (invariant 11
  * — convenience shaping a session, never an enforcement decision). */
 function implementModel(root: string): string {
-  return loadConvenienceConfig(root).models['implement'] ?? DEFAULT_IMPLEMENT_MODEL;
+  return resolveAgentRuntime(root, 'implement').model;
 }
 
 /** The live dependencies for a real implement invocation. */
-function liveDeps(): ImplementDeps {
+function liveDeps(root: string): ImplementDeps {
   return {
-    substrate: new ClaudeCodeSubstrate(),
+    substrate: resolveAgentRuntime(root, 'implement').substrate,
     resolve: liveAdapterUnavailable,
     run: liveAdapterUnavailable,
     now: () => new Date().toISOString(),

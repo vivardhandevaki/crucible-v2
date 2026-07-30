@@ -28,10 +28,21 @@ const HAS_MVN = hasTool('java', '-version') && hasTool('mvn', '-v');
 const ADD = 'com.crucible.conformance.CalculatorTest#addsTwoNumbers';
 const FAIL = 'com.crucible.conformance.CalculatorTest#failsOnPurpose';
 
+let happy: string;
+beforeAll(() => {
+  if (!HAS_MVN) return;
+  happy = mkdtempSync(join(tmpdir(), 'crucible-mvn-happy-'));
+  cpSync(join(MAVEN_BASIC_DIR, 'pom.xml'), join(happy, 'pom.xml'));
+  cpSync(join(MAVEN_BASIC_DIR, 'src'), join(happy, 'src'), { recursive: true });
+});
+afterAll(() => {
+  if (happy) rmSync(happy, { recursive: true, force: true });
+});
+
 describe.skipIf(!HAS_MVN)('runMaven — happy path', () => {
   it('normalizes pass/fail and reports a not-found target as error', () => {
     const results = runMaven({
-      cwd: MAVEN_BASIC_DIR,
+      cwd: happy,
       targets: [ADD, FAIL, 'com.crucible.conformance.CalculatorTest#doesNotExist'],
     });
     expect(results.map((r) => r.status)).toEqual(['pass', 'fail', 'error']);

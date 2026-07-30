@@ -1,5 +1,5 @@
 // CLI wiring for `crucible propose` — binds the deterministic core (`propose`)
-// to the real, non-deterministic edges: the ClaudeCode substrate, the OpenSpec
+// to the real, non-deterministic edges: the selected agent substrate, the OpenSpec
 // scaffolder, the adapter resolver, the wall clock, and model routing from the
 // convenience config. The core stays testable and reproducible (invariant 12);
 // this file is the thin shim that supplies live dependencies at invocation time
@@ -17,15 +17,13 @@
 
 import { spawn } from 'node:child_process';
 import type { Command } from 'commander';
+import { resolveAgentRuntime } from '../substrate/runtime.js';
 import { propose, type ProposeDeps } from './propose.js';
-import { loadConvenienceConfig } from '../config/convenience.js';
-import { ClaudeCodeSubstrate } from '../substrate/claude-code.js';
 import { parseTypeName, type ChangeType } from '../changetype/changetype.js';
 import type { ResolveFn } from '../lint/traceability.js';
 import { CheckFailure, invalidInputError, preconditionError } from '../util/errors.js';
 
 /** Model used when convenience config routes nothing to `models.propose`. */
-const DEFAULT_PROPOSE_MODEL = 'claude-opus-4-8';
 
 /** Register the real `propose` subcommand on the program. */
 export function registerPropose(program: Command): void {
@@ -83,13 +81,13 @@ export function registerPropose(program: Command): void {
 /** Model routing: convenience `models.propose`, else the default (invariant 11
  * — this is convenience shaping a session, never an enforcement decision). */
 function proposeModel(root: string): string {
-  return loadConvenienceConfig(root).models['propose'] ?? DEFAULT_PROPOSE_MODEL;
+  return resolveAgentRuntime(root, 'propose').model;
 }
 
 /** The live dependencies for a real propose invocation. */
 function liveDeps(root: string): ProposeDeps {
   return {
-    substrate: new ClaudeCodeSubstrate(),
+    substrate: resolveAgentRuntime(root, 'propose').substrate,
     scaffold: (change, schema) => scaffoldViaOpenSpec(root, change, schema),
     resolve: liveResolveUnavailable,
     now: () => new Date().toISOString(),

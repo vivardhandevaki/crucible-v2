@@ -1,5 +1,5 @@
 // CLI wiring for `crucible amend` — binds the deterministic core (`amend`) to
-// its non-deterministic edges: the ClaudeCode substrate, the adapter resolver,
+// its non-deterministic edges: the selected agent substrate, the adapter resolver,
 // the terminal confirm, the wall-clock, the git identity, and the notify
 // dispatcher. The core stays testable and reproducible (invariant 12); this shim
 // supplies live dependencies at invocation time and maps the verdict to the exit
@@ -18,16 +18,14 @@
 
 import { createInterface } from 'node:readline/promises';
 import type { Command } from 'commander';
+import { resolveAgentRuntime } from '../substrate/runtime.js';
 import { amend, type AmendDeps } from './amend.js';
-import { loadConvenienceConfig } from '../config/convenience.js';
 import { createLiveNotifier } from '../notify/live.js';
-import { ClaudeCodeSubstrate } from '../substrate/claude-code.js';
 import type { ResolveFn } from '../lint/traceability.js';
 import { CheckFailure, preconditionError } from '../util/errors.js';
 
 /** Model used when convenience config routes nothing to `models.propose`
  * (amend regenerates through the propose role). */
-const DEFAULT_PROPOSE_MODEL = 'claude-opus-4-8';
 
 /** Register the real `amend` subcommand on the program. */
 export function registerAmend(program: Command): void {
@@ -68,13 +66,13 @@ export function registerAmend(program: Command): void {
 
 /** Model routing: convenience `models.propose`, else the default (invariant 11). */
 function amendModel(root: string): string {
-  return loadConvenienceConfig(root).models['propose'] ?? DEFAULT_PROPOSE_MODEL;
+  return resolveAgentRuntime(root, 'propose').model;
 }
 
 /** The live dependencies for a real amend invocation. */
 function liveDeps(root: string): AmendDeps {
   return {
-    substrate: new ClaudeCodeSubstrate(),
+    substrate: resolveAgentRuntime(root, 'propose').substrate,
     resolve: liveResolveUnavailable,
     confirm: promptConfirm,
     now: () => new Date().toISOString(),
