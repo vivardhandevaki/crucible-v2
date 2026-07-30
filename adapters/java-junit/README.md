@@ -2,8 +2,8 @@
 
 The real Crucible adapter for JUnit 5 projects (design phase-3.md §2). Like
 every adapter it is a standalone executable speaking the JSON wire protocol —
-**core never imports it.** It is being built up across Phase 3; this is the
-state after **P3-05** (Maven + Gradle run paths and shared XML normalization).
+**core never imports it.** This is the state after **P3-06**: grounded source
+paths, deterministic single-file packaging, dual-tool conformance, and lock pins.
 
 ## `resolve-helper/` — the Launcher-API classification jar (P3-03)
 
@@ -38,18 +38,19 @@ exit, non-JSON stdout, or schema violation all throw — a resolve that cannot
 speak is never a clean/empty result. P3-04 grows this into the full stdin/stdout
 wire adapter and its manifest.
 
-## Adapter state through P3-05
+## Adapter state through P3-06
 
 - `detect` declines without a JDK and selects Maven or Gradle from project files.
+- `resolve` discovers without execution and grounds found targets only to verified Java source files under build-tool-configured test roots.
 - `run` drives Maven Surefire or Gradle test execution and normalizes both XML dialects through the shared reports layer.
-- Maven and Gradle conformance suites are green, including compile-before-test failures mapped to attributable all-target `error` results.
-- P3-06 still owns final `targetFile` grounding, packaged executable stability, adapter lockfile pinning, and the complete dual-fixture conformance gate.
+- `npm run package` emits `package/java-junit.mjs` (wrapper + embedded helper jar) and its manifest with byte-stable content across clean builds.
+- Maven and Gradle packaged conformance suites are green, including malformed input, missing targets, skips, and compile-before-test failures.
 
 ## Building / testing
 
 ```sh
-mvn -q package -f resolve-helper/pom.xml   # build the jar
-npm test -w @crucible/adapter-java-junit   # build jar + fixtures, run conformance
+npm run package -w @crucible/adapter-java-junit # emit the pinned package
+npm test -w @crucible/adapter-java-junit        # unit + integration acceptance
 ```
 
 The test suite builds the jar and compiles the conformance fixtures itself, and

@@ -5,9 +5,9 @@
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { buildProgram } from '../cli/program.js';
-import { type RunnerIO, runProgram } from '../cli/runner.js';
-import { shippedAdapterPackage } from './init.cli.js';
+import { buildProgram } from './program.js';
+import { type RunnerIO, runProgram } from './runner.js';
+import { shippedAdapterPackage } from '../commands/init.cli.js';
 
 function capture(): { io: RunnerIO; out: () => string } {
   const chunks: string[] = [];
