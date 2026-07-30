@@ -1,0 +1,7 @@
+# Deliberately INVALID adapter manifest (task P3-02): `invocations` is missing,
+# so core's parseManifest fails closed. Used to prove the runner's `manifest-valid`
+# check attributes the failure rather than crashing.
+name: broken-stub-no-invocations
+version: 0.0.0
+runners: [stub]
+capabilities: [unit]

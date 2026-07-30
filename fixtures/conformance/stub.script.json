@@ -1,0 +1,21 @@
+{
+  "//": "Conformance script for the reference STUB adapter (task P3-02). The runner (run.ts) spawns the manifest's invocation strings VERBATIM from `cwd`, so this certifies exactly what core's adapter client spawns. Paths are relative to this file's directory. The stub reads its default `./tests.json` from `cwd` (the toy repo). `resolveBin` binds the manifest's bin name to `node <dist/cli.js>` — the same bin-name→path resolution core's adapter client does at init — instead of the npm-hoisted `.bin` symlink, which is absent under CI's `npm ci` (run before the build). The stub passing this run is what makes the run the protocol's executable spec.",
+  "name": "stub",
+  "manifest": "../../adapters/stub/crucible-adapter.yaml",
+  "cwd": "../toy-repo",
+  "resolveBin": {
+    "crucible-adapter-stub": {
+      "command": "node",
+      "prefixArgs": ["../../adapters/stub/dist/cli.js"]
+    }
+  },
+  "cases": "./cases.json",
+  "timeoutMs": 15000,
+  "package": {
+    "files": [
+      "../../adapters/stub/dist/cli.js",
+      "../../adapters/stub/dist/adapter.js",
+      "../../adapters/stub/crucible-adapter.yaml"
+    ]
+  }
+}

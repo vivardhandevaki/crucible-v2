@@ -1,0 +1,12 @@
+{
+  "//": "Conformance script for the broken-stub wrapper (task P3-02). With no CRUCIBLE_BREAK this is fully GREEN (the wrapper is a faithful delegate); the test injects `env.CRUCIBLE_BREAK=<mode>` per run to trip exactly one universal check. `pathPrepend` is this directory so the wrapper bin resolves; `cwd` is the toy repo so the delegated stub reads `./tests.json`. Paths are relative to this file's directory.",
+  "name": "broken-stub",
+  "manifest": "./crucible-adapter.yaml",
+  "cwd": "../../toy-repo",
+  "pathPrepend": ".",
+  "cases": "../cases.json",
+  "timeoutMs": 15000,
+  "package": {
+    "files": ["./crucible-adapter-broken-stub", "./crucible-adapter.yaml"]
+  }
+}

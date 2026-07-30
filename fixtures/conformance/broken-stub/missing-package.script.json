@@ -1,0 +1,12 @@
+{
+  "//": "A valid manifest + faithful wrapper, but a declared package file that does NOT exist (task P3-02). Proves the `package-hash` check catches a missing packaged file while every spawn check stays green — the failure is localized. Paths relative to this file's directory.",
+  "name": "broken-stub",
+  "manifest": "./crucible-adapter.yaml",
+  "cwd": "../../toy-repo",
+  "pathPrepend": ".",
+  "cases": "../cases.json",
+  "timeoutMs": 15000,
+  "package": {
+    "files": ["./crucible-adapter-broken-stub", "./does-not-exist.js"]
+  }
+}

@@ -1,0 +1,80 @@
+#!/usr/bin/env node
+// Broken-stub wrapper (task P3-02). A FAITHFUL delegate to the real stub adapter
+// that, with no CRUCIBLE_BREAK set, passes stub output through byte-for-byte —
+// so the conformance run is green. Each break mode corrupts exactly ONE dimension
+// so the runner's finding is ATTRIBUTABLE to a single universal check:
+//
+//   envelope-drop      → drops the first result            → `envelope`
+//   missing-targetfile → adds a phantom targetFile to a
+//                        `missing` resolve result           → `missing-no-targetfile`
+//   wrong-status       → flips the first RUN result status  → `case-expectations`
+//   accept-garbage     → returns an empty envelope + exit 0
+//                        when the real stub rejected bad stdin → `malformed-stdin`
+//
+// The wrapper spawns the real stub by a path relative to its own location, and
+// inherits cwd (the toy repo, set by the runner) so `./tests.json` resolves.
+
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const verb = process.argv[2];
+const mode = process.env.CRUCIBLE_BREAK ?? '';
+
+// This file: fixtures/conformance/broken-stub/ → real stub CLI in adapters/stub.
+const realStub = fileURLToPath(new URL('../../../adapters/stub/dist/cli.js', import.meta.url));
+
+const stdin = (() => {
+  try {
+    return readFileSync(0, 'utf8');
+  } catch {
+    return '';
+  }
+})();
+
+const r = spawnSync(process.execPath, [realStub, verb], { input: stdin, encoding: 'utf8' });
+
+// The real stub rejected malformed stdin (non-zero exit). `accept-garbage`
+// sabotages precisely that: pretend it was fine. Every other mode passes the
+// rejection through unchanged (so `malformed-stdin` stays green for them).
+if (r.status !== 0) {
+  if (mode === 'accept-garbage') {
+    process.stdout.write('{"results":[]}\n');
+    process.exit(0);
+  }
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  process.exit(r.status ?? 1);
+}
+
+// Success path: parse and (maybe) corrupt.
+let body;
+try {
+  body = JSON.parse(r.stdout);
+} catch {
+  process.stdout.write(r.stdout);
+  process.exit(0);
+}
+const results = Array.isArray(body.results) ? body.results : [];
+
+switch (mode) {
+  case 'envelope-drop':
+    results.shift();
+    break;
+  case 'missing-targetfile':
+    for (const x of results) {
+      if (x && x.status === 'missing') x.targetFile = 'phantom/does-not-exist.ts';
+    }
+    break;
+  case 'wrong-status':
+    if (verb === 'run' && results.length > 0) {
+      results[0].status = results[0].status === 'pass' ? 'fail' : 'pass';
+    }
+    break;
+  default:
+    // no break / accept-garbage on the success path → faithful passthrough
+    break;
+}
+
+process.stdout.write(`${JSON.stringify({ results })}\n`);
+process.exit(0);

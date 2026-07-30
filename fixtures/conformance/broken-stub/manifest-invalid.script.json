@@ -1,0 +1,11 @@
+{
+  "//": "Points the runner at an INVALID manifest (task P3-02) to prove the `manifest-valid` check catches it and the spawn-dependent checks are recorded not-evaluated (no adapter was ever reached). Paths relative to this file's directory.",
+  "name": "broken-stub",
+  "manifest": "./invalid-manifest.yaml",
+  "cwd": "../../toy-repo",
+  "pathPrepend": ".",
+  "cases": "../cases.json",
+  "package": {
+    "files": ["./crucible-adapter-broken-stub"]
+  }
+}
