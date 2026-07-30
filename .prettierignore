@@ -5,6 +5,10 @@ package-lock.json
 site/**
 .old/**
 
+# JVM build outputs (Maven target/, Gradle build/) — generated, never formatted.
+**/target/**
+fixtures/conformance/*/build/**
+
 # Fixture data is author-controlled and sealed by the approval hash; Prettier
 # must not reformat it (see fixtures/toy-repo/README.md).
 fixtures/toy-repo/**

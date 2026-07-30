@@ -5,6 +5,6 @@ import { defineConfig } from 'vitest/config';
 // for `npm test -w <workspace>`. Testing contract: architecture.md §9.
 export default defineConfig({
   test: {
-    projects: ['core', 'adapters/stub', 'fixtures', 'ci-templates'],
+    projects: ['core', 'adapters/stub', 'adapters/java-junit', 'fixtures', 'ci-templates'],
   },
 });
