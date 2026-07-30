@@ -33,9 +33,10 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { CI_TEMPLATE_PATH } from '@crucible/ci-templates';
+import { ciTemplatePathForAdapter } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES, schemaBundleDir } from '@crucible/schemas';
 import { preconditionError } from '../util/errors.js';
+import { loadEnforcementConfig } from '../config/enforcement.js';
 import {
   defaultRubricPath,
   loadDefaultRubric,
@@ -205,7 +206,11 @@ function checkSchemaBundles(root: string): DoctorFinding[] {
  * bytes — any divergence is a stale/modified template, restored on confirm. */
 function checkCiTemplate(root: string): DoctorFinding[] {
   const relpath = join('.github', 'workflows', 'crucible.yml');
-  const shipped = readFileSync(CI_TEMPLATE_PATH, 'utf8');
+  const adapters = Object.keys(loadEnforcementConfig(root).adapters);
+  const shipped = readFileSync(
+    ciTemplatePathForAdapter(adapters.includes('java-junit') ? 'java-junit' : adapters[0] ?? ''),
+    'utf8',
+  );
   const abs = join(root, relpath);
   const current = existsSync(abs) ? readFileSync(abs, 'utf8') : null;
   if (current === shipped) return [];

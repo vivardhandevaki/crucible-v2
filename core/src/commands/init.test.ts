@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CI_TEMPLATE_PATH } from '@crucible/ci-templates';
+import { CI_TEMPLATE_PATH, JAVA_JUNIT_CI_TEMPLATE_PATH } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES } from '@crucible/schemas';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -199,5 +199,33 @@ describe('init — adapter detection (CLI edge)', () => {
       paths: ['**/*.ts'],
       unitCommand: 'npm test',
     });
+  });
+});
+
+describe('init — JVM harness assets (P3-07)', () => {
+  it('installs the java-junit CI variant for a JVM project', async () => {
+    const javaAnswers: InitAnswers = {
+      adapter: 'java-junit',
+      runners: ['junit'],
+      paths: ['**/*.java'],
+      unitCommand: 'mvn test',
+    };
+
+    await init({ root: scratch, answers: javaAnswers }, { confirmOverwrite: confirmNever });
+
+    expect(read(join('.github', 'workflows', 'crucible.yml'))).toBe(
+      readFileSync(JAVA_JUNIT_CI_TEMPLATE_PATH, 'utf8'),
+    );
+  });
+
+  it('installs a propose prompt that teaches resolvable JUnit oracle targets', async () => {
+    await init({ root: scratch, answers: ANSWERS }, { confirmOverwrite: confirmNever });
+    const prompt = read(join('.crucible', 'context', 'propose.md'));
+
+    expect(prompt).toContain('com.acme.auth.LockoutTest#fifthFailureLocks');
+    expect(prompt).toContain('plain `@Test`');
+    expect(prompt).toContain('ParameterizedTest');
+    expect(prompt).toContain('one assertion theme');
+    expect(prompt).toContain('runner: junit');
   });
 });

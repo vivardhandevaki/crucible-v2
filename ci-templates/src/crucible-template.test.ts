@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
-import { CI_TEMPLATE_PATH } from './index.js';
+import { CI_TEMPLATE_PATH, JAVA_JUNIT_CI_TEMPLATE_PATH } from './index.js';
 
 // Structural validation of the shipped enforcement workflow (P1-15). The workflow
 // is data, not code, so its guarantees are asserted by parsing it and checking the
@@ -26,6 +26,7 @@ interface Step {
   run?: string;
   id?: string;
   env?: Record<string, unknown>;
+  with?: Record<string, unknown>;
   'continue-on-error'?: boolean;
 }
 
@@ -46,6 +47,7 @@ interface Workflow {
 
 const workflow = parseYaml(readFileSync(CI_TEMPLATE_PATH, 'utf8')) as Workflow;
 const steps = workflow.jobs?.verify?.steps ?? [];
+const javaWorkflow = parseYaml(readFileSync(JAVA_JUNIT_CI_TEMPLATE_PATH, 'utf8')) as Workflow;
 
 /** The first step of `job` whose name contains `fragment` (case-insensitive). */
 function stepOf(job: Job | undefined, fragment: string): Step {
@@ -70,6 +72,34 @@ describe('crucible.yml — a pull-request enforcement gate', () => {
 
   it('runs a `verify` job with steps', () => {
     expect(steps.length).toBeGreaterThan(0);
+  });
+});
+
+describe('crucible-java-junit.yml — JDK + Testcontainers variant (P3-07)', () => {
+  it('preserves the same verify and route enforcement jobs', () => {
+    expect(javaWorkflow.jobs?.verify).toBeTruthy();
+    expect(javaWorkflow.jobs?.route?.needs).toBe('verify');
+  });
+
+  it('sets up a pinned JDK before verification', () => {
+    const java = stepOf(javaWorkflow.jobs?.verify, 'java');
+    expect(java.uses).toBe('actions/setup-java@v4');
+    expect(java.with).toMatchObject({ distribution: 'temurin', 'java-version': '17' });
+  });
+
+  it('fails closed unless the Docker service is ready for Testcontainers', () => {
+    const docker = stepOf(javaWorkflow.jobs?.verify, 'docker');
+    expect(docker.run).toContain('docker info');
+    expect(docker.run).toContain('set -euo pipefail');
+    expect(docker['continue-on-error']).not.toBe(true);
+  });
+
+  it('retains target-branch enforcement in the JVM variant', () => {
+    const extract = stepOf(javaWorkflow.jobs?.verify, 'target-branch enforcement config').run ?? '';
+    const verifyRun = stepOf(javaWorkflow.jobs?.verify, 'verify').run ?? '';
+    expect(extract).toContain('git show');
+    expect(extract).toContain('origin/$BASE:crucible.yaml');
+    expect(verifyRun).toContain('--config-from "$RUNNER_TEMP/crucible-target"');
   });
 });
 

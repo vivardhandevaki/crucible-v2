@@ -1,0 +1,296 @@
+# Crucible JVM enforcement — the required merge gate for a Crucible-governed
+# Java/JUnit repo. This variant preserves the base target-branch enforcement
+# workflow and additionally provisions JDK 17 plus a fail-closed Docker service
+# check for Testcontainers integration oracles (P3-07).
+#
+# WHAT THIS IS: the reusable workflow shipped to *consumer* repositories — NOT the
+# Crucible framework's own CI (that is .github/workflows/ci.yml, which builds and
+# tests the framework). Copy this file to `.github/workflows/crucible.yml` in a
+# governed repo and mark the `verify` job a required status check in branch
+# protection. `crucible init` (P2) installs and pins this for you; in Phase 1 it
+# is installed by hand (design phase-0-1.md §9).
+#
+# THE TARGET-BRANCH RULE (charter §The Target-Branch Rule; invariant #7): the
+# enforcement config (crucible.yaml — risk globs, tiers) is read from the branch
+# being merged INTO, never from the PR head. A PR that loosens its own globs
+# achieves nothing for that PR: this workflow extracts crucible.yaml from
+# origin/<base_ref> and hands it to verify via `--config-from`. The rules that
+# judge you are the rules already on the target branch. Convenience config
+# (.crucible/settings.yaml, local.yaml) is never read here — it cannot affect
+# enforcement by construction.
+#
+# ── ROUTING (P2-03) ──────────────────────────────────────────────────────────
+# As of P2-03 `crucible verify` CONSUMES the target-branch enforcement config: it
+# recomputes the tier from the diff against origin/<base_ref> (invariant #8),
+# enforces the per-tier diff cap (a breach → red verdict), and emits a routing
+# decision (auto | human) in its --json report. This workflow has TWO required
+# jobs: `verify` (the green/red gate) and `route` (needs: verify), which holds a
+# critical change red until a non-author APPROVED review exists. The
+# `pull_request_review` trigger re-evaluates the check the moment that approval
+# lands. Trivial/standard green → auto path; critical → required human review.
+#
+# The behavioral proof that a loosened-glob PR still routes to human because CI
+# used the target-branch config is P2-18's hermetic anchor
+# (core/test/target-branch-rule.test.ts); this file's structure is asserted by
+# src/crucible-template.test.ts.
+#
+# ── OVERRIDE (P2-06) ─────────────────────────────────────────────────────────
+# An override.yaml in a change bundle is the 2am escape hatch (charter §Override).
+# `crucible verify` then emits verdict green-with-`override`, forces its routing
+# decision to `human` regardless of tier (so `route` requires a human approval),
+# AND emits a ratchet-issue payload in its --json report. The verify job files
+# that issue idempotently via the ambient GITHUB_TOKEN (`issues: write`): it
+# searches OPEN `crucible-override`-labeled issues for the change first and creates
+# one only if none exists. The issue stays open until a retroactive proposal lands
+# — "instant to use, impossible to use quietly." Local runs never file issues
+# (invariant #11: convenience never enforcement).
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# STILL DEFERRED to P2: the live adapter pin (`crucible init`) that lets `verify`
+# run its oracles against a real consumer repo — until then a real consumer run
+# reaches the adapter-pin precondition (the tier/routing/cap logic above runs
+# regardless, since it is computed from config + diff, not from the adapter).
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Crucible
+
+on:
+  pull_request:
+  # Re-run when a review is submitted/dismissed so `route` re-checks approval and
+  # the required check flips green the moment a non-author approves.
+  pull_request_review:
+
+# `route` reads the PR's reviews via the ambient GITHUB_TOKEN (workflow-level
+# perms). `verify` escalates its own job-level perms: `issues: write` to file an
+# override ratchet issue, `pull-requests: write` to post the reviewer's
+# observations comment (P2-10). Least privilege (invariant: harness is TCB).
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # The green/red gate. A red verify verdict is exit 1; any non-zero step exit
+  # fails the job → the required check goes red. There is deliberately no
+  # `continue-on-error` and no `|| true`: the gate must not be silently
+  # satisfiable (fail-closed, invariant #3). Its `routing` output feeds `route`.
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    outputs:
+      # Aggregated routing across every touched change: `human` if any is critical.
+      routing: ${{ steps.verify.outputs.routing }}
+    steps:
+      - name: Checkout PR head (full history for the target-branch diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract target-branch enforcement config
+        # The Target-Branch Rule made concrete. crucible.yaml is taken from
+        # origin/<base_ref> — the branch being merged INTO — and written OUTSIDE
+        # the working tree (under RUNNER_TEMP) so the PR's own copy can never
+        # shadow it. Fail-closed: if the target branch has no crucible.yaml,
+        # `git show` errors and the step (and the check) goes red rather than
+        # silently falling back to the PR's config.
+        run: |
+          set -euo pipefail
+          BASE="${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "$BASE"
+          mkdir -p "$RUNNER_TEMP/crucible-target"
+          git show "origin/$BASE:crucible.yaml" > "$RUNNER_TEMP/crucible-target/crucible.yaml"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Java for JUnit oracles
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Confirm Docker service for Testcontainers
+        # GitHub-hosted Ubuntu runners provide the Docker daemon Testcontainers
+        # drives. Treat an unavailable daemon as a broken judge, never a skip.
+        run: |
+          set -euo pipefail
+          docker info
+
+      - name: Install Crucible
+        # Consumer repos pin the Crucible CLI as a dev dependency; `crucible init`
+        # (P2) writes the exact pin. Until then, install from the repo's manifest.
+        run: npm ci
+
+      - name: Detect changed change-bundles
+        id: changes
+        # A PR governs the change bundle(s) it touches under
+        # openspec/changes/<name>/. Enumerate them from the diff against the
+        # target branch; zero touched → nothing to enforce (clean pass). The gate
+        # judges only what the PR actually changes.
+        run: |
+          set -euo pipefail
+          BASE="${{ github.base_ref }}"
+          names="$(git diff --name-only "origin/$BASE...HEAD" \
+            | sed -n 's#^openspec/changes/\([^/]*\)/.*#\1#p' | sort -u)"
+          {
+            echo 'names<<EOF'
+            echo "$names"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify (enforcement config from the target branch)
+        id: verify
+        # The required gate. `--config-from` points at the target-branch config
+        # extracted above (invariant #7), NOT the PR working tree; `--diff-base`
+        # points at origin/<base_ref> so the tier is computed against the target
+        # branch too; `--review` runs the adversarial reviewer — CI ALWAYS runs it
+        # (design phase-2.md §5; locally it is opt-in). Global flags precede the
+        # subcommand, the form the CLI parses; --diff-base/--review are verify
+        # options (after `verify <change>`). A red verdict is exit 1 → this step
+        # fails → the required check is red (verify red → check red). No
+        # error-swallowing: the gate is fail-closed. The aggregated routing
+        # decision is written to $GITHUB_OUTPUT for the `route` job.
+        run: |
+          set -euo pipefail
+          BASE="${{ github.base_ref }}"
+          names="${{ steps.changes.outputs.names }}"
+          routing="auto"
+          if [ -z "$names" ]; then
+            echo "No change bundles touched by this PR — nothing to verify."
+            echo "routing=$routing" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for change in $names; do
+            echo "::group::crucible verify $change"
+            # Capture the --json report while preserving the exit code: a red
+            # verdict must still fail the step (fail-closed), but we also want the
+            # report printed and its routing read when green.
+            set +e
+            report="$(npx crucible --json --config-from "$RUNNER_TEMP/crucible-target" verify "$change" --diff-base "origin/$BASE" --review)"
+            code=$?
+            set -e
+            printf '%s\n' "$report"
+            # Reviewer observations (P2-10, the harvest channel — charter §530):
+            # stash them for the PR-comment step BEFORE the red-verdict exit, so a
+            # blocked change still surfaces what the reviewer noticed. Exit 0 and 1
+            # both printed a JSON report; tool errors (2/3) have nothing to harvest.
+            if [ "$code" -eq 0 ] || [ "$code" -eq 1 ]; then
+              obs="$(printf '%s' "$report" | jq -c '.review.observations // empty')"
+              if [ -n "$obs" ] && [ "$obs" != "[]" ]; then
+                mkdir -p "$RUNNER_TEMP/observations"
+                printf '%s' "$obs" > "$RUNNER_TEMP/observations/$change.json"
+              fi
+            fi
+            if [ "$code" -ne 0 ]; then
+              echo "::endgroup::"
+              exit "$code"
+            fi
+            decision="$(printf '%s' "$report" | jq -r '.routing.decision // "auto"')"
+            if [ "$decision" = "human" ]; then
+              routing="human"
+            fi
+            # Override (the 2am hatch): stash the ratchet-issue payload for the
+            # filing step below. verify already forced routing→human above.
+            issue="$(printf '%s' "$report" | jq -c '.override.issue // empty')"
+            if [ -n "$issue" ]; then
+              mkdir -p "$RUNNER_TEMP/override-issues"
+              printf '%s' "$issue" > "$RUNNER_TEMP/override-issues/$change.json"
+            fi
+            echo "::endgroup::"
+          done
+          echo "routing=$routing" >> "$GITHUB_OUTPUT"
+
+      - name: File override ratchet issues
+        # The override's self-repairing paper trail (charter §Override; design §3).
+        # For each overridden change, file a `crucible-override`-labeled issue that
+        # stays open until a retroactive proposal lands — but idempotently: search
+        # OPEN issues with that label naming the change first, and skip if one
+        # already exists (re-runs of the same PR must not spam duplicates). Uses the
+        # payload verify emitted; no token plumbing in the core (design §3).
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/override-issues"
+          if [ ! -d "$dir" ]; then
+            echo "No overrides on this PR — nothing to file."
+            exit 0
+          fi
+          for f in "$dir"/*.json; do
+            change="$(basename "$f" .json)"
+            title="$(jq -r '.title' "$f")"
+            body="$(jq -r '.body' "$f")"
+            existing="$(gh issue list --label crucible-override --state open \
+              --search "$change in:title" --json number --jq 'length')"
+            if [ "$existing" -gt 0 ]; then
+              echo "A crucible-override issue for '$change' is already open — not filing a duplicate."
+              continue
+            fi
+            gh issue create --title "$title" --body "$body" --label crucible-override
+          done
+
+      - name: Post reviewer observations to the PR
+        # The harvest channel (P2-10; charter §Enumerated-blocking): everything
+        # the reviewer noticed that is NOT a rubric line — attached to the PR,
+        # promotable to rubric lines by humans via the ratchet. `always()` so a
+        # BLOCKED change still surfaces its observations (the stash step above
+        # ran before the red-verdict exit). ONE marker-tagged comment, edited in
+        # place on re-runs — no spam. Fail-closed like the override step: a
+        # harvest we cannot deliver should be loud, not silently dropped.
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/observations"
+          if [ ! -d "$dir" ]; then
+            echo "No reviewer observations on this PR — nothing to post."
+            exit 0
+          fi
+          marker="<!-- crucible-observations -->"
+          body="$marker"$'\n'"### Crucible reviewer observations"$'\n\n'
+          body+="_Non-blocking notes from the adversarial reviewer — candidates for new oracles or rubric lines (the ratchet)._"$'\n'
+          for f in "$dir"/*.json; do
+            change="$(basename "$f" .json)"
+            notes="$(jq -r '.[] | "- " + .note' "$f")"
+            body+=$'\n'"**${change}**"$'\n'"$notes"$'\n'
+          done
+          gh pr comment "$PR_NUMBER" --edit-last --create-if-none --body "$body"
+
+  # The second required check. Auto-routed (trivial/standard) changes pass
+  # immediately; critical changes stay RED until a non-author APPROVED review
+  # exists (design phase-2.md §2). Crucible emits the decision; GitHub enforces the
+  # human gate. Mark BOTH `verify` and `route` required in branch protection.
+  route:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce the routing decision
+        env:
+          ROUTING: ${{ needs.verify.outputs.routing }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        # Fail-closed: human routing without a qualifying review is exit 1 (the
+        # required check stays red). No `|| true` / `continue-on-error`.
+        run: |
+          set -euo pipefail
+          if [ "$ROUTING" != "human" ]; then
+            echo "Routing is '$ROUTING' — auto-merge path; no human review required."
+            exit 0
+          fi
+          echo "Routing is 'human' — a non-author APPROVED review is required to merge."
+          # Query the PR's reviews via the ambient token; count APPROVED reviews
+          # whose author is not the PR author. `gh api` needs no checkout.
+          approved="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+            --jq "[.[] | select(.state == \"APPROVED\" and .user.login != \"$PR_AUTHOR\")] | length")"
+          if [ "$approved" -gt 0 ]; then
+            echo "Found a non-author APPROVED review — human routing satisfied."
+            exit 0
+          fi
+          echo "No non-author APPROVED review yet — this check stays red until one lands."
+          exit 1
