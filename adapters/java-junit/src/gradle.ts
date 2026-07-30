@@ -32,6 +32,8 @@ import {
   type RunResult,
 } from './reports.js';
 import { invokeResolve } from './resolve.js';
+import { groundTargetFile } from './source-file.js';
+import { gradleTestSourceRoots } from './source-roots.js';
 import { splitTarget, WireError } from './wire.js';
 
 export interface GradleRunOptions {
@@ -109,13 +111,16 @@ export function resolveGradle(opts: GradleResolveOptions): ResolveResult[] {
     targets: opts.targets,
     ...(opts.javaBin !== undefined ? { javaBin: opts.javaBin } : {}),
   });
+  const sourceRoots = gradleTestSourceRoots(opts.cwd, opts.gradleBin);
   // Fold the helper's three-way classification to the frozen wire (design §2):
   // `unsupported` (parameterized / dynamic templates) → `missing`, which fails
   // closed at propose time per the addressable-subset rule (invariant 11).
-  return classified.map((r) => ({
-    target: r.target,
-    status: r.classification === 'found' ? 'found' : 'missing',
-  }));
+  return classified.map((r) => {
+    if (r.classification !== 'found') return { target: r.target, status: 'missing' };
+    const className = r.className ?? splitTarget(r.target).className;
+    const targetFile = groundTargetFile({ root: opts.cwd, className, sourceRoots });
+    return { target: r.target, status: 'found', ...(targetFile ? { targetFile } : {}) };
+  });
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
