@@ -1,29 +1,20 @@
 {
-  "//": "Conformance script for the java-junit adapter on the MAVEN fixture (task P3-04). The runner (run.ts) spawns the manifest's invocation strings VERBATIM from `cwd` (= maven-basic, the project under test), so this certifies exactly what core's adapter client spawns. `resolveBin` binds the manifest bin name to `node <dist/cli.js>` — the same name→path resolution core does at init, and PATH-independent under CI's `npm ci` (which precedes the build). The adapter drives Maven from `cwd` and finds its bundled resolve-helper jar package-relative, so no env is needed. `timeoutMs` is generous: each spawned case runs a real (cold) `mvn` invocation; the malformed-stdin universal check adds none (stdin is rejected before any build). package.files are the current unpackaged bytes (dist wrapper + manifest + helper jar); rebuild-twice byte-determinism and the pinned single-file packaging are P3-06's bar, not this runner's.",
+  "//": "P3-06 Maven gate. The runner drives the shipped manifest verbatim and binds its bin name to the single packaged executable, whose embedded helper jar and wrapper bytes are pinned together.",
   "name": "java-junit-maven",
-  "manifest": "../../adapters/java-junit/crucible-adapter.yaml",
+  "manifest": "../../adapters/java-junit/package/crucible-adapter.yaml",
   "cwd": "./maven-basic",
   "resolveBin": {
     "crucible-adapter-java-junit": {
       "command": "node",
-      "prefixArgs": ["../../adapters/java-junit/dist/cli.js"]
+      "prefixArgs": ["../../adapters/java-junit/package/java-junit.mjs"]
     }
   },
   "cases": "./java-junit-maven.cases.json",
   "timeoutMs": 180000,
   "package": {
     "files": [
-      "../../adapters/java-junit/dist/cli.js",
-      "../../adapters/java-junit/dist/detect.js",
-      "../../adapters/java-junit/dist/maven.js",
-      "../../adapters/java-junit/dist/gradle.js",
-      "../../adapters/java-junit/dist/reports.js",
-      "../../adapters/java-junit/dist/surefire.js",
-      "../../adapters/java-junit/dist/xml.js",
-      "../../adapters/java-junit/dist/wire.js",
-      "../../adapters/java-junit/dist/resolve.js",
-      "../../adapters/java-junit/crucible-adapter.yaml",
-      "../../adapters/java-junit/resolve-helper/target/resolve-helper.jar"
+      "../../adapters/java-junit/package/java-junit.mjs",
+      "../../adapters/java-junit/package/crucible-adapter.yaml"
     ]
   }
 }

@@ -8,6 +8,7 @@
 
 import { Command } from 'commander';
 import { internalError } from '../util/errors.js';
+import { registerAdapter } from '../commands/adapter-add.cli.js';
 import { registerAmend } from '../commands/amend.cli.js';
 import { registerApprove } from '../commands/approve.cli.js';
 import { registerArchive } from '../commands/archive.cli.js';
@@ -75,6 +76,7 @@ export function buildProgram(): Command {
       });
   }
 
+  registerAdapter(program);
   registerAmend(program);
   registerApprove(program);
   registerArchive(program);

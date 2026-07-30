@@ -1,5 +1,5 @@
 {
-  "//": "java-junit conformance case catalogue — MAVEN (task P3-04, design phase-3.md §1.1). Same P1-10 cases.json grammar as the stub's, but authored in JVM target coordinates and derived from targets.json (the human/manifest truth): each expected `resolve` status maps the three-way classification onto the frozen wire (found | missing — `unsupported` parameterized templates fold to `missing`), and each `run` status is the normalized outcome. Expected entries assert `target` + `status` only; nondeterministic `message` / `location` / `duration_ms` are omitted (declared-field exact match, design §1.1). One case per verb keeps this to two Maven invocations; the malformed-stdin universal check adds no Maven runs (stdin is rejected before any build). resolve carries no `targetFile` yet — grounding (design §2) lands in P3-06.",
+  "//": "P3-06 java-junit conformance catalogue — MAVEN. Found resolve entries name the verified repo-relative Java source file the approval seal must cover; missing/unsupported entries carry no targetFile.",
   "cases": [
     {
       "name": "resolve-all-categories",
@@ -15,23 +15,43 @@
         "com.crucible.conformance.GhostTest#neverWritten"
       ],
       "expected": [
-        { "target": "com.crucible.conformance.CalculatorTest#addsTwoNumbers", "status": "found" },
+        {
+          "target": "com.crucible.conformance.CalculatorTest#addsTwoNumbers",
+          "status": "found",
+          "targetFile": "src/test/java/com/crucible/conformance/CalculatorTest.java"
+        },
         {
           "target": "com.crucible.conformance.CalculatorTest#subtractsTwoNumbers",
-          "status": "found"
+          "status": "found",
+          "targetFile": "src/test/java/com/crucible/conformance/CalculatorTest.java"
         },
         {
           "target": "com.crucible.conformance.CanaryTest#writesMarkerWhenExecuted",
-          "status": "found"
+          "status": "found",
+          "targetFile": "src/test/java/com/crucible/conformance/CanaryTest.java"
         },
-        { "target": "com.crucible.conformance.CalculatorTest#failsOnPurpose", "status": "found" },
-        { "target": "com.crucible.conformance.CalculatorTest#skippedFeature", "status": "found" },
+        {
+          "target": "com.crucible.conformance.CalculatorTest#failsOnPurpose",
+          "status": "found",
+          "targetFile": "src/test/java/com/crucible/conformance/CalculatorTest.java"
+        },
+        {
+          "target": "com.crucible.conformance.CalculatorTest#skippedFeature",
+          "status": "found",
+          "targetFile": "src/test/java/com/crucible/conformance/CalculatorTest.java"
+        },
         {
           "target": "com.crucible.conformance.ParameterizedCalculatorTest#evensAreEven",
           "status": "missing"
         },
-        { "target": "com.crucible.conformance.CalculatorTest#doesNotExist", "status": "missing" },
-        { "target": "com.crucible.conformance.GhostTest#neverWritten", "status": "missing" }
+        {
+          "target": "com.crucible.conformance.CalculatorTest#doesNotExist",
+          "status": "missing"
+        },
+        {
+          "target": "com.crucible.conformance.GhostTest#neverWritten",
+          "status": "missing"
+        }
       ]
     },
     {
@@ -47,7 +67,10 @@
         "com.crucible.conformance.GhostTest#neverWritten"
       ],
       "expected": [
-        { "target": "com.crucible.conformance.CalculatorTest#addsTwoNumbers", "status": "pass" },
+        {
+          "target": "com.crucible.conformance.CalculatorTest#addsTwoNumbers",
+          "status": "pass"
+        },
         {
           "target": "com.crucible.conformance.CalculatorTest#subtractsTwoNumbers",
           "status": "pass"
@@ -56,10 +79,22 @@
           "target": "com.crucible.conformance.CanaryTest#writesMarkerWhenExecuted",
           "status": "pass"
         },
-        { "target": "com.crucible.conformance.CalculatorTest#failsOnPurpose", "status": "fail" },
-        { "target": "com.crucible.conformance.CalculatorTest#skippedFeature", "status": "skip" },
-        { "target": "com.crucible.conformance.CalculatorTest#doesNotExist", "status": "error" },
-        { "target": "com.crucible.conformance.GhostTest#neverWritten", "status": "error" }
+        {
+          "target": "com.crucible.conformance.CalculatorTest#failsOnPurpose",
+          "status": "fail"
+        },
+        {
+          "target": "com.crucible.conformance.CalculatorTest#skippedFeature",
+          "status": "skip"
+        },
+        {
+          "target": "com.crucible.conformance.CalculatorTest#doesNotExist",
+          "status": "error"
+        },
+        {
+          "target": "com.crucible.conformance.GhostTest#neverWritten",
+          "status": "error"
+        }
       ]
     }
   ]

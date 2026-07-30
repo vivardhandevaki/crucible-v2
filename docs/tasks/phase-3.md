@@ -35,6 +35,8 @@ Acceptance: both provider invocations are hermetic-tested; every live role path 
 Delivers: resolve wired in; packaged executable + manifest; content-hash stability.
 Acceptance: complete conformance run green on both fixtures; packaged hash byte-stable across builds (or hashing rule amended + documented); lockfile pin flow works via `init`/`adapter add`.
 
+*(As-built P3-06.)* Shipped one executable (`package/java-junit.mjs`) plus its manifest: esbuild bundles the TypeScript verdict path and embeds the reproducibly-built helper jar, whose Maven output timestamp is fixed; two clean package builds are byte-identical. Maven effective-model roots and a Gradle model task ground found targets to project-contained Java files only after a comment/string-aware type-declaration check. Both packaged conformance suites are green. `init` and `adapter add` install canonical `.crucible/adapters/*` files and mint strict `.crucible/adapters.lock.yaml` version+content-hash pins; the content hash length-frames manifest + executable bytes, and every approval seals the lockfile when present.
+
 **P3-07 · Harness + CI updates for JVM** · Tier: Fable / Sol (prompt) + Opus / Terra (templates) · Depends: P3-06
 Delivers: propose prompt JVM conventions; JDK CI template variant; spring-testcontainers fixture proving integration-kind flow.
 Acceptance: propose on a JVM toy change emits addressable oracle tests; Testcontainers test flows through verify as ordinary (slow) oracle.

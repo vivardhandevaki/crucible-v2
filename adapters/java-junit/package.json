@@ -10,9 +10,11 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "pretest": "tsc"
+    "pretest": "tsc",
+    "package": "node scripts/package.mjs"
   },
   "devDependencies": {
-    "@crucible/fixtures": "*"
+    "@crucible/fixtures": "*",
+    "esbuild": "0.21.5"
   }
 }

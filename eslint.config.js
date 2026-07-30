@@ -16,6 +16,7 @@ export default tseslint.config(
     // linting/reformatting it would break hash-stability tests (see its README).
     ignores: [
       '**/dist/**',
+      'adapters/*/package/**', // generated, conformance-certified bundle output
       '**/coverage/**',
       'node_modules/**',
       'site/**',
@@ -37,7 +38,7 @@ export default tseslint.config(
   },
   {
     // Node scripts and config files run under Node's globals (process, URL, …).
-    files: ['scripts/**/*.{js,mjs}', '*.{js,mjs}', '**/*.config.{js,mjs,ts}'],
+    files: ['**/scripts/**/*.{js,mjs}', '*.{js,mjs}', '**/*.config.{js,mjs,ts}'],
     languageOptions: {
       globals: globals.node,
     },

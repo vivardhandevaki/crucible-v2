@@ -24,6 +24,7 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.build.outputTimestamp>2026-07-30T00:00:00Z</project.build.outputTimestamp>
     <maven.compiler.release>17</maven.compiler.release>
     <junit.version>5.11.4</junit.version>
     <shade.version>3.6.0</shade.version>
