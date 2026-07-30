@@ -1,0 +1,195 @@
+// Maven build-tool driver (design phase-3.md §2 run/resolve paths). Spawns Maven
+// in the project directory and normalizes what it produces:
+//
+//   run:     `mvn test -Dtest=<class#method...>` → parse Surefire XML → one
+//            normalized result per requested target. A build failure BEFORE any
+//            test runs (a compile error) yields ALL requested targets `error`
+//            with the build-log tail as the message (fail-closed, attributable).
+//   resolve: `mvn test-compile` to produce the classpath, then the bundled
+//            Launcher-API helper (P3-03) classifies each target; the helper's
+//            three-way vocabulary is folded to the wire's found | missing. The
+//            targetFile grounding (design §2) lands in P3-06.
+//
+// Determinism (invariant 12): the report is read from disk, not the flaky
+// aggregate exit code; results are emitted in the caller's input order.
+
+import { spawnSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { invokeResolve } from './resolve.js';
+import { parseSurefireReport, type SurefireCase } from './surefire.js';
+import { splitTarget, WireError } from './wire.js';
+
+/** A normalized `run` result (charter's normalized result schema, exactly). */
+export interface RunResult {
+  target: string;
+  status: 'pass' | 'fail' | 'error' | 'skip';
+  message?: string;
+  location?: string;
+  duration_ms?: number;
+}
+
+/** A normalized `resolve` result (found | missing; targetFile grounded in P3-06). */
+export interface ResolveResult {
+  target: string;
+  status: 'found' | 'missing';
+  targetFile?: string;
+}
+
+// Maven output can be large; give spawnSync headroom over its 1MB default.
+const MAX_BUFFER = 64 * 1024 * 1024;
+const LOG_TAIL_LINES = 40;
+
+export interface MavenRunOptions {
+  /** The project directory (contains pom.xml). */
+  cwd: string;
+  /** Targets to run, `com.acme.FooTest#bar`, in wire order. */
+  targets: string[];
+  /** The `mvn` executable (default `"mvn"`). */
+  mvnBin?: string;
+}
+
+/** Run `targets` via Maven Surefire and normalize the reports, in input order. */
+export function runMaven(opts: MavenRunOptions): RunResult[] {
+  if (opts.targets.length === 0) return [];
+  const reportsDir = join(opts.cwd, 'target', 'surefire-reports');
+  // Clear our own prior reports so "no reports after the run" reliably means a
+  // pre-test build failure (compile error) rather than stale success artifacts.
+  clearReports(reportsDir);
+
+  const args = [
+    '-q',
+    '-DfailIfNoTests=false',
+    '-Dsurefire.failIfNoSpecifiedTests=false',
+    'test',
+    `-Dtest=${buildSelector(opts.targets)}`,
+  ];
+  const proc = spawnSync(opts.mvnBin ?? 'mvn', args, {
+    cwd: opts.cwd,
+    encoding: 'utf8',
+    maxBuffer: MAX_BUFFER,
+  });
+  if (proc.error) throw new WireError(`could not spawn \`mvn\`: ${proc.error.message}`);
+
+  const cases = readReports(reportsDir);
+  // Compile / build failure before Surefire ran: no reports AND a non-zero exit.
+  // (No matching tests with a zero exit is NOT this case — those become per-target
+  // `error` below, which is the honest "not found / not executed" outcome.)
+  if (cases.size === 0 && proc.status !== 0) {
+    const tail = logTail(proc.stdout, proc.stderr);
+    return opts.targets.map((target) => ({
+      target,
+      status: 'error',
+      message: `build failed before tests ran (mvn exit ${String(proc.status)}):\n${tail}`,
+    }));
+  }
+  return opts.targets.map((target) => toRunResult(target, cases));
+}
+
+export interface MavenResolveOptions {
+  cwd: string;
+  targets: string[];
+  /** Path to the bundled resolve-helper jar. */
+  jarPath: string;
+  mvnBin?: string;
+  javaBin?: string;
+}
+
+/** Classify `targets` via the Launcher-API helper against a Maven-built classpath. */
+export function resolveMaven(opts: MavenResolveOptions): ResolveResult[] {
+  if (opts.targets.length === 0) return [];
+  // Compile only (never `test`): resolve is discovery, it must not execute a test
+  // body (the P3-03 canary guarantee). A compile failure is fail-closed: without
+  // classes we cannot honestly classify, so we refuse rather than guess missing.
+  const proc = spawnSync(opts.mvnBin ?? 'mvn', ['-q', 'test-compile'], {
+    cwd: opts.cwd,
+    encoding: 'utf8',
+    maxBuffer: MAX_BUFFER,
+  });
+  if (proc.error) throw new WireError(`could not spawn \`mvn\`: ${proc.error.message}`);
+  if (proc.status !== 0) {
+    throw new WireError(
+      `\`mvn test-compile\` failed (exit ${String(proc.status)}); cannot resolve targets:\n${logTail(proc.stdout, proc.stderr)}`,
+    );
+  }
+
+  const classpath = [join(opts.cwd, 'target', 'classes'), join(opts.cwd, 'target', 'test-classes')];
+  const classified = invokeResolve({
+    jarPath: opts.jarPath,
+    classpath,
+    targets: opts.targets,
+    ...(opts.javaBin !== undefined ? { javaBin: opts.javaBin } : {}),
+  });
+  // Fold the helper's three-way classification to the frozen wire (design §2):
+  // `unsupported` (parameterized / dynamic templates) → `missing`, which fails
+  // closed at propose time per the addressable-subset rule (invariant 11).
+  return classified.map((r) => ({
+    target: r.target,
+    status: r.classification === 'found' ? 'found' : 'missing',
+  }));
+}
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+/** Group targets by class into a Surefire `-Dtest` selector: `C#m1+m2,D#m3`. */
+function buildSelector(targets: readonly string[]): string {
+  const byClass = new Map<string, string[]>();
+  for (const t of targets) {
+    const { className, methodName } = splitTarget(t);
+    const methods = byClass.get(className) ?? [];
+    if (methodName.length > 0 && !methods.includes(methodName)) methods.push(methodName);
+    byClass.set(className, methods);
+  }
+  return [...byClass.entries()]
+    .map(([className, methods]) =>
+      methods.length > 0 ? `${className}#${methods.join('+')}` : className,
+    )
+    .join(',');
+}
+
+function toRunResult(target: string, cases: Map<string, SurefireCase>): RunResult {
+  const { className, methodName } = splitTarget(target);
+  const c = cases.get(`${className}#${methodName}`);
+  if (c === undefined) {
+    return {
+      target,
+      status: 'error',
+      message: `no result reported for target: ${target} (test not found or not executed)`,
+    };
+  }
+  return {
+    target,
+    status: c.status,
+    ...(c.message !== undefined ? { message: c.message } : {}),
+    ...(c.location !== undefined ? { location: c.location } : {}),
+    ...(c.durationMs !== undefined ? { duration_ms: c.durationMs } : {}),
+  };
+}
+
+/** Read every `TEST-*.xml` in `dir` into a `class#method` → case map (first wins). */
+function readReports(dir: string): Map<string, SurefireCase> {
+  const map = new Map<string, SurefireCase>();
+  if (!existsSync(dir)) return map;
+  for (const file of readdirSync(dir).sort()) {
+    if (!file.startsWith('TEST-') || !file.endsWith('.xml')) continue;
+    const xml = readFileSync(join(dir, file), 'utf8');
+    for (const c of parseSurefireReport(xml)) {
+      const key = `${c.className}#${c.methodName}`;
+      if (!map.has(key)) map.set(key, c);
+    }
+  }
+  return map;
+}
+
+function clearReports(dir: string): void {
+  if (!existsSync(dir)) return;
+  for (const file of readdirSync(dir)) {
+    if (file.startsWith('TEST-') && file.endsWith('.xml')) rmSync(join(dir, file));
+  }
+}
+
+function logTail(stdout: string | undefined, stderr: string | undefined): string {
+  const combined = `${stdout ?? ''}${stderr ?? ''}`.trimEnd();
+  return combined.split('\n').slice(-LOG_TAIL_LINES).join('\n');
+}
