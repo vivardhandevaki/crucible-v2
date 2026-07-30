@@ -67,6 +67,19 @@ export const CONFORMANCE_DIR = join(workspaceRoot, 'conformance');
 /** Machine-readable catalogue of adapter conformance cases (verb+input→output). */
 export const CONFORMANCE_CASES_PATH = join(CONFORMANCE_DIR, 'cases.json');
 
+/** The `maven-basic` JVM conformance fixture root (task P3-01, design §1). */
+export const MAVEN_BASIC_DIR = join(CONFORMANCE_DIR, 'maven-basic');
+
+/** The `gradle-basic` JVM conformance fixture root (task P3-01, design §1). */
+export const GRADLE_BASIC_DIR = join(CONFORMANCE_DIR, 'gradle-basic');
+
+/**
+ * Shared JVM conformance target manifest: the five categories both fixtures
+ * embody, each target's expected `resolve` classification and `run` outcome.
+ * One manifest describes both fixtures (identical sources; different classpaths).
+ */
+export const CONFORMANCE_TARGETS_PATH = join(CONFORMANCE_DIR, 'targets.json');
+
 /** Normalized-result statuses the stub adapter can report (charter schema). */
 export type TestStatus = 'pass' | 'fail' | 'skip' | 'missing';
 
@@ -242,4 +255,138 @@ export async function loadConformanceCases(
     throw new Error(`${path}: cases.json must have a \`cases\` array`);
   }
   return parsed.cases.map((entry, index) => parseConformanceCase(entry, index, path));
+}
+
+// ─── JVM conformance target manifest (task P3-01) ────────────────────────────
+
+/** The five conformance categories the maven-basic / gradle-basic fixtures embody. */
+export type ConformanceCategory = 'pass' | 'fail' | 'skip' | 'parameterized' | 'missing';
+
+const CONFORMANCE_CATEGORIES: readonly ConformanceCategory[] = [
+  'pass',
+  'fail',
+  'skip',
+  'parameterized',
+  'missing',
+];
+
+/** How the resolve helper classifies a target (design §2 three-way, pre-wire). */
+export type ResolveClassification = 'found' | 'missing' | 'unsupported';
+
+const RESOLVE_CLASSIFICATIONS: readonly ResolveClassification[] = [
+  'found',
+  'missing',
+  'unsupported',
+];
+
+/** The `run` outcome a target is expected to report, or `null` when not addressable. */
+export type RunOutcome = 'pass' | 'fail' | 'error' | 'skip' | null;
+
+const RUN_OUTCOMES: readonly Exclude<RunOutcome, null>[] = ['pass', 'fail', 'error', 'skip'];
+
+/** One declared target in the JVM conformance manifest (`targets.json`). */
+export interface ConformanceTarget {
+  /** The adapter target string, e.g. `com.acme.FooTest#bar`. */
+  target: string;
+  category: ConformanceCategory;
+  /** Expected three-way classification from the resolve helper (P3-03). */
+  resolve: ResolveClassification;
+  /** Expected `run` outcome, or `null` for a target excluded from addressing. */
+  run: RunOutcome;
+}
+
+/** The `canary` block: how the execution canary announces it ran (P3-03). */
+export interface ConformanceCanary {
+  /** System property naming the directory the marker is written into. */
+  systemProperty: string;
+  /** Marker file the canary test writes iff its body executes. */
+  markerFilename: string;
+  /** The canary test's target string. */
+  target: string;
+}
+
+/** The parsed JVM conformance target manifest, shared by both fixtures. */
+export interface ConformanceTargetsManifest {
+  package: string;
+  canary: ConformanceCanary;
+  targets: ConformanceTarget[];
+}
+
+function parseConformanceCanary(value: unknown, source: string): ConformanceCanary {
+  if (!isRecord(value)) {
+    throw new Error(`${source}: \`canary\` is not an object`);
+  }
+  const { systemProperty, markerFilename, target } = value;
+  if (typeof systemProperty !== 'string' || systemProperty.length === 0) {
+    throw new Error(`${source}: \`canary.systemProperty\` must be a non-empty string`);
+  }
+  if (typeof markerFilename !== 'string' || markerFilename.length === 0) {
+    throw new Error(`${source}: \`canary.markerFilename\` must be a non-empty string`);
+  }
+  if (typeof target !== 'string' || target.length === 0) {
+    throw new Error(`${source}: \`canary.target\` must be a non-empty string`);
+  }
+  return { systemProperty, markerFilename, target };
+}
+
+function parseConformanceTarget(value: unknown, index: number, source: string): ConformanceTarget {
+  if (!isRecord(value)) {
+    throw new Error(`${source}: target ${index} is not an object`);
+  }
+  const { target, category, resolve, run } = value;
+  if (typeof target !== 'string' || target.length === 0) {
+    throw new Error(`${source}: target ${index} has no string \`target\``);
+  }
+  if (
+    typeof category !== 'string' ||
+    !CONFORMANCE_CATEGORIES.includes(category as ConformanceCategory)
+  ) {
+    throw new Error(
+      `${source}: target ${index} (${target}) has invalid \`category\`: ${JSON.stringify(category)}`,
+    );
+  }
+  if (
+    typeof resolve !== 'string' ||
+    !RESOLVE_CLASSIFICATIONS.includes(resolve as ResolveClassification)
+  ) {
+    throw new Error(
+      `${source}: target ${index} (${target}) has invalid \`resolve\`: ${JSON.stringify(resolve)}`,
+    );
+  }
+  if (
+    run !== null &&
+    (typeof run !== 'string' || !RUN_OUTCOMES.includes(run as Exclude<RunOutcome, null>))
+  ) {
+    throw new Error(
+      `${source}: target ${index} (${target}) has invalid \`run\`: ${JSON.stringify(run)}`,
+    );
+  }
+  return {
+    target,
+    category: category as ConformanceCategory,
+    resolve: resolve as ResolveClassification,
+    run: run as RunOutcome,
+  };
+}
+
+/** Load and fail-closed validate the JVM conformance target manifest. */
+export async function loadConformanceTargets(
+  path: string = CONFORMANCE_TARGETS_PATH,
+): Promise<ConformanceTargetsManifest> {
+  const raw = await readFile(path, 'utf8');
+  const parsed: unknown = JSON.parse(raw);
+  if (!isRecord(parsed)) {
+    throw new Error(`${path}: targets.json must be a JSON object`);
+  }
+  if (typeof parsed.package !== 'string' || parsed.package.length === 0) {
+    throw new Error(`${path}: targets.json must have a string \`package\``);
+  }
+  if (!Array.isArray(parsed.targets)) {
+    throw new Error(`${path}: targets.json must have a \`targets\` array`);
+  }
+  return {
+    package: parsed.package,
+    canary: parseConformanceCanary(parsed.canary, path),
+    targets: parsed.targets.map((entry, index) => parseConformanceTarget(entry, index, path)),
+  };
 }

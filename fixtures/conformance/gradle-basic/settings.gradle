@@ -1,0 +1,5 @@
+// Conformance fixture: gradle-basic (task P3-01, design phase-3.md §1).
+// Sibling of maven-basic — identical Java sources and the same five categories,
+// built by Gradle instead of Maven so the adapter's XML normalizer is exercised
+// against both build tools' JUnit report dialects (design phase-3.md §2, P3-05).
+rootProject.name = 'gradle-basic'

@@ -1,0 +1,53 @@
+/*
+ * Conformance fixture: gradle-basic (task P3-01, design phase-3.md §1).
+ *
+ * Minimal, self-contained JUnit 5 project — the Gradle twin of maven-basic.
+ * Declares the same five categories (pass / fail / skip / parameterized /
+ * missing; see README.md + targets.json). `gradle test` compiles and runs
+ * every test; the intentional FAIL (CalculatorTest#failsOnPurpose) makes the
+ * task fail on purpose, while `build/test-results/test/*.xml` still records
+ * every test's outcome (the runner reads that, not the aggregate exit code).
+ *
+ * Bytecode is pinned to Java 17 (a Java toolchain / release), so the fixture
+ * stays portable across JDKs even when built on a newer one, and the JUnit
+ * version is kept in lockstep with maven-basic and the resolve helper.
+ */
+plugins {
+  id 'java'
+}
+
+group = 'com.crucible.conformance'
+version = '0.0.0'
+
+repositories {
+  mavenCentral()
+}
+
+def junitVersion = '5.11.4'
+
+dependencies {
+  testImplementation "org.junit.jupiter:junit-jupiter:${junitVersion}"
+  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Target Java 17 bytecode using whatever JDK runs Gradle (no toolchain
+// provisioning), mirroring maven-basic's maven.compiler.release. Keeps the
+// fixture portable without pinning a JDK that must be installed first.
+tasks.withType(JavaCompile).configureEach {
+  options.release = 17
+}
+
+tasks.named('test') {
+  useJUnitPlatform()
+  // Like Surefire, Gradle runs every test and writes complete XML before the
+  // task's aggregate result is decided, so the intentional FAIL
+  // (CalculatorTest#failsOnPurpose) shows up as one failing case in the XML and
+  // makes `gradle test` exit non-zero — the failing test is the point. The
+  // conformance runner reads per-test XML, not the aggregate exit code.
+  //
+  // Forward the canary property (task P3-03 positive control) when set, so a
+  // real run can prove the execution side effect actually fires.
+  if (System.getProperty('crucible.canary.dir') != null) {
+    systemProperty 'crucible.canary.dir', System.getProperty('crucible.canary.dir')
+  }
+}

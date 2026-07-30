@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+    Conformance fixture: maven-basic (task P3-01, design phase-3.md §1).
+
+    A minimal, self-contained JUnit 5 project the adapter conformance suite
+    drives. It declares five categories — pass / fail / skip / parameterized /
+    missing — documented in README.md and targets.json. `mvn test` compiles and
+    runs every test; the intentional FAIL (CalculatorTest#failsOnPurpose) makes
+    the aggregate exit non-zero on purpose — Surefire still writes complete XML.
+
+    Bytecode is pinned to Java 17 (maven.compiler.release) so the fixture stays
+    portable across JDKs even when built on a newer one. The JUnit version is
+    kept in lockstep with the resolve helper (adapters/java-junit/resolve-helper)
+    so a target compiled here discovers cleanly against the helper's bundled
+    JUnit Platform.
+  -->
+  <groupId>com.crucible.conformance</groupId>
+  <artifactId>maven-basic</artifactId>
+  <version>0.0.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <junit.version>5.11.4</junit.version>
+    <surefire.version>3.5.2</surefire.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${surefire.version}</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
