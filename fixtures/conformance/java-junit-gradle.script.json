@@ -1,0 +1,29 @@
+{
+  "//": "Conformance script for the java-junit adapter on the GRADLE fixture (task P3-05). Identical wiring to java-junit-maven.script.json except `cwd` (= gradle-basic, the project under test); the adapter auto-detects Gradle from build.gradle and drives `gradle test`/`gradle testClasses` from that dir, so the same manifest, resolveBin binding, and package.files certify both build tools. The runner spawns the manifest's invocation strings VERBATIM, so this certifies exactly what core's adapter client spawns against a Gradle project. `resolveBin` binds the manifest bin name to `node <dist/cli.js>` — PATH-independent under CI's `npm ci` (which precedes the build). `timeoutMs` is generous: each spawned case runs a real (cold) `gradle` invocation with `--rerun-tasks` (fresh XML, no task cache); the malformed-stdin universal check adds none (stdin is rejected before any build). package.files are the current unpackaged bytes (dist wrapper + manifest + helper jar); rebuild-twice byte-determinism and the pinned single-file packaging are P3-06's bar, not this runner's.",
+  "name": "java-junit-gradle",
+  "manifest": "../../adapters/java-junit/crucible-adapter.yaml",
+  "cwd": "./gradle-basic",
+  "resolveBin": {
+    "crucible-adapter-java-junit": {
+      "command": "node",
+      "prefixArgs": ["../../adapters/java-junit/dist/cli.js"]
+    }
+  },
+  "cases": "./java-junit-gradle.cases.json",
+  "timeoutMs": 180000,
+  "package": {
+    "files": [
+      "../../adapters/java-junit/dist/cli.js",
+      "../../adapters/java-junit/dist/detect.js",
+      "../../adapters/java-junit/dist/maven.js",
+      "../../adapters/java-junit/dist/gradle.js",
+      "../../adapters/java-junit/dist/reports.js",
+      "../../adapters/java-junit/dist/surefire.js",
+      "../../adapters/java-junit/dist/xml.js",
+      "../../adapters/java-junit/dist/wire.js",
+      "../../adapters/java-junit/dist/resolve.js",
+      "../../adapters/java-junit/crucible-adapter.yaml",
+      "../../adapters/java-junit/resolve-helper/target/resolve-helper.jar"
+    ]
+  }
+}

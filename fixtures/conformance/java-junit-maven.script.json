@@ -16,6 +16,8 @@
       "../../adapters/java-junit/dist/cli.js",
       "../../adapters/java-junit/dist/detect.js",
       "../../adapters/java-junit/dist/maven.js",
+      "../../adapters/java-junit/dist/gradle.js",
+      "../../adapters/java-junit/dist/reports.js",
       "../../adapters/java-junit/dist/surefire.js",
       "../../adapters/java-junit/dist/xml.js",
       "../../adapters/java-junit/dist/wire.js",

@@ -68,6 +68,71 @@ describe('parseSurefireReport — status normalization', () => {
   });
 });
 
+// Gradle's JUnit reporter emits the same broad TEST-*.xml dialect as Surefire,
+// with two visible differences this shared normalizer must absorb (design §2,
+// P3-05): plain methods carry empty trailing parens in the `name` attribute
+// (`addsTwoNumbers()`), and failure/skip bodies use Gradle's own rendering. The
+// normalized result must be byte-identical to the Surefire dialect's so one
+// join key (`className#methodName`) works across both build tools.
+const GRADLE_DIALECT = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.crucible.conformance.CalculatorTest" tests="4" skipped="1" failures="1" errors="0" timestamp="2026-07-30T09:42:21.324Z" hostname="host" time="0.021">
+  <properties/>
+  <testcase name="skippedFeature()" classname="com.crucible.conformance.CalculatorTest" time="0.001">
+    <skipped/>
+  </testcase>
+  <testcase name="subtractsTwoNumbers()" classname="com.crucible.conformance.CalculatorTest" time="0.007"/>
+  <testcase name="addsTwoNumbers()" classname="com.crucible.conformance.CalculatorTest" time="0.0"/>
+  <testcase name="failsOnPurpose()" classname="com.crucible.conformance.CalculatorTest" time="0.003">
+    <failure message="org.opentest4j.AssertionFailedError: intentional conformance failure ==&gt; expected: &lt;0&gt; but was: &lt;5&gt;" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: intentional conformance failure ==&gt; expected: &lt;0&gt; but was: &lt;5&gt;
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:563)
+	at com.crucible.conformance.CalculatorTest.failsOnPurpose(CalculatorTest.java:44)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+</failure>
+  </testcase>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>`;
+
+describe('parseSurefireReport — Gradle XML dialect (shared normalizer)', () => {
+  const byMethod = new Map(parseSurefireReport(GRADLE_DIALECT).map((c) => [c.methodName, c]));
+
+  it('strips the empty trailing parens Gradle appends to plain method names', () => {
+    // The keys must match the Surefire dialect's bare names exactly, so the run
+    // path's `className#methodName` join is build-tool-agnostic.
+    expect([...byMethod.keys()].sort()).toEqual([
+      'addsTwoNumbers',
+      'failsOnPurpose',
+      'skippedFeature',
+      'subtractsTwoNumbers',
+    ]);
+  });
+
+  it('normalizes pass / skip / fail identically to the Surefire dialect', () => {
+    expect(byMethod.get('addsTwoNumbers')?.status).toBe('pass');
+    expect(byMethod.get('subtractsTwoNumbers')?.status).toBe('pass');
+    expect(byMethod.get('skippedFeature')?.status).toBe('skip');
+    expect(byMethod.get('failsOnPurpose')?.status).toBe('fail');
+  });
+
+  it('extracts message, location, and duration from a Gradle failure body', () => {
+    const c = byMethod.get('failsOnPurpose');
+    expect(c?.message).toBe(
+      'org.opentest4j.AssertionFailedError: intentional conformance failure ==> expected: <0> but was: <5>',
+    );
+    expect(c?.location).toBe('CalculatorTest.java:44');
+    expect(c?.durationMs).toBe(3);
+  });
+
+  it('leaves a non-empty parameterized-style argument list intact', () => {
+    // `foo(int)` is not an addressable plain method; only empty `()` is stripped,
+    // so it can never collide with a plain `foo` of the same simple name.
+    const [c] = parseSurefireReport(
+      '<testsuite><testcase name="evensAreEven(int)" classname="C" time="0.0"/></testsuite>',
+    );
+    expect(c?.methodName).toBe('evensAreEven(int)');
+  });
+});
+
 describe('parseSurefireReport — errors and edge shapes', () => {
   it('an <error> child is an error status', () => {
     const [c] = parseSurefireReport(
