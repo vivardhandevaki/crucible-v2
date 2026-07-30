@@ -65,6 +65,16 @@ export interface ConformanceScript {
   cwd: string;
   /** Optional dir prepended to PATH so the manifest's bare bin resolves (rel to script dir). */
   pathPrepend?: string;
+  /**
+   * Optional map from a manifest bin NAME to a concrete command — the runner's
+   * analogue of core's adapter-client `resolveExecutable` (client.ts). Use it
+   * when the named bin is not reliably on PATH (e.g. a monorepo package whose
+   * npm `.bin` symlink is absent under `npm ci` before the build). `command`
+   * `"node"` resolves to the running interpreter; every `prefixArgs` entry is a
+   * path resolved relative to the script dir. Keeps the invocation faithful:
+   * only the bin-name→path binding changes, exactly as it does at `init`.
+   */
+  resolveBin?: Record<string, { command: string; prefixArgs?: string[] }>;
   /** Optional extra env for the adapter subprocess. */
   env?: Record<string, string>;
   /** Per-spawn timeout in ms (default 30000). A hung adapter is a finding. */
@@ -143,6 +153,7 @@ export function runConformance(
     cwd: resolvePath(scriptDir, script.cwd),
     env: buildEnv(script, scriptDir, options.envOverride),
     timeoutMs: script.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    resolveBin: script.resolveBin ?? {},
   };
 
   // 1 — manifest-valid. If the manifest is invalid we cannot spawn, so the
@@ -284,6 +295,10 @@ function checkEnvelope(
   };
 
   if (spawn.timedOut) return fail(`adapter timed out after ${spawn.timeoutMs}ms`);
+  if (spawn.spawnError !== undefined) {
+    // The process never ran (e.g. ENOENT: the manifest's bin was not found).
+    return fail(`adapter could not be spawned — ${spawn.spawnError}`);
+  }
   if (spawn.status !== 0) {
     return fail(
       `adapter exited ${spawn.status === null ? '(killed)' : String(spawn.status)}` +
@@ -424,6 +439,7 @@ interface SpawnCtx {
   cwd: string;
   env: NodeJS.ProcessEnv;
   timeoutMs: number;
+  resolveBin: Record<string, { command: string; prefixArgs?: string[] }>;
 }
 
 interface SpawnResult {
@@ -432,6 +448,8 @@ interface SpawnResult {
   stderr: string;
   timedOut: boolean;
   timeoutMs: number;
+  /** Spawn-level failure (e.g. ENOENT: the bin was never found), if any. */
+  spawnError?: string;
 }
 
 function spawnAdapter(
@@ -443,13 +461,21 @@ function spawnAdapter(
   const invocation = manifest.invocations[verb];
   // Tokenize exactly as core's adapter client does (client.ts `invoke`).
   const tokens = invocation.split(/\s+/).filter((t) => t.length > 0);
-  const command = tokens[0];
-  if (command === undefined) {
+  const name = tokens[0];
+  if (name === undefined) {
     // A structurally-valid manifest always has a non-empty invocation (schema
     // min(1)); an empty token list here is a runner-side impossibility.
     throw new RunnerInputError(`${manifest.name}: empty ${verb} invocation string`);
   }
-  const argv = tokens.slice(1);
+  // Resolve the bin NAME → concrete command, mirroring core's resolveExecutable.
+  const binding = ctx.resolveBin[name];
+  const command =
+    binding === undefined ? name : binding.command === 'node' ? process.execPath : binding.command;
+  const prefixArgs =
+    binding === undefined
+      ? []
+      : (binding.prefixArgs ?? []).map((a) => resolvePath(ctx.scriptDir, a));
+  const argv = [...prefixArgs, ...tokens.slice(1)];
   const result = spawnSync(command, argv, {
     cwd: ctx.cwd,
     env: ctx.env,
@@ -457,15 +483,15 @@ function spawnAdapter(
     encoding: 'utf8',
     timeout: ctx.timeoutMs,
   });
-  const timedOut =
-    (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT' ||
-    (result.status === null && result.signal !== null);
+  const errCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
+  const timedOut = errCode === 'ETIMEDOUT' || (result.status === null && result.signal !== null);
   return {
     status: result.status,
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
     timedOut,
     timeoutMs: ctx.timeoutMs,
+    ...(result.error && !timedOut ? { spawnError: messageOf(result.error) } : {}),
   };
 }
 
@@ -501,6 +527,7 @@ const KNOWN_SCRIPT_KEYS = new Set([
   'manifest',
   'cwd',
   'pathPrepend',
+  'resolveBin',
   'env',
   'timeoutMs',
   'cases',
@@ -529,6 +556,7 @@ function validateScript(value: unknown, source: string): ConformanceScript {
   if (value['env'] !== undefined && !isStringRecord(value['env'])) {
     throw new RunnerInputError(`${source}: \`env\` must be a string→string map`);
   }
+  const resolveBin = parseResolveBin(value['resolveBin'], source);
   const pkg = value['package'];
   if (
     !isRecord(pkg) ||
@@ -543,10 +571,42 @@ function validateScript(value: unknown, source: string): ConformanceScript {
     cwd: value['cwd'] as string,
     cases: value['cases'] as string,
     ...(typeof value['pathPrepend'] === 'string' ? { pathPrepend: value['pathPrepend'] } : {}),
+    ...(resolveBin !== undefined ? { resolveBin } : {}),
     ...(typeof value['timeoutMs'] === 'number' ? { timeoutMs: value['timeoutMs'] } : {}),
     ...(isStringRecord(value['env']) ? { env: value['env'] } : {}),
     package: { files: pkg['files'] as string[] },
   };
+}
+
+/** Validate the optional `resolveBin` map (bin name → { command, prefixArgs? }). */
+function parseResolveBin(
+  value: unknown,
+  source: string,
+): Record<string, { command: string; prefixArgs?: string[] }> | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw new RunnerInputError(`${source}: \`resolveBin\` must be an object`);
+  }
+  const out: Record<string, { command: string; prefixArgs?: string[] }> = {};
+  for (const [name, binding] of Object.entries(value)) {
+    if (!isRecord(binding) || typeof binding['command'] !== 'string') {
+      throw new RunnerInputError(`${source}: \`resolveBin.${name}.command\` must be a string`);
+    }
+    const prefixArgs = binding['prefixArgs'];
+    if (
+      prefixArgs !== undefined &&
+      (!Array.isArray(prefixArgs) || !prefixArgs.every((a) => typeof a === 'string'))
+    ) {
+      throw new RunnerInputError(
+        `${source}: \`resolveBin.${name}.prefixArgs\` must be a string array`,
+      );
+    }
+    out[name] = {
+      command: binding['command'],
+      ...(Array.isArray(prefixArgs) ? { prefixArgs: prefixArgs as string[] } : {}),
+    };
+  }
+  return out;
 }
 
 function loadCases(script: ConformanceScript, scriptDir: string): ConformanceCase[] {

@@ -77,6 +77,22 @@ describe('conformance runner — the stub is the protocol executable spec', () =
     const again = runConformance(STUB_SCRIPT);
     expect(JSON.stringify(again)).toBe(JSON.stringify(report));
   });
+
+  it('resolves the adapter bin without relying on PATH (CI has no .bin symlink)', () => {
+    // The stub script binds its bin via `resolveBin` (node + dist path), not the
+    // npm-hoisted node_modules/.bin — which is absent under `npm ci` before the
+    // build. Clearing PATH proves the resolution is PATH-independent; this is the
+    // regression guard for the ENOENT the first CI run hit.
+    const cleared = runConformance(STUB_SCRIPT, { envOverride: { PATH: '' } });
+    expect(
+      hasFindings(cleared),
+      JSON.stringify(
+        cleared.checks.filter((c) => c.findings.length > 0),
+        null,
+        2,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('conformance runner — a deliberately-broken variant fails attributably', () => {
