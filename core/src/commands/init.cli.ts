@@ -15,7 +15,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import type { Command } from 'commander';
-import { invalidInputError } from '../util/errors.js';
+import { invalidInputError, preconditionError } from '../util/errors.js';
 import {
   init,
   type AdapterPackageSource,
@@ -67,10 +67,10 @@ export function registerInit(program: Command): void {
 }
 
 /**
- * Guess the project's adapter + unit-test command from what is on disk (design
- * §7 "detect adapters"): a Maven/Gradle tree → the `java-junit` adapter; a
- * Node/TS tree → the `stub` adapter (P1's reference adapter). The default when
- * nothing is recognized is `stub` — a working setup the operator then tailors.
+ * Detect the shipped project adapter + unit-test command from disk (design §7).
+ * P3-08 retires the stub from init: it remains a conformance/test instrument,
+ * never a judge installed into an unrecognized real project. No match therefore
+ * fails with an actionable precondition instead of creating a false setup.
  */
 export function detectAnswers(root: string): InitAnswers {
   const has = (name: string): boolean => existsSync(join(root, name));
@@ -97,7 +97,11 @@ export function detectAnswers(root: string): InitAnswers {
       unitCommand: 'gradle test',
     };
   }
-  return { adapter: 'stub', runners: ['stub'], paths: ['**/*.ts'], unitCommand: 'npm test' };
+  throw preconditionError(
+    'NO_ADAPTER_DETECTED',
+    'No supported first-party adapter was detected (expected pom.xml or build.gradle[.kts]).',
+    'Add a supported build file, or install a certified adapter explicitly with `crucible adapter add`.',
+  );
 }
 
 /** Locate first-party packaged bytes without importing adapter implementation code. */

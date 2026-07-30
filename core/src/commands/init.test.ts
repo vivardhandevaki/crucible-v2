@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { CI_TEMPLATE_PATH, JAVA_JUNIT_CI_TEMPLATE_PATH } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES } from '@crucible/schemas';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { isCrucibleError } from '../util/errors.js';
 import {
   GITIGNORE_LINES,
   MANAGED_BLOCK_FILES,
@@ -192,13 +193,18 @@ describe('init — adapter detection (CLI edge)', () => {
     expect(detectAnswers(scratch).unitCommand).toBe('gradle test');
   });
 
-  it('an unrecognized tree → the stub adapter default', () => {
-    expect(detectAnswers(scratch)).toEqual({
-      adapter: 'stub',
-      runners: ['stub'],
-      paths: ['**/*.ts'],
-      unitCommand: 'npm test',
-    });
+  it('an unrecognized tree fails instead of installing the conformance-only stub', () => {
+    try {
+      detectAnswers(scratch);
+    } catch (error) {
+      expect(isCrucibleError(error)).toBe(true);
+      if (isCrucibleError(error)) {
+        expect(error.exit).toBe(2);
+        expect(error.code).toBe('NO_ADAPTER_DETECTED');
+      }
+      return;
+    }
+    throw new Error('expected an unrecognized tree to fail adapter detection');
   });
 });
 
