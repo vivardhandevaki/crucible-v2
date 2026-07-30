@@ -1,0 +1,14 @@
+{
+  "name": "@crucible/adapter-java-junit",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "java-junit adapter: TypeScript CLI wrapper over a bundled JUnit Platform helper jar. Core never imports this. (Phase 3, seeded by P3-03's resolve helper.)",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@crucible/fixtures": "*"
+  }
+}

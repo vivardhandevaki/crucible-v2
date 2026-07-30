@@ -21,6 +21,10 @@ export default tseslint.config(
       'site/**',
       '.old/**',
       'fixtures/toy-repo/**',
+      // JVM build outputs (Maven `target/`, Gradle `build/`) — generated, and
+      // Gradle's HTML test report bundles browser JS that trips no-undef.
+      '**/target/**',
+      'fixtures/conformance/*/build/**',
     ],
   },
   js.configs.recommended,

@@ -8,6 +8,7 @@
     "core",
     "schemas",
     "adapters/stub",
+    "adapters/java-junit",
     "fixtures",
     "ci-templates"
   ],
