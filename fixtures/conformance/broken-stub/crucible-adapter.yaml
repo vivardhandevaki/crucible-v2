@@ -1,0 +1,12 @@
+# Broken-stub manifest (task P3-02). A VALID manifest whose bin is a wrapper that
+# delegates to the real stub and sabotages one dimension of the output per the
+# CRUCIBLE_BREAK env var (set by the conformance test). Sabotage lives here, never
+# in the stub package. `crucible-adapter-broken-stub` resolves via the script's
+# pathPrepend (this directory) on PATH.
+name: broken-stub
+version: 0.0.0
+runners: [stub]
+capabilities: [unit]
+invocations:
+  resolve: 'crucible-adapter-broken-stub resolve'
+  run: 'crucible-adapter-broken-stub run'

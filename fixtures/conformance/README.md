@@ -9,6 +9,21 @@ only the wire protocol and the charter's normalized result schema
 
 ## Layout
 
+- `run.ts` — the **conformance runner** (task P3-02). Drives any adapter through
+  a declared conformance *script* and reports which of six universal checks it
+  satisfies (`manifest-valid`, `envelope`, `missing-no-targetfile`,
+  `case-expectations`, `malformed-stdin`, `package-hash`). It spawns the
+  manifest's invocation strings **verbatim** — same tokenization + spawn as
+  core's adapter client — so it certifies exactly what core runs, and it reuses
+  core's own zod envelopes / `parseManifest` / `hashFile` (imported from core
+  source; see design phase-3.md §1.1). CLI: `run.ts <script.json>` → exit 0 green,
+  1 findings, 2 usage, 3 the runner's own inputs malformed, 4 engine bug.
+- `stub.script.json` — the reference **stub** adapter's conformance script. The
+  stub passing this run is what makes the run "the protocol's executable spec".
+- `broken-stub/` — a wrapper that faithfully delegates to the stub but sabotages
+  one output dimension per the `CRUCIBLE_BREAK` env var, plus scripts for the
+  manifest/package failure paths. Each break trips exactly one universal check,
+  proving findings are attributable (the P3-02 acceptance bar).
 - `cases.json` — the stub adapter's golden verb+input→output catalogue (below).
 - `targets.json` — the **JVM** conformance target manifest: the five categories
   the `maven-basic` / `gradle-basic` fixtures embody and, per target, the

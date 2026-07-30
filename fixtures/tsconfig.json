@@ -1,8 +1,19 @@
 {
+  // Emit config for the consumable surface (src/index.ts). Test files are
+  // excluded: they are never consumed from dist, and conformance-runner.test.ts
+  // imports across the workspace boundary (conformance/ + core source), which
+  // has no valid rootDir mapping under emit. Typechecking of tests + the
+  // conformance runner lives in tsconfig.typecheck.json (noEmit).
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    // With tests excluded, the only input is index.ts; node's ambient types
+    // were previously pulled in transitively via the (now-excluded) vitest test
+    // files, so name them explicitly. The typecheck config (which includes
+    // tests) needs no `types` pin — vitest + node are auto-included there.
+    "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

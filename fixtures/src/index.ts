@@ -245,16 +245,25 @@ function parseConformanceCase(value: unknown, index: number, source: string): Co
   return { name, verb, targets, expected: expected as unknown as (ResolveResult | RunResult)[] };
 }
 
+/**
+ * Parse + fail-closed validate an already-read conformance-case catalogue.
+ * The synchronous core of `loadConformanceCases`, exported so the conformance
+ * runner (P3-02, which is sync) validates through the SAME P1-10 grammar rather
+ * than forking it.
+ */
+export function parseConformanceCases(raw: string, source: string): ConformanceCase[] {
+  const parsed: unknown = JSON.parse(raw);
+  if (!isRecord(parsed) || !Array.isArray(parsed.cases)) {
+    throw new Error(`${source}: cases.json must have a \`cases\` array`);
+  }
+  return parsed.cases.map((entry, index) => parseConformanceCase(entry, index, source));
+}
+
 /** Load and fail-closed validate the adapter conformance-case catalogue. */
 export async function loadConformanceCases(
   path: string = CONFORMANCE_CASES_PATH,
 ): Promise<ConformanceCase[]> {
-  const raw = await readFile(path, 'utf8');
-  const parsed: unknown = JSON.parse(raw);
-  if (!isRecord(parsed) || !Array.isArray(parsed.cases)) {
-    throw new Error(`${path}: cases.json must have a \`cases\` array`);
-  }
-  return parsed.cases.map((entry, index) => parseConformanceCase(entry, index, path));
+  return parseConformanceCases(await readFile(path, 'utf8'), path);
 }
 
 // ─── JVM conformance target manifest (task P3-01) ────────────────────────────

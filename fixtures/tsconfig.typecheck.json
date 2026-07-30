@@ -1,0 +1,13 @@
+{
+  // Typecheck-only config: covers the conformance runner (fixtures/conformance),
+  // which lives OUTSIDE the emit config's rootDir (`src`) because it imports core
+  // SOURCE (design phase-3.md §1.1). `noEmit` avoids the TS6059 "not under
+  // rootDir" emit error while still fully typechecking run.ts + its core imports.
+  // The build config (tsconfig.json) is left to emit only `src`; fixtures dist is
+  // never consumed, so run.ts needs no emitted output.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src", "conformance/**/*.ts"]
+}
