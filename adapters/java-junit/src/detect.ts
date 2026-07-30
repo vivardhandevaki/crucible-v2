@@ -30,7 +30,7 @@ export interface DetectDeps {
 }
 
 /** Maven wins a pom.xml + build.gradle tie — a deterministic pick (invariant 12). */
-function detectBuildTool(fileExists: DetectDeps['fileExists']): BuildTool | undefined {
+export function detectBuildTool(fileExists: DetectDeps['fileExists']): BuildTool | undefined {
   if (fileExists('pom.xml')) return 'maven';
   if (fileExists('build.gradle') || fileExists('build.gradle.kts')) return 'gradle';
   return undefined;

@@ -14,7 +14,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { detect, type DetectDeps } from './detect.js';
+import { detect, detectBuildTool, type BuildTool, type DetectDeps } from './detect.js';
+import { runGradle, resolveGradle } from './gradle.js';
 import { runMaven, resolveMaven } from './maven.js';
 import { parseRequest, WireError } from './wire.js';
 
@@ -65,12 +66,34 @@ function main(): number {
   }
 
   const targets = parseRequest(readStdin());
+  const buildTool = resolveBuildTool(cwd);
   const results =
-    verb === 'resolve'
-      ? resolveMaven({ cwd, targets, jarPath: helperJarPath() })
-      : runMaven({ cwd, targets });
+    buildTool === 'maven' ? runOnMaven(verb, cwd, targets) : runOnGradle(verb, cwd, targets);
   process.stdout.write(JSON.stringify({ results }) + '\n');
   return 0;
+}
+
+/** Pick the build tool for the resolve/run wire, fail-closed if neither is present. */
+function resolveBuildTool(cwd: string): BuildTool {
+  const buildTool = detectBuildTool((name) => existsSync(join(cwd, name)));
+  if (buildTool === undefined) {
+    throw new WireError(
+      'no pom.xml or build.gradle(.kts) found in the working directory — nothing to drive',
+    );
+  }
+  return buildTool;
+}
+
+function runOnMaven(verb: 'resolve' | 'run', cwd: string, targets: string[]) {
+  return verb === 'resolve'
+    ? resolveMaven({ cwd, targets, jarPath: helperJarPath() })
+    : runMaven({ cwd, targets });
+}
+
+function runOnGradle(verb: 'resolve' | 'run', cwd: string, targets: string[]) {
+  return verb === 'resolve'
+    ? resolveGradle({ cwd, targets, jarPath: helperJarPath() })
+    : runGradle({ cwd, targets });
 }
 
 try {

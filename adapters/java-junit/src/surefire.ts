@@ -5,8 +5,11 @@
 // normalized per-method result the wire speaks (design phase-3.md §2 run path).
 //
 // It is shared across build tools on purpose (P3-05 unifies Gradle onto it): the
-// XML shape is the same, only the report *location* differs, which is the
-// build-tool driver's concern, not this parser's.
+// XML shape is the same, and the one dialect difference on the verdict path —
+// Gradle rendering a plain method's `name` with empty trailing parens
+// (`addsTwoNumbers()`) where Surefire writes it bare — is reconciled here (see
+// `normalizeMethodName`) so a single `className#methodName` key joins both. The
+// report *location* differs too, but that is the build-tool driver's concern.
 //
 // Fail-closed (invariant 3): a broken report, or a `<testcase>` missing its
 // name/classname, throws — a report we cannot read is never a silent green.
@@ -45,16 +48,17 @@ export function parseSurefireReport(xml: string): SurefireCase[] {
 }
 
 function normalizeCase(tc: XmlElement): SurefireCase {
-  const methodName = attr(tc, 'name');
+  const rawName = attr(tc, 'name');
   const className = attr(tc, 'classname');
-  if (methodName === undefined || methodName.length === 0) {
+  if (rawName === undefined || rawName.length === 0) {
     throw new SurefireParseError('a <testcase> is missing its `name` attribute');
   }
   if (className === undefined || className.length === 0) {
     throw new SurefireParseError(
-      `<testcase name="${methodName}"> is missing its \`classname\` attribute`,
+      `<testcase name="${rawName}"> is missing its \`classname\` attribute`,
     );
   }
+  const methodName = normalizeMethodName(rawName);
 
   const outcome = classify(tc);
   const location = outcome.location(className);
@@ -68,6 +72,20 @@ function normalizeCase(tc: XmlElement): SurefireCase {
     ...(location !== undefined ? { location } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
   };
+}
+
+/**
+ * Reconcile the two build tools' `<testcase name>` dialects to the wire's method
+ * coordinate. Surefire names a plain `@Test` method bare (`addsTwoNumbers`);
+ * Gradle's JUnit reporter renders the same method with empty trailing parens
+ * (`addsTwoNumbers()`). Stripping a single trailing `()` maps both onto the
+ * `className#methodName` join key the run path builds from a target string. Only
+ * *empty* parens are stripped — a non-empty argument list (e.g. a parameterized
+ * invocation's `foo(int)`) is left intact, since those are not addressable
+ * targets and must never collide with a plain method of the same simple name.
+ */
+function normalizeMethodName(name: string): string {
+  return name.endsWith('()') ? name.slice(0, -2) : name;
 }
 
 interface Outcome {

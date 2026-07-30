@@ -10,36 +10,28 @@
 //            three-way vocabulary is folded to the wire's found | missing. The
 //            targetFile grounding (design §2) lands in P3-06.
 //
-// Determinism (invariant 12): the report is read from disk, not the flaky
-// aggregate exit code; results are emitted in the caller's input order.
+// The report-reading / target-join surface is shared with the Gradle driver
+// (reports.ts); Maven differs only in how it invokes the tool and where Surefire
+// writes. Determinism (invariant 12): the report is read from disk, not the
+// flaky aggregate exit code; results are emitted in the caller's input order.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
+import {
+  buildFailureResults,
+  clearReports,
+  logTail,
+  MAX_BUFFER,
+  readReports,
+  toRunResult,
+  type ResolveResult,
+  type RunResult,
+} from './reports.js';
 import { invokeResolve } from './resolve.js';
-import { parseSurefireReport, type SurefireCase } from './surefire.js';
 import { splitTarget, WireError } from './wire.js';
 
-/** A normalized `run` result (charter's normalized result schema, exactly). */
-export interface RunResult {
-  target: string;
-  status: 'pass' | 'fail' | 'error' | 'skip';
-  message?: string;
-  location?: string;
-  duration_ms?: number;
-}
-
-/** A normalized `resolve` result (found | missing; targetFile grounded in P3-06). */
-export interface ResolveResult {
-  target: string;
-  status: 'found' | 'missing';
-  targetFile?: string;
-}
-
-// Maven output can be large; give spawnSync headroom over its 1MB default.
-const MAX_BUFFER = 64 * 1024 * 1024;
-const LOG_TAIL_LINES = 40;
+export type { ResolveResult, RunResult } from './reports.js';
 
 export interface MavenRunOptions {
   /** The project directory (contains pom.xml). */
@@ -77,12 +69,7 @@ export function runMaven(opts: MavenRunOptions): RunResult[] {
   // (No matching tests with a zero exit is NOT this case — those become per-target
   // `error` below, which is the honest "not found / not executed" outcome.)
   if (cases.size === 0 && proc.status !== 0) {
-    const tail = logTail(proc.stdout, proc.stderr);
-    return opts.targets.map((target) => ({
-      target,
-      status: 'error',
-      message: `build failed before tests ran (mvn exit ${String(proc.status)}):\n${tail}`,
-    }));
+    return buildFailureResults(opts.targets, 'mvn', proc.status, proc.stdout, proc.stderr);
   }
   return opts.targets.map((target) => toRunResult(target, cases));
 }
@@ -146,50 +133,4 @@ function buildSelector(targets: readonly string[]): string {
       methods.length > 0 ? `${className}#${methods.join('+')}` : className,
     )
     .join(',');
-}
-
-function toRunResult(target: string, cases: Map<string, SurefireCase>): RunResult {
-  const { className, methodName } = splitTarget(target);
-  const c = cases.get(`${className}#${methodName}`);
-  if (c === undefined) {
-    return {
-      target,
-      status: 'error',
-      message: `no result reported for target: ${target} (test not found or not executed)`,
-    };
-  }
-  return {
-    target,
-    status: c.status,
-    ...(c.message !== undefined ? { message: c.message } : {}),
-    ...(c.location !== undefined ? { location: c.location } : {}),
-    ...(c.durationMs !== undefined ? { duration_ms: c.durationMs } : {}),
-  };
-}
-
-/** Read every `TEST-*.xml` in `dir` into a `class#method` → case map (first wins). */
-function readReports(dir: string): Map<string, SurefireCase> {
-  const map = new Map<string, SurefireCase>();
-  if (!existsSync(dir)) return map;
-  for (const file of readdirSync(dir).sort()) {
-    if (!file.startsWith('TEST-') || !file.endsWith('.xml')) continue;
-    const xml = readFileSync(join(dir, file), 'utf8');
-    for (const c of parseSurefireReport(xml)) {
-      const key = `${c.className}#${c.methodName}`;
-      if (!map.has(key)) map.set(key, c);
-    }
-  }
-  return map;
-}
-
-function clearReports(dir: string): void {
-  if (!existsSync(dir)) return;
-  for (const file of readdirSync(dir)) {
-    if (file.startsWith('TEST-') && file.endsWith('.xml')) rmSync(join(dir, file));
-  }
-}
-
-function logTail(stdout: string | undefined, stderr: string | undefined): string {
-  const combined = `${stdout ?? ''}${stderr ?? ''}`.trimEnd();
-  return combined.split('\n').slice(-LOG_TAIL_LINES).join('\n');
 }
