@@ -20,7 +20,6 @@ import { CONFORMANCE_CHECKS, hasFindings, runConformance } from '../conformance/
 const FIXTURES_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const MONOREPO_ROOT = dirname(FIXTURES_ROOT);
 const JAVA_JUNIT_DIR = join(MONOREPO_ROOT, 'adapters', 'java-junit');
-const RESOLVE_HELPER_DIR = join(JAVA_JUNIT_DIR, 'resolve-helper');
 const SCRIPT = join(CONFORMANCE_DIR, 'java-junit-maven.script.json');
 
 const BUILD_TIMEOUT_MS = 300_000;
@@ -42,11 +41,9 @@ function runOrThrow(cmd: string, args: string[], cwd: string): void {
 
 beforeAll(() => {
   if (!HAS_MVN) return;
-  // Build the adapter wrapper (dist/cli.js the runner spawns) and the resolve-
-  // helper jar (package-hash digests it; resolve invokes it). test-compile warms
-  // the fixture so the first spawned case is not paying a cold compile.
-  runOrThrow('npm', ['run', 'build'], JAVA_JUNIT_DIR);
-  runOrThrow('mvn', ['-q', 'package'], RESOLVE_HELPER_DIR);
+  // P3-06's package target builds the helper and emits the one executable the
+  // conformance script spawns and hashes. The next command warms the fixture.
+  runOrThrow('npm', ['run', 'package'], JAVA_JUNIT_DIR);
   runOrThrow('mvn', ['-q', 'test-compile'], MAVEN_BASIC_DIR);
 }, BUILD_TIMEOUT_MS);
 
@@ -76,8 +73,8 @@ describe.skipIf(!HAS_MVN)('java-junit conformance — maven-basic', () => {
       const report = runConformance(SCRIPT);
       const digest = report.checks.find((c) => c.check === 'package-hash')?.digest;
       expect(digest, 'package-hash must surface a digest').toBeDefined();
-      // Eleven declared files: nine dist modules + manifest + helper jar.
-      expect(digest!.length).toBe(11);
+      // One executable (wrapper + embedded jar) plus its manifest.
+      expect(digest!.length).toBe(2);
       for (const entry of digest!) {
         expect(entry.sha256, entry.path).toMatch(/^[0-9a-f]{64}$/);
       }

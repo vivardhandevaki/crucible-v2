@@ -10,11 +10,17 @@
 // working directory core sets (the project under test).
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { detect, detectBuildTool, type BuildTool, type DetectDeps } from './detect.js';
+import {
+  CRUCIBLE_EMBEDDED_HELPER_JAR,
+  CRUCIBLE_EMBEDDED_HELPER_SHA256,
+} from './embedded-helper.js';
 import { runGradle, resolveGradle } from './gradle.js';
 import { runMaven, resolveMaven } from './maven.js';
 import { parseRequest, WireError } from './wire.js';
@@ -23,12 +29,39 @@ type Verb = 'detect' | 'resolve' | 'run';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** The bundled resolve-helper jar (P3-03). Overridable for packaging/tests. */
-function helperJarPath(): string {
+interface MaterializedHelper {
+  path: string;
+  cleanup(): void;
+}
+
+/**
+ * Development builds use the adjacent jar. The P3-06 package embeds those same
+ * bytes and materializes a private, per-process copy only for the Java classpath.
+ */
+function materializeHelperJar(): MaterializedHelper {
   const override = process.env['CRUCIBLE_JAVA_JUNIT_JAR'];
-  if (override !== undefined && override.length > 0) return override;
-  // dist/cli.js → package root → resolve-helper/target/resolve-helper.jar.
-  return join(HERE, '..', 'resolve-helper', 'target', 'resolve-helper.jar');
+  if (override !== undefined && override.length > 0) return { path: override, cleanup() {} };
+  if (CRUCIBLE_EMBEDDED_HELPER_JAR.length === 0) {
+    return {
+      path: join(HERE, '..', 'resolve-helper', 'target', 'resolve-helper.jar'),
+      cleanup() {},
+    };
+  }
+
+  const bytes = Buffer.from(CRUCIBLE_EMBEDDED_HELPER_JAR, 'base64');
+  const actual = createHash('sha256').update(bytes).digest('hex');
+  if (actual !== CRUCIBLE_EMBEDDED_HELPER_SHA256) {
+    throw new WireError('embedded resolve-helper jar failed its sha256 self-check');
+  }
+  const scratch = mkdtempSync(join(tmpdir(), 'crucible-java-junit-'));
+  const path = join(scratch, 'resolve-helper.jar');
+  writeFileSync(path, bytes, { mode: 0o600 });
+  return {
+    path,
+    cleanup() {
+      rmSync(scratch, { recursive: true, force: true });
+    },
+  };
 }
 
 function parseVerb(argv: readonly string[]): Verb {
@@ -85,15 +118,23 @@ function resolveBuildTool(cwd: string): BuildTool {
 }
 
 function runOnMaven(verb: 'resolve' | 'run', cwd: string, targets: string[]) {
-  return verb === 'resolve'
-    ? resolveMaven({ cwd, targets, jarPath: helperJarPath() })
-    : runMaven({ cwd, targets });
+  if (verb === 'run') return runMaven({ cwd, targets });
+  const helper = materializeHelperJar();
+  try {
+    return resolveMaven({ cwd, targets, jarPath: helper.path });
+  } finally {
+    helper.cleanup();
+  }
 }
 
 function runOnGradle(verb: 'resolve' | 'run', cwd: string, targets: string[]) {
-  return verb === 'resolve'
-    ? resolveGradle({ cwd, targets, jarPath: helperJarPath() })
-    : runGradle({ cwd, targets });
+  if (verb === 'run') return runGradle({ cwd, targets });
+  const helper = materializeHelperJar();
+  try {
+    return resolveGradle({ cwd, targets, jarPath: helper.path });
+  } finally {
+    helper.cleanup();
+  }
 }
 
 try {
