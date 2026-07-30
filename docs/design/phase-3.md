@@ -48,3 +48,30 @@ Reads with: charter §First Reference Adapter, §Bindings & the Adapter Protocol
 ## §4 Deliberate non-scope
 
 `scope` verb (module-level diff mapping) — later; mutation via PIT — backlog A5, revisit during Phase 4 when critical-tier changes exist to justify it; Python/TS adapters — Category D.
+
+## §5 P3-10 amendment — Codex compatibility before packaging
+
+P3-10 is inserted after P3-05 and gates P3-06 without renumbering the existing
+adapter tasks. It does not change the frozen `AgentSubstrate` request/result
+shape or the adapter protocol.
+
+- `.crucible/settings.yaml` and `.crucible/local.yaml` accept
+  `agent.provider: codex | claude-code`. Local overrides team settings.
+  Missing provider configuration retains Claude Code for existing projects;
+  newly initialized settings explicitly select Codex.
+- One runtime resolver supplies propose, approve regeneration, amend, implement,
+  standalone review, verify-review, and why-review. Explicit
+  `models.<role>` remains opaque. Codex defaults to Sol/Terra/Sol for
+  propose/implement/review; Claude Code retains its prior defaults.
+- `CodexSubstrate` uses non-interactive JSONL, ephemeral sessions, ignored user
+  config, no approvals, and `workspace-write`. The normal Git check and project
+  instructions remain enabled. Shared subprocess, timeout, and transcript
+  behavior is provider-independent.
+- `AGENTS.md` is canonical. `CLAUDE.md` is a managed bridge. Init migrates an
+  old full Claude block in place, preserving human-authored bytes outside the
+  markers. Agent instructions, skills, and provider config paths join the
+  generated critical-risk globs.
+- The real tracer accepts `codex` or `claude-code` (legacy `1` means
+  Claude Code) and commits its scratch repository before starting a live role.
+- JVM integration suites use private source-only fixture copies; fixture-package
+  files that intentionally use declared shared conformance paths run serially.

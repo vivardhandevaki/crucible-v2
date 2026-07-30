@@ -1,5 +1,5 @@
 // CLI wiring for `crucible review` — binds the deterministic core (`review`) to
-// the real edges: the ClaudeCode substrate, the wall clock, git (diff
+// the real edges: the selected agent substrate, the wall clock, git (diff
 // endpoints), and model routing from the convenience config. The core stays
 // testable and reproducible (invariant 12); this file is the thin shim that
 // supplies live dependencies and maps the outcome to the exit code.
@@ -10,25 +10,18 @@
 // failures (no bundle, no role prompt, unusable rubric) throw `CrucibleError`
 // (exit 2/3) from the core.
 //
-// Model routing (design phase-2.md §5): `models.review` from the convenience
-// config; the default is a CHEAP model from a DIFFERENT family than the
-// implement default (claude-opus-4-8) — how `prefer_different_family` is
-// honored while model-family metadata is not otherwise resolvable (charter
-// §Learnings #2: reviewer cheap, ideally a different family). Convenience only
-// shapes the session (invariant 11); the verdict's model field is audit-grade.
+// Model routing is centralized in substrate/runtime.ts: provider defaults apply unless
+// convenience config supplies an opaque models.review override. This shapes only
+// the session (invariant 11); the verdict model field remains audit-grade.
 
 import { execFileSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 import type { Command } from 'commander';
+import { resolveAgentRuntime } from '../substrate/runtime.js';
 import { review } from './review.js';
 import { aggregate, renderReport } from '../verifyx/report.js';
-import { loadConvenienceConfig } from '../config/convenience.js';
-import { ClaudeCodeSubstrate } from '../substrate/claude-code.js';
 import { appendStateEvent } from '../state/state.js';
 import { CheckFailure, invalidInputError } from '../util/errors.js';
-
-/** Default review model: cheap + a different family than implement's default. */
-const DEFAULT_REVIEW_MODEL = 'claude-haiku-4-5-20251001';
 
 /** Register the real `review` subcommand on the program. */
 export function registerReview(program: Command): void {
@@ -51,7 +44,10 @@ export function registerReview(program: Command): void {
           base: opts.diffBase ?? mergeBase(root),
           head: gitHead(root),
         },
-        { substrate: new ClaudeCodeSubstrate(), now: () => new Date().toISOString() },
+        {
+          substrate: resolveAgentRuntime(root, 'review').substrate,
+          now: () => new Date().toISOString(),
+        },
       );
 
       // One check, one report — the same zod-guarded verdict surface every
@@ -95,7 +91,7 @@ export function registerReview(program: Command): void {
 /** Model routing: convenience `models.review`, else the cheap different-family
  * default (invariant 11 — convenience shapes a session, never enforcement). */
 export function reviewModel(root: string): string {
-  return loadConvenienceConfig(root).models['review'] ?? DEFAULT_REVIEW_MODEL;
+  return resolveAgentRuntime(root, 'review').model;
 }
 
 /** The default diff base: merge-base of HEAD and origin/HEAD. Uncomputable → exit 3. */

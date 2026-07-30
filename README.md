@@ -1,43 +1,68 @@
-# Crucible V2 — Build Bundle
+# Crucible V2
 
-Everything needed to start building Crucible V2 with Claude Code. Drop the contents of this bundle into the root of a fresh git repo.
+Crucible is a framework for AI-driven software development where humans approve intent artifacts (specifications and executable oracles), while deterministic machinery verifies that the implementation honors them.
 
-## Contents
+The framework and this repository support both OpenAI Codex and Claude Code.
 
+## Repository guide
+
+- `AGENTS.md`: canonical build constitution for every coding agent.
+- `CLAUDE.md`: compatibility bridge directing Claude Code to `AGENTS.md`.
+- `PHASES.md`: high-level milestone ledger.
+- `docs/charter.md`: founding architecture and source of truth.
+- `docs/design/`: stable contracts, phase designs, and the real-substrate runbook.
+- `docs/tasks/`: test-first, model-tiered work orders.
+- `core/`: deterministic workflow engine and agent substrates.
+- `adapters/`: standalone JSON-over-stdin/stdout test adapters.
+- `schemas/`, `fixtures/`, `ci-templates/`: shipped workflow assets and executable proofs.
+
+Phase 1 and Phase 2 are complete. Phase 3 is complete through P3-05 and P3-10; P3-06 is next.
+
+## Agent prerequisites
+
+For Codex:
+
+```sh
+codex --version
 ```
-CLAUDE.md                     Build constitution: invariants, session rules, settled decisions.
-                              Loaded automatically by Claude Code every session.
-PHASES.md                     High-level phase ledger with exit criteria and status.
-docs/charter.md               The founding document: full V2 architecture, mechanics, specs,
-                              worked examples, V1 comparison, backlog. Source of truth.
-docs/design/architecture.md   Cross-phase stable contracts (module map, exit codes, error
-                              taxonomy, interface freeze points). The meta-build's TCB doc.
-docs/design/phase-0-1.md      Phase 0 (spike/scaffold) + Phase 1 (tracer bullet) design.
-docs/design/phase-2.md        Phase 2 design — DRAFT (gated by re-ratification task P2-00).
-docs/design/phase-3.md        Phase 3 design — DRAFT (gated by P3-00).
-docs/design/phase-4-runbook.md  Phase 4 operating guide (kickoff, instrumentation, JIT backlog).
-docs/tasks/phase-0-1.md       Fine-grained, test-first, tier-tagged work orders (P0-01..P1-16).
-docs/tasks/phase-2.md         Phase 2 work orders — DRAFT (P2-00 gate first).
-docs/tasks/phase-3.md         Phase 3 work orders — DRAFT (P3-00 gate first).
+
+Authenticate Codex before running a live Crucible command. New `crucible init` projects select Codex by default.
+
+For Claude Code:
+
+```sh
+claude --version
 ```
 
-Phase 2/3 docs are provisional by design: each phase opens with a mandatory Fable-tier re-ratification session (P2-00 / P3-00) that reviews the draft against the as-built prior phase and resolves its dependency markers before any draft task executes (tracer-bullet rule, see PHASES.md).
+Authenticate Claude Code before selecting it. Existing Crucible projects with no explicit provider retain the Claude Code default.
 
-## Starting the first session
+Select the provider in team settings or override it locally:
 
-1. `git init`, commit this bundle, open Claude Code in the repo.
-2. Set the model per the task's tier tag (P0-01 is Fable-tier).
-3. First prompt, roughly:
+```yaml
+# .crucible/settings.yaml or .crucible/local.yaml
+agent:
+  provider: codex # codex | claude-code
 
-   > Read CLAUDE.md, then docs/tasks/phase-0-1.md task P0-01 and everything in its Reads field. Restate the task's requirements and your plan, then wait for my approval before executing.
+models:
+  propose: optional-provider-model
+  implement: optional-provider-model
+  review: optional-provider-model
+```
 
-4. Approve the plan (you review artifacts, not code), let it execute, check acceptance criteria, commit.
-5. Repeat per task. `/clear` between tasks — continuity lives in these docs, not in conversation history.
+An explicit role model is opaque to Crucible and overrides that provider's built-in default.
 
-## Working rules (short version — full version in CLAUDE.md)
+## Working with an agent
 
-- Test-first: acceptance tests exist and fail before implementation code.
-- Done = the task's named tests pass, never an agent's claim.
-- Amendment discipline: docs and code change in the same commit when reality disagrees with a design.
-- Commit at every green step.
-- Fable for judgment-dense tasks, Opus for well-specified implementation — tags are in the tasks file.
+Start Codex, Claude Code, or another coding agent in the repository and ask it to read `AGENTS.md`, the current task, and every file named by the task's `Reads:` field. The canonical workflow is:
+
+1. Restate the requirements and plan.
+2. Write the task's acceptance tests first.
+3. Implement until the named deterministic checks pass.
+4. Update design documentation in the same change when implementation reveals a contract amendment.
+
+Task recommendations are paired by role:
+
+- Fable / Sol: design-heavy or judgment-heavy work.
+- Opus / Terra: well-specified implementation work.
+
+The full rules and invariants live in `AGENTS.md`. Conversation history is convenience; durable continuity lives in the repository.

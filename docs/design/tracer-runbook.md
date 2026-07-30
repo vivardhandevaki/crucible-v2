@@ -1,109 +1,84 @@
-# Tracer runbook — real-substrate mode (P1-16, P2-17)
+# Tracer runbook - real-substrate mode (P1-16, P2-17, P3-10)
 
-The tracer (`core/test/tracer.test.ts`) is the P1 exit criterion: propose →
-approve → implement → verify on `fixtures/toy-repo`. CI runs it with the
-FakeSubstrate — agent sessions are scripted, everything else (adapter client,
-stub adapter, seal, verify) is real.
+The tracer (`core/test/tracer.test.ts`) drives propose -> approve -> implement -> verify on `fixtures/toy-repo`. CI uses `FakeSubstrate`; real mode manually validates the same role prompts and frozen substrate contract with either OpenAI Codex or Claude Code.
 
-This runbook covers the **real-substrate mode** (design phase-0-1.md §10): the
-same flow with live Claude Code sessions, run manually to validate that the
-`ClaudeCodeSubstrate` and the P1 role prompts actually drive a real agent
-through the loop. It is never run in CI: it costs real tokens, needs network +
-an authenticated `claude`, and a red run is *signal about the prompts or the
-substrate*, not a build failure.
+Real runs cost tokens, require network access and authentication, and are never a CI gate. A red result is evidence about the provider invocation or prompts, not a reason to rerun until green.
 
 ## Prerequisites
 
-- Claude Code installed and authenticated (`claude --version` works).
-- The monorepo built (`npm run build` from the root) — the tracer spawns the
-  stub adapter from `adapters/stub/dist/`.
+Build the monorepo first:
+
+```sh
+npm run build
+```
+
+For Codex:
+
+```sh
+codex --version
+```
+
+For Claude Code:
+
+```sh
+claude --version
+```
+
+The selected CLI must already be authenticated.
 
 ## Run
 
-From the repo root:
+Codex (default real model: `gpt-5.6-sol`):
 
 ```sh
-CRUCIBLE_REAL_SUBSTRATE=1 npx vitest run core/test/tracer.test.ts
+CRUCIBLE_REAL_SUBSTRATE=codex npx vitest run core/test/tracer.test.ts
 ```
 
-Optionally pin the session model (defaults to `claude-opus-4-8`):
+Claude Code (default real model: `claude-opus-4-8`):
 
 ```sh
-CRUCIBLE_REAL_SUBSTRATE=1 CRUCIBLE_REAL_MODEL=claude-fable-5 npx vitest run core/test/tracer.test.ts
+CRUCIBLE_REAL_SUBSTRATE=claude-code npx vitest run core/test/tracer.test.ts
 ```
 
-The FakeSubstrate suite is skipped in this mode; the single real-mode test runs
-the whole flow with a generous timeout (30 min).
+Legacy `CRUCIBLE_REAL_SUBSTRATE=1` remains an alias for Claude Code. Override either provider's model with `CRUCIBLE_REAL_MODEL`.
+
+The FakeSubstrate cases are skipped in real mode. The live flow has a 30-minute test timeout.
 
 ## What happens
 
-1. A scratch copy of `fixtures/toy-repo` is made under the system tmpdir; its
-   path is printed at the start of the run and **kept after the run** (real
-   mode skips cleanup) so transcripts and artifacts can be inspected.
-2. `propose` runs a live session from the checked-in intent + the toy repo's
-   `.crucible/context/propose.md` role prompt; the authored bundle is judged by
-   the real parsers + traceability lint (real stub-adapter resolve).
-3. `approve --yes` seals the bundle (real hash scope from the real resolve).
-4. `implement` runs two live sessions (tasks breakdown, then code), then a real
-   local verify.
-5. Standalone `verify` renders the final verdict.
+1. The test copies `fixtures/toy-repo` to a temporary directory, initializes Git, and commits a baseline. Codex therefore runs with its normal repository check enabled.
+2. The selected substrate runs a fresh propose session with `.crucible/context/propose.md`; Crucible judges the authored bundle through the real parsers, lint, and stub-adapter resolve.
+3. `approve --yes` seals the bundle.
+4. Two fresh implement sessions create `tasks.md` and implement the change; local verify runs through the real adapter client.
+5. Standalone verify renders the final deterministic verdict.
 
-## Interpreting the outcome
+The scratch repository is printed and retained for inspection. Remove it manually when finished.
 
-- **Green** — the substrate contract and the P1 role prompts hold end-to-end.
-- **Red at propose** — the live agent's bundle failed the parsers or the lint:
-  role-prompt drift against the artifact grammar. Read the propose transcript
-  under `<scratch>/.crucible/transcripts/add-greeting/`.
-- **Red at implement/verify** — check which check is red in the report: an
-  `approval` red means the session edited a sealed file (the seal working as
-  designed); an `oracles` red means the declared toy tests don't pass as bound.
-- **`SUBSTRATE_UNAVAILABLE` (exit 3)** — `claude` is missing or the role prompt
-  is unreadable; nothing ran.
+## Transcript and failure behavior
 
-Live sessions are nondeterministic — an occasional red is data, not flake to
-rerun until green. If the *contract* (not the prompts) misbehaves, record it as
-a spike-notes addendum (the P1-08 idiom) and fix before relying on the
-substrate in later phases.
+Crucible stores provider stdout verbatim under `.crucible/transcripts/<change>/`:
 
-Clean up inspected scratch dirs manually (`rm -rf /tmp/crucible-tracer-*`).
+- Codex transcripts are Codex `exec --json` JSONL.
+- Claude Code transcripts are `stream-json` JSONL.
 
-## Worked examples (P2-17)
+A started process always returns its exit code and preserves any partial transcript, including timeouts and non-zero exits. Only an unreadable role prompt or an unspawnable binary throws `SUBSTRATE_UNAVAILABLE` with exit 3.
 
-The worked-examples suite (`core/test/worked-examples.test.ts`) is the **Phase 2
-exit-criterion anchor**: one integration test per charter §Worked Examples flow —
-standard feature (routes auto), pure refactor (correctness = the regression
-suite), and the critical path (escalate halts implement, `amend` resolves it,
-routing → human) with its follow-up `bugfix` (red-on-base / green-on-fix on a
-real `git worktree`). Like the tracer, CI runs it with the FakeSubstrate: only
-the agent sessions are scripted; the adapter client, stub adapter, seal, lint,
-tier/routing computation, the fail-closed verdict evaluator, and the worktree run
-are all real.
+Read the transcript when propose or implement is red. The agent process exit status is never treated as proof of success; only the required artifacts and deterministic checks count.
 
-These three flows are **skipped under `CRUCIBLE_REAL_SUBSTRATE=1`** (the same
-`describe.skipIf` guard the tracer uses). That is deliberate: their shared
-`propose → approve → implement → verify` spine is *already* what the tracer
-exercises against live Claude Code sessions above, so re-running each example
-live would only re-pay tokens for the same spine. Real-substrate validation is
-therefore layered:
+## P2-only manual surfaces
 
-1. **The spine** — validated live by the tracer run at the top of this runbook.
-2. **The P2-only surfaces** (`escalate`, `amend`, `review`, `override`) — driven
-   manually against a kept tracer scratch, since they are thin commands over the
-   same substrate contract the tracer already proves. On the scratch repo printed
-   by a real tracer run (kept after the run):
+After a retained real tracer run, the same selected provider can exercise the P2 command surfaces:
 
-   ```sh
-   cd <scratch>                       # the printed crucible-tracer-* dir
-   crucible escalate add-greeting \
-     --question "…" --option "(a) …" --option "(b) …"   # writes escalation.yaml
-   crucible implement add-greeting     # refuses: exit 2, names `crucible amend`
-   crucible amend add-greeting "(a) …" # live regen via the propose role, re-seals
-   crucible review add-greeting --base origin/main       # live adversarial verdict
-   ```
+```sh
+cd <scratch>
+crucible escalate add-greeting --question "..." --option "(a) ..." --option "(b) ..."
+crucible implement add-greeting
+crucible amend add-greeting "(a) ..."
+crucible review add-greeting --base origin/main
+```
 
-   A green `amend` clears the escalation and `implement` resumes; a `review` run
-   writes a verdict under `.crucible/verdicts/add-greeting/` that `verify
-   --review` then consumes. Nondeterminism is data, not flake (same rule as the
-   spine): a red is signal about the P2 role prompts or the verdict shape.
+A successful amend clears the escalation and reseals the bundle. Review writes a verdict under `.crucible/verdicts/add-greeting/`, consumed by `verify --review`.
 
-Clean up inspected scratch dirs manually (`rm -rf /tmp/crucible-worked-*`).
+## Future agent shortcut
+
+A future milestone may ship a provider-neutral `$crucible` repository skill under `.agents/skills/crucible/`. P3-10 deliberately does not install a Codex skill or slash-command shortcut; agents drive the CLI using the managed `AGENTS.md` instructions.

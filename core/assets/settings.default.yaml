@@ -1,17 +1,20 @@
 # Team convenience config (committed) — charter §Three Config Layers.
 #
-# NEVER read by any enforcement path: only model routing (`models:`) and team
+# NEVER read by any enforcement path: only provider selection (`agent:`), model routing (`models:`), and team
 # notify channels (`notify:`) live here. Convenience never enforces, so nothing
 # in this file can change what merges. Personal overrides go in the gitignored
 # `.crucible/local.yaml`, which deep-merges over this file.
-models:
-  # Per-role model routing. Omit a role to use Crucible's built-in default.
-  # propose: claude-opus-4-8
-  # implement: claude-opus-4-8
-  # review: claude-haiku-4-5-20251001   # cheap, different family (charter §Learnings #2)
-  {}
-notify:
-  # Team notify channels (terminal is always on). Examples:
-  # slack: "#your-channel"
-  # webhook: "https://example.com/hook"
-  {}
+agent:
+  # New projects use Codex. Existing projects without this block retain Claude Code.
+  provider: codex
+
+# Per-role model routing for the selected provider. Omit a role to use Crucible's
+# built-in default. Codex defaults: Sol/Terra/Sol. Claude Code keeps its legacy
+# Opus/Opus/Haiku defaults. Explicit values are opaque provider model IDs.
+models: {}
+
+# Team notify channels (terminal is always on). Examples:
+# notify:
+#   slack: "#your-channel"
+#   webhook: "https://example.com/hook"
+notify: {}

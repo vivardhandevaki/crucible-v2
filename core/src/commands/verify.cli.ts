@@ -27,11 +27,11 @@
 
 import { join } from 'node:path';
 import type { Command } from 'commander';
+import { resolveAgentRuntime } from '../substrate/runtime.js';
 import { verify, type VerifyDeps } from './verify.js';
 import { computeDiffFacts, defaultBase } from './diff-facts.js';
 import { review } from './review.js';
 import { gitHead, reviewModel } from './review.cli.js';
-import { ClaudeCodeSubstrate } from '../substrate/claude-code.js';
 import { liveWorktreeGit, runReproductionOnBase } from '../reproduction/reproduction.js';
 import { renderReport } from '../verifyx/report.js';
 import {
@@ -149,7 +149,10 @@ function liveDeps(
                 base: diffBase ?? defaultBase(root),
                 head: gitHead(root),
               },
-              { substrate: new ClaudeCodeSubstrate(), now: () => new Date().toISOString() },
+              {
+                substrate: resolveAgentRuntime(root, 'review').substrate,
+                now: () => new Date().toISOString(),
+              },
             ),
         }
       : {}),

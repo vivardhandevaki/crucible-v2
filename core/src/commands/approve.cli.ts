@@ -19,6 +19,7 @@
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import type { Command } from 'commander';
+import { resolveAgentRuntime } from '../substrate/runtime.js';
 import {
   approve,
   type ApproveDeps,
@@ -28,18 +29,15 @@ import {
   type WalkContext,
 } from './approve.js';
 import { computeDiffFacts } from './diff-facts.js';
-import { loadConvenienceConfig } from '../config/convenience.js';
 import {
   loadEnforcementConfig,
   resolveEnforcementRoot,
   type EnforcementConfig,
 } from '../config/enforcement.js';
-import { ClaudeCodeSubstrate } from '../substrate/claude-code.js';
 import type { ResolveFn } from '../lint/traceability.js';
 import { preconditionError } from '../util/errors.js';
 
 /** Model used when convenience config routes nothing to `models.propose`. */
-const DEFAULT_PROPOSE_MODEL = 'claude-opus-4-8';
 
 /** Register the real `approve` subcommand on the program. */
 export function registerApprove(program: Command): void {
@@ -97,7 +95,7 @@ export function registerApprove(program: Command): void {
 
 /** Model routing: convenience `models.propose`, else the default (invariant 11). */
 function proposeModel(root: string): string {
-  return loadConvenienceConfig(root).models['propose'] ?? DEFAULT_PROPOSE_MODEL;
+  return resolveAgentRuntime(root, 'propose').model;
 }
 
 /** The live dependencies for a real approve invocation. */
@@ -108,7 +106,7 @@ function liveDeps(root: string, diffBase: string | undefined): ApproveDeps {
     now: () => new Date().toISOString(),
     approvedBy: () => process.env.GIT_AUTHOR_EMAIL ?? process.env.USER ?? 'unknown',
     diffFacts: () => computeDiffFacts(root, diffBase),
-    substrate: new ClaudeCodeSubstrate(),
+    substrate: resolveAgentRuntime(root, 'propose').substrate,
     pager: pageThrough,
     walk: promptWalk,
     openEditor: openInEditor,

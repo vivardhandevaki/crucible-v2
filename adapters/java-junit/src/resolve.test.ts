@@ -13,11 +13,11 @@
 // (the same decline-when-no-JDK posture the adapter itself takes).
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   GRADLE_BASIC_DIR,
@@ -32,14 +32,10 @@ const WORKSPACE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const RESOLVE_HELPER_DIR = join(WORKSPACE_ROOT, 'resolve-helper');
 const JAR_PATH = join(RESOLVE_HELPER_DIR, 'target', 'resolve-helper.jar');
 
-const MAVEN_CP = [
-  join(MAVEN_BASIC_DIR, 'target', 'classes'),
-  join(MAVEN_BASIC_DIR, 'target', 'test-classes'),
-];
-const GRADLE_CP = [
-  join(GRADLE_BASIC_DIR, 'build', 'classes', 'java', 'main'),
-  join(GRADLE_BASIC_DIR, 'build', 'classes', 'java', 'test'),
-];
+let mavenFixture: string;
+let gradleFixture: string;
+let MAVEN_CP: string[];
+let GRADLE_CP: string[];
 
 function hasTool(cmd: string, versionArg: string): boolean {
   return spawnSync(cmd, [versionArg], { encoding: 'utf8' }).status === 0;
@@ -60,14 +56,36 @@ function runOrThrow(cmd: string, args: string[], cwd: string): void {
 
 beforeAll(() => {
   if (!HAS_MVN) return;
-  // Build the jar under test (always fresh — it is the code under test) and
-  // compile the fixtures' classes (incremental / up-to-date-fast).
-  runOrThrow('mvn', ['-q', 'package'], RESOLVE_HELPER_DIR);
-  runOrThrow('mvn', ['-q', 'test-compile'], MAVEN_BASIC_DIR);
+  mavenFixture = mkdtempSync(join(tmpdir(), 'crucible-resolve-maven-'));
+  cpSync(join(MAVEN_BASIC_DIR, 'pom.xml'), join(mavenFixture, 'pom.xml'));
+  cpSync(join(MAVEN_BASIC_DIR, 'src'), join(mavenFixture, 'src'), { recursive: true });
+  MAVEN_CP = [
+    join(mavenFixture, 'target', 'classes'),
+    join(mavenFixture, 'target', 'test-classes'),
+  ];
   if (HAS_GRADLE) {
-    runOrThrow('gradle', ['-q', 'testClasses', '--console=plain'], GRADLE_BASIC_DIR);
+    gradleFixture = mkdtempSync(join(tmpdir(), 'crucible-resolve-gradle-'));
+    for (const entry of ['build.gradle', 'settings.gradle', 'src']) {
+      cpSync(join(GRADLE_BASIC_DIR, entry), join(gradleFixture, entry), { recursive: true });
+    }
+    GRADLE_CP = [
+      join(gradleFixture, 'build', 'classes', 'java', 'main'),
+      join(gradleFixture, 'build', 'classes', 'java', 'test'),
+    ];
+  }
+
+  // Build the helper itself, then compile only the private source copies.
+  runOrThrow('mvn', ['-q', 'package'], RESOLVE_HELPER_DIR);
+  runOrThrow('mvn', ['-q', 'test-compile'], mavenFixture);
+  if (HAS_GRADLE) {
+    runOrThrow('gradle', ['-q', 'testClasses', '--console=plain'], gradleFixture);
   }
 }, 300_000);
+
+afterAll(() => {
+  if (mavenFixture) rmSync(mavenFixture, { recursive: true, force: true });
+  if (gradleFixture) rmSync(gradleFixture, { recursive: true, force: true });
+});
 
 function classificationByTarget(classpath: string[], manifest: ConformanceTargetsManifest) {
   const results = invokeResolve({
@@ -128,7 +146,7 @@ describe.skipIf(!HAS_MVN)('resolve helper — maven-basic', () => {
       runOrThrow(
         'mvn',
         ['-q', '-Dtest=CanaryTest', `-Dcrucible.canary.dir=${dir}`, 'test'],
-        MAVEN_BASIC_DIR,
+        mavenFixture,
       );
       expect(existsSync(marker), 'executing the canary must write the marker').toBe(true);
     } finally {

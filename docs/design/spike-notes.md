@@ -142,3 +142,33 @@ out of scope for an interface-verification spike (and blocked by the local
 sandbox). The flag acceptance, stream-json framing, transcript capture, exit-code
 return, and the returned-vs-thrown boundary are covered hermetically by
 `claude-code.test.ts` with an injected spawn.
+
+## P3-10 addendum - CodexSubstrate verified against installed Codex (2026-07-30)
+
+`CodexSubstrate` (`core/src/substrate/codex.ts`) was checked against installed
+**codex-cli 0.145.0** using local `codex --help` and `codex exec --help`.
+The accepted non-interactive shape is:
+
+```sh
+codex --ask-for-approval never exec --json --ephemeral \
+  --ignore-user-config --sandbox workspace-write --color never \
+  --model <model> --cd <cwd> \
+  -c 'developer_instructions="<escaped-role-prompt>"' -
+# taskPayload is fed on stdin
+```
+
+The implementation deliberately keeps the normal Git-repository check, project
+instructions, and workspace sandbox. It does not use `--skip-git-repo-check`,
+`--ignore-rules`, danger-full-access, or a persistent session. Ignoring user
+config prevents user MCP servers, hooks, profiles, and unrelated model settings
+from changing the command-invoked role; authentication remains available.
+
+`--json` emits JSONL on stdout, which Crucible preserves verbatim. Role prompt
+content is JSON-quoted as a TOML-compatible `developer_instructions` override,
+so newlines and quotes cannot become extra argv or config entries. Hermetic tests
+cover exact argv, stdin, cwd/model/timeout forwarding, transcript capture,
+non-zero and timeout returns, unreadable prompts, and missing binaries.
+
+**Not exercised live in this addendum:** a token-spending authoring run. The
+real-substrate runbook provides `CRUCIBLE_REAL_SUBSTRATE=codex` for that manual
+verification.

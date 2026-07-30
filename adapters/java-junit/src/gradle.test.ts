@@ -31,9 +31,21 @@ const FAIL = 'com.crucible.conformance.CalculatorTest#failsOnPurpose';
 const SKIP = 'com.crucible.conformance.CalculatorTest#skippedFeature';
 const MISSING = 'com.crucible.conformance.CalculatorTest#doesNotExist';
 
+let happy: string;
+beforeAll(() => {
+  if (!HAS_GRADLE) return;
+  happy = mkdtempSync(join(tmpdir(), 'crucible-gradle-happy-'));
+  for (const entry of ['build.gradle', 'settings.gradle', 'src']) {
+    cpSync(join(GRADLE_BASIC_DIR, entry), join(happy, entry), { recursive: true });
+  }
+});
+afterAll(() => {
+  if (happy) rmSync(happy, { recursive: true, force: true });
+});
+
 describe.skipIf(!HAS_GRADLE)('runGradle — happy path', () => {
   it('normalizes pass/fail/skip and reports a not-found target as error', () => {
-    const results = runGradle({ cwd: GRADLE_BASIC_DIR, targets: [ADD, FAIL, SKIP, MISSING] });
+    const results = runGradle({ cwd: happy, targets: [ADD, FAIL, SKIP, MISSING] });
     expect(results.map((r) => r.status)).toEqual(['pass', 'fail', 'skip', 'error']);
     // Order is preserved and each requested target is answered exactly once.
     expect(results.map((r) => r.target)).toEqual([ADD, FAIL, SKIP, MISSING]);

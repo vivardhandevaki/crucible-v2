@@ -60,6 +60,10 @@ describe('init — fresh repo → complete working setup', () => {
     expect(cy).toContain('unit: "npm test"');
     expect(cy).toContain('require_local_verify: true');
     expect(cy).toContain('"crucible.yaml"'); // the self-governing risk glob
+    for (const glob of ['AGENTS.md', 'CLAUDE.md', '.agents/**', '.codex/**', '.claude/**']) {
+      expect(cy).toContain(`"${glob}"`);
+    }
+    expect(read(join('.crucible', 'settings.yaml'))).toContain('provider: codex');
 
     // Convenience + rubric + role prompts (the .crucible TCB).
     expect(read(join('.crucible', 'settings.yaml'))).toContain('models:');
@@ -79,11 +83,11 @@ describe('init — fresh repo → complete working setup', () => {
       readFileSync(CI_TEMPLATE_PATH, 'utf8'),
     );
 
-    // Managed agent block in CLAUDE.md and AGENTS.md.
-    for (const file of MANAGED_BLOCK_FILES) {
-      expect(read(file)).toContain('crucible:managed');
-      expect(read(file)).toContain('crucible propose');
-    }
+    // AGENTS.md is canonical; CLAUDE.md is a compatibility bridge.
+    for (const file of MANAGED_BLOCK_FILES) expect(read(file)).toContain('crucible:managed');
+    expect(read('AGENTS.md')).toContain('crucible propose');
+    expect(read('CLAUDE.md')).toContain('Read and follow AGENTS.md');
+    expect(read('CLAUDE.md')).not.toContain('crucible propose');
 
     // gitignore entries.
     const gi = read('.gitignore');
@@ -158,6 +162,7 @@ describe('init — additive surfaces (gitignore, managed block)', () => {
     expect(kindOf(report, 'CLAUDE.md')).toBe('updated');
     const claude = read('CLAUDE.md');
     expect(claude).toContain('# My project notes'); // human content survives
+    expect(claude).toContain('Read and follow AGENTS.md');
     expect(claude).toContain('crucible:managed');
   });
 

@@ -91,7 +91,7 @@ V2 is a **layer over OpenSpec's artifact format** (specs/ as current truth, chan
 | 5 | **`crucible override` (honest escape hatch)** | Works instantly at 2am, but is *loud*: writes an override artifact, forces human PR review, auto-files a ratchet issue that stays open until a retroactive proposal lands. | Replaces "theoretically impossible to bypass" (which gets forked silently) with "visible and self-repairing." Visibility is a stronger enforcement mechanism than prohibition |
 | 6 | **`verify --watch`** | Scoped to affected oracles; sub-second where possible. Local loop feels like TDD red-green. | If local verify is slow, nobody runs it and CI becomes the first place failures appear — the slowest possible feedback loop |
 | 7 | **Progressive adoption + brownfield `init`** | `init` detects the stack, writes risk-routing defaults + CI workflow; only governs paths touched by new changes. Adoption in layers: propose/approve → oracles + traceability → CI enforcement → routing. | Each layer is independently valuable; the framework never demands faith up front. Full guarantees apply once fully adopted — partial adoption is honest about being partial |
-| 8 | **Meet developers where they are** | Slash commands for Claude Code / Cursor / etc. (OpenSpec's existing surface) driving the CLI; CLI remains the substrate of record. Plus `crucible why <failure>`: trace any red check to the exact oracle, rubric line, or rule that fired. | Transparency makes people trust a gate instead of resenting it; the CLI-as-substrate keeps chat agents unable to bypass anything |
+| 8 | **Meet developers where they are** | Agent workflows for OpenAI Codex, Claude Code, Cursor, etc. (OpenSpec's existing surface) driving the CLI; CLI remains the substrate of record. Plus `crucible why <failure>`: trace any red check to the exact oracle, rubric line, or rule that fired. | Transparency makes people trust a gate instead of resenting it; the CLI-as-substrate keeps chat agents unable to bypass anything |
 
 ## Modifications from V1
 
@@ -264,7 +264,7 @@ The Crucible schema bundle ships change *types*, each with its own artifact sequ
 ## Static Context Surfaces
 
 - **Command-invoked agents** (propose / implement / review): role prompts live in `.crucible/context/` — versioned files loaded by the CLI at invocation. TCB: hash-covered, immutable to the implement agent.
-- **Interactive agents** (Claude Code, Cursor, etc.): `init` writes a managed block into CLAUDE.md / AGENTS.md (via OpenSpec's regeneration mechanism) teaching the conversational agent to *drive the CLI* rather than freelance — even chat work funnels into the same commands and preconditions.
+- **Interactive agents** (OpenAI Codex, Claude Code, Cursor, etc.): `init` writes the canonical managed workflow block into `AGENTS.md` and a small compatibility bridge into `CLAUDE.md`. Both direct conversational agents to drive the CLI rather than freelance. A future provider-neutral `$crucible` skill may live under `.agents/skills/`; P3-10 intentionally ships no agent-specific shortcut.
 
 ## Notify Hooks
 
@@ -409,8 +409,8 @@ Realistic build estimate: a few days — thin CLI wrapper (any language) + Launc
 | File | Contains | Committed? | Protection |
 |---|---|---|---|
 | `crucible.yaml` | **Enforcement only:** risk globs, tiers, adapters, suites, trajectory, audit | Yes | Risk-globbed critical + **target-branch evaluation** |
-| `.crucible/settings.yaml` | Team convenience: `models:` routing, team notify channels | Yes | Normal change flow; *not* in risk globs |
-| `.crucible/local.yaml` | Personal: your notify hooks, local model prefs | No (gitignored) | None needed — can't affect anyone |
+| `.crucible/settings.yaml` | Team convenience: `agent.provider`, `models:` routing, team notify channels | Yes | Normal change flow; *not* in risk globs |
+| `.crucible/local.yaml` | Personal: provider/model overrides and notify hooks | No (gitignored) | None needed — can't affect anyone |
 
 **Boundary test (mechanical):** if editing it could change what merges, it goes in crucible.yaml; otherwise it can't go there. This is why one combined file failed: globs match files, not sections — a combined file would route a Slack-webhook edit to critical-tier human review (disproportionate ceremony), and personal settings don't belong in commits at all.
 
@@ -425,6 +425,11 @@ risk:
     - "**/pom.xml"             # dependency changes
     - "**/build.gradle*"
     - ".github/workflows/**"   # CI is TCB
+    - "AGENTS.md"               # canonical agent instructions
+    - "CLAUDE.md"               # compatibility bridge
+    - ".agents/**"              # shared agent skills/instructions
+    - ".codex/**"               # Codex project configuration
+    - ".claude/**"              # Claude Code project configuration
     - ".crucible/**"           # harness is TCB (settings.yaml carved out below)
     - "openspec/schemas/**"    # workflow definition is TCB
     - "crucible.yaml"          # this file governs itself
@@ -619,8 +624,8 @@ Your commands are `propose → approve → implement`, plus `amend` when reality
 
 ## Foundational build decisions
 
-- **Agent execution substrate:** headless Claude Code (`claude -p`) invoked by the CLI with Crucible's role prompts from `.crucible/context/` — inheriting mature tool execution, permissioning, and session logs (which trajectory checks consume). Isolated behind one internal interface so pluggable substrates later are a refactor, not a rewrite.
-- **Two entry surfaces, one engine:** the CLI is the substrate of record; `/crucible:*` slash commands (installed by `init`, same mechanism as `/opsx:*`) are thin wrappers that drive it. The interactive session's agent never authors artifacts itself — it *distills* the conversation's decided intent and passes it to `crucible propose`, which spawns the fresh-context author (statelessness preserved; exploration context harvested, not leaked). `approve` is a human act on every surface: slash commands may render the bundle in-session, but the confirmation writing approval.yaml is the human's.
+- **Agent execution substrates:** OpenAI Codex and Claude Code are invoked headlessly with Crucible role prompts from `.crucible/context/`. Provider-specific command lines are isolated behind the frozen `AgentSubstrate` interface; one runtime resolver selects provider and role model from convenience config. New projects select Codex; missing provider config preserves the legacy Claude Code behavior.
+- **Agent entry surfaces, one engine:** the CLI is always the substrate of record. Optional editor, slash-command, or future skill wrappers only drive it. Interactive agents distill decided intent into `crucible propose`; command-invoked roles start fresh. `approve` remains a human act on every surface.
 - **Implementation language:** TypeScript/Node — same ecosystem as OpenSpec, npm-ready later, appropriate for an orchestration-heavy/compute-light tool.
 - **Repo layout:** monorepo — `core/`, `schemas/`, `adapters/stub/`, `adapters/java-junit/`, `fixtures/`, `ci-templates/` — so the protocol and its consumers version together while fluid.
 - **Framework before adapter**, via a **stub adapter**: a trivial executable implementing `resolve`/`run` over a toy fixture repo (≈1 day; doubles as the conformance-suite seed). `java-junit` is built only after the protocol survives contact with the core.

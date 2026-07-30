@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import {
   appendFileSync,
   cpSync,
@@ -27,6 +28,7 @@ import { implement } from '../src/commands/implement.js';
 import { propose } from '../src/commands/propose.js';
 import { verify } from '../src/commands/verify.js';
 import { ClaudeCodeSubstrate } from '../src/substrate/claude-code.js';
+import { CodexSubstrate } from '../src/substrate/codex.js';
 import { FakeSubstrate } from '../src/substrate/fake.js';
 import type { AgentSubstrate } from '../src/substrate/types.js';
 
@@ -48,9 +50,9 @@ import type { AgentSubstrate } from '../src/substrate/types.js';
 //   2. skipped oracle test        → red, with `=skip` provenance     (inv. 4)
 //   3. REQ without oracle         → propose-stage red judgment       (inv. 2)
 //
-// A real-substrate mode (design §10) reuses the same flow with live Claude Code
-// sessions for manual validation — see docs/design/tracer-runbook.md. CI runs
-// the FakeSubstrate variant only.
+// A real-substrate mode (design §10) reuses the same flow with the selected live
+// Codex or Claude Code provider for manual validation — see the tracer runbook.
+// CI runs the FakeSubstrate variant only.
 
 const CHANGE = 'add-greeting';
 const CHANGE_REL = join('openspec', 'changes', CHANGE);
@@ -64,8 +66,11 @@ const MODEL = 'claude-opus-4-8';
 const APPROVER = 'ada@example.com';
 
 /** Real-substrate mode (manual, never CI) — docs/design/tracer-runbook.md. */
-const REAL = process.env['CRUCIBLE_REAL_SUBSTRATE'] === '1';
-const REAL_MODEL = process.env['CRUCIBLE_REAL_MODEL'] ?? MODEL;
+const REAL_SELECTOR = process.env['CRUCIBLE_REAL_SUBSTRATE'];
+const REAL = ['1', 'claude-code', 'codex'].includes(REAL_SELECTOR ?? '');
+const REAL_PROVIDER = REAL_SELECTOR === 'codex' ? 'codex' : 'claude-code';
+const REAL_MODEL =
+  process.env['CRUCIBLE_REAL_MODEL'] ?? (REAL_PROVIDER === 'codex' ? 'gpt-5.6-sol' : MODEL);
 
 const manifest = loadManifest(STUB_ADAPTER_MANIFEST_PATH);
 
@@ -124,6 +129,25 @@ beforeEach(() => {
   cpSync(TOY_REPO_ROOT, scratch, { recursive: true });
   // propose authors the bundle itself: start from a repo without one.
   rmSync(join(scratch, CHANGE_REL), { recursive: true });
+  if (REAL) {
+    const commands = [
+      ['init', '-q'],
+      ['add', '.'],
+      [
+        '-c',
+        'user.name=Crucible Tracer',
+        '-c',
+        'user.email=tracer@example.com',
+        'commit',
+        '-qm',
+        'tracer baseline',
+      ],
+    ];
+    for (const args of commands) {
+      const result = spawnSync('git', args, { cwd: scratch, encoding: 'utf8' });
+      if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+    }
+  }
   now = tickingClock();
 });
 
@@ -314,12 +338,13 @@ describe.skipIf(REAL)('tracer — the P1 exit criterion (FakeSubstrate, runs in 
 
 describe.runIf(REAL)('tracer — real substrate (manual; see docs/design/tracer-runbook.md)', () => {
   it(
-    'runs the full flow green with live Claude Code sessions',
+    'runs the full flow green with the selected live provider',
     { timeout: 1_800_000 },
     async () => {
       // Manual mode: the runbook points here for transcript inspection.
       console.log(`tracer real-substrate scratch repo (kept for inspection): ${scratch}`);
-      const substrate = new ClaudeCodeSubstrate();
+      const substrate =
+        REAL_PROVIDER === 'codex' ? new CodexSubstrate() : new ClaudeCodeSubstrate();
 
       // The real propose session authors the bundle from the checked-in intent.
       const proposed = await doPropose(substrate, REAL_MODEL);

@@ -17,43 +17,21 @@
 // not by this class. Only inability to START throws SUBSTRATE_UNAVAILABLE (exit
 // 3): an unreadable role prompt, or a binary that will not spawn.
 
-import { spawn as childSpawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { invalidInputError } from '../util/errors.js';
+import {
+  defaultSubstrateSpawn,
+  processExitCode,
+  type SubstrateProcessResult,
+  type SubstrateSpawn,
+  writeTranscript,
+} from './process.js';
 import type { AgentSubstrate, SubstrateRequest, SubstrateResult } from './types.js';
+
+export type { SubstrateProcessResult, SubstrateSpawn } from './process.js';
 
 /** The default binary name; `init` may pin this to a hash-verified path. */
 export const CLAUDE_BIN = 'claude';
-
-/** Exit code returned when a run is killed for exceeding its timeout. */
-const TIMEOUT_EXIT = 124;
-/** Exit code substituted when a killed process reports a null code. */
-const KILLED_EXIT = 1;
-
-/** The captured outcome of one spawned session (transport layer). */
-export interface SubstrateProcessResult {
-  /** Process exit code, or null if killed / never exited. */
-  code: number | null;
-  /** True iff the process was killed for exceeding the timeout. */
-  timedOut: boolean;
-  /** Everything the session wrote to stdout — the stream-json trajectory. */
-  stdout: string;
-  /** Everything the session wrote to stderr (diagnostics only). */
-  stderr: string;
-}
-
-/**
- * The injectable transport: spawn `command argv[…]`, feed `input` on stdin,
- * resolve with the captured result. Injectable so timeout/crash/ENOENT paths are
- * hermetic in tests; defaults to a real subprocess. It REJECTS only when the
- * process cannot be started (e.g. ENOENT); a non-zero exit resolves via `code`.
- */
-export type SubstrateSpawn = (
-  command: string,
-  argv: readonly string[],
-  options: { cwd: string; input: string; timeoutMs?: number },
-) => Promise<SubstrateProcessResult>;
 
 export interface ClaudeCodeSubstrateOptions {
   /** Binary to spawn. Default `claude`; `init` pins the hash-verified path. */
@@ -78,7 +56,7 @@ export class ClaudeCodeSubstrate implements AgentSubstrate {
   constructor(options: ClaudeCodeSubstrateOptions = {}) {
     this.binPath = options.binPath ?? CLAUDE_BIN;
     this.permissionMode = options.permissionMode ?? 'bypassPermissions';
-    this.spawn = options.spawn ?? defaultSpawn;
+    this.spawn = options.spawn ?? defaultSubstrateSpawn;
     this.readRolePrompt = options.readRolePrompt ?? ((path) => readFileSync(path, 'utf8'));
   }
 
@@ -119,7 +97,7 @@ export class ClaudeCodeSubstrate implements AgentSubstrate {
     writeTranscript(req.transcriptPath, proc.stdout);
 
     // Every started-run outcome is RETURNED, never thrown (frozen contract).
-    const exitCode = proc.timedOut ? TIMEOUT_EXIT : (proc.code ?? KILLED_EXIT);
+    const exitCode = processExitCode(proc);
     return { exitCode, transcriptPath: req.transcriptPath };
   }
 }
@@ -144,11 +122,6 @@ function buildArgv(params: {
   ];
 }
 
-function writeTranscript(path: string, body: string): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, body, 'utf8');
-}
-
 function unavailable(message: string, hint: string) {
   return invalidInputError(
     'SUBSTRATE_UNAVAILABLE',
@@ -156,57 +129,3 @@ function unavailable(message: string, hint: string) {
     hint,
   );
 }
-
-/**
- * Default transport: spawn a real subprocess, write `input` to stdin, capture
- * stdout (the trajectory) + stderr, enforce the timeout by killing the child.
- * Rejects ONLY on a spawn 'error' (e.g. ENOENT) — a non-zero exit resolves via
- * `code` so the substrate can return it per the frozen contract.
- */
-const defaultSpawn: SubstrateSpawn = (command, argv, { cwd, input, timeoutMs }) =>
-  new Promise<SubstrateProcessResult>((resolvePromise, rejectPromise) => {
-    const child = childSpawn(command, [...argv], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-    let settled = false;
-
-    const timer =
-      timeoutMs === undefined
-        ? undefined
-        : setTimeout(() => {
-            timedOut = true;
-            child.kill('SIGKILL');
-          }, timeoutMs);
-
-    const clearTimer = () => {
-      if (timer !== undefined) clearTimeout(timer);
-    };
-
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk: string) => {
-      stderr += chunk;
-    });
-    child.on('error', (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimer();
-      rejectPromise(err);
-    });
-    child.on('close', (code) => {
-      if (settled) return;
-      settled = true;
-      clearTimer();
-      resolvePromise({ stdout, stderr, code, timedOut });
-    });
-
-    child.stdin.on('error', () => {
-      // Broken pipe (session exited before reading stdin) surfaces via 'close'.
-    });
-    child.stdin.write(input);
-    child.stdin.end();
-  });

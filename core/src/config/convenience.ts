@@ -1,7 +1,7 @@
 // Convenience config — `.crucible/settings.yaml` (team) + `.crucible/local.yaml`
 // (personal, gitignored). Charter §Configuration & Reviewer Law.
 //
-// Only `models.*` (routing) and `notify` (channels) are parsed. This config can
+// Only `agent`, `models.*` (routing), and `notify` (channels) are parsed. This config can
 // NEVER affect what merges (invariant 7 / 11): the guarantee is structural —
 // enforcement code (./enforcement.ts) imports nothing from here, so no
 // enforcement decision can reach this data. `local.yaml` deep-merges OVER
@@ -19,7 +19,11 @@ import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import { invalidInputError } from '../util/errors.js';
 
+export const AGENT_PROVIDERS = ['codex', 'claude-code'] as const;
+export type AgentProvider = (typeof AGENT_PROVIDERS)[number];
+
 const convenienceSchema = z.strictObject({
+  agent: z.strictObject({ provider: z.enum(AGENT_PROVIDERS) }).optional(),
   models: z.record(z.string(), z.string()).default({}),
   notify: z.record(z.string(), z.unknown()).default({}),
 });
@@ -45,7 +49,7 @@ export function parseConvenienceFile(yamlText: string, source: string): Convenie
     throw invalidInputError(
       'INVALID_CONVENIENCE_CONFIG',
       `${source}: invalid convenience config —\n${formatIssues(result.error)}`,
-      'Only `models` and `notify` are allowed in settings.yaml / local.yaml.',
+      'Only `agent`, `models`, and `notify` are allowed in settings.yaml / local.yaml.',
     );
   }
   return result.data;
@@ -60,6 +64,7 @@ export function mergeConvenience(
   override: ConvenienceConfig,
 ): ConvenienceConfig {
   return {
+    ...((override.agent ?? base.agent) ? { agent: override.agent ?? base.agent } : {}),
     models: { ...base.models, ...override.models },
     notify: deepMerge(base.notify, override.notify),
   };
