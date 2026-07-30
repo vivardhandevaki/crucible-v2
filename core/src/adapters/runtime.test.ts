@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { addAdapter } from '../commands/adapter-add.js';
+import { ADAPTER_LOCK_RELPATH, hashAdapterPackage, serializeAdapterLock } from './lockfile.js';
 import { isCrucibleError } from '../util/errors.js';
 import { loadPinnedAdapterClient } from './runtime.js';
 
@@ -62,7 +62,28 @@ function installAdapter(): void {
     ].join('\n'),
     'utf8',
   );
-  addAdapter({ root, manifestPath: manifest, executablePath: executable });
+  const adaptersDir = join(root, '.crucible', 'adapters');
+  const installedManifest = join(adaptersDir, 'java-junit.yaml');
+  const installedExecutable = join(adaptersDir, 'java-junit.mjs');
+  mkdirSync(adaptersDir, { recursive: true });
+  writeFileSync(installedManifest, readFileSync(manifest));
+  writeFileSync(installedExecutable, readFileSync(executable));
+  chmodSync(installedExecutable, 0o755);
+  writeFileSync(
+    join(root, ADAPTER_LOCK_RELPATH),
+    serializeAdapterLock({
+      version: 1,
+      adapters: {
+        'java-junit': {
+          version: '1.2.3',
+          manifest: '.crucible/adapters/java-junit.yaml',
+          executable: '.crucible/adapters/java-junit.mjs',
+          content_hash: hashAdapterPackage(installedManifest, installedExecutable),
+        },
+      },
+    }),
+    'utf8',
+  );
 }
 
 describe('pinned adapter runtime', () => {
