@@ -18,10 +18,10 @@
 import { spawn } from 'node:child_process';
 import type { Command } from 'commander';
 import { resolveAgentRuntime } from '../substrate/runtime.js';
+import { loadPinnedAdapterClient } from '../adapters/runtime.js';
 import { propose, type ProposeDeps } from './propose.js';
 import { parseTypeName, type ChangeType } from '../changetype/changetype.js';
-import type { ResolveFn } from '../lint/traceability.js';
-import { CheckFailure, invalidInputError, preconditionError } from '../util/errors.js';
+import { CheckFailure, invalidInputError } from '../util/errors.js';
 
 /** Model used when convenience config routes nothing to `models.propose`. */
 
@@ -86,10 +86,11 @@ function proposeModel(root: string): string {
 
 /** The live dependencies for a real propose invocation. */
 function liveDeps(root: string): ProposeDeps {
+  const adapter = loadPinnedAdapterClient(root);
   return {
     substrate: resolveAgentRuntime(root, 'propose').substrate,
     scaffold: (change, schema) => scaffoldViaOpenSpec(root, change, schema),
-    resolve: liveResolveUnavailable,
+    resolve: (targets) => adapter.resolve(targets),
     now: () => new Date().toISOString(),
   };
 }
@@ -135,16 +136,3 @@ function scaffoldViaOpenSpec(root: string, change: string, schema: string): Prom
     });
   });
 }
-
-/**
- * The binding resolver spawns the pinned adapter (P1-11 client), which `init`
- * records in the project config (P2). Until that pin exists, fail closed rather
- * than lint against no resolver.
- */
-const liveResolveUnavailable: ResolveFn = () => {
-  throw preconditionError(
-    'NO_ADAPTER_PIN',
-    'The pinned adapter that resolves oracle bindings is not configured yet.',
-    'Adapter pinning lands with `crucible init` (P2); until then propose runs only via its injectable core (see the P1-16 tracer).',
-  );
-};

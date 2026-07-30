@@ -28,6 +28,7 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { resolveAgentRuntime } from '../substrate/runtime.js';
+import { loadPinnedAdapterClient } from '../adapters/runtime.js';
 import { verify, type VerifyDeps } from './verify.js';
 import { computeDiffFacts, defaultBase } from './diff-facts.js';
 import { review } from './review.js';
@@ -41,7 +42,7 @@ import {
 } from '../config/enforcement.js';
 import { recordSnapshotTier } from '../state/state.js';
 import { createLiveNotifier } from '../notify/live.js';
-import { CheckFailure, preconditionError } from '../util/errors.js';
+import { CheckFailure } from '../util/errors.js';
 
 /** Register the real `verify` subcommand on the program. */
 export function registerVerify(program: Command): void {
@@ -116,9 +117,10 @@ function liveDeps(
   diffBase: string | undefined,
   reviewOpts: { change: string; withReview: boolean },
 ): VerifyDeps {
+  const adapter = loadPinnedAdapterClient(root);
   return {
-    resolve: liveAdapterUnavailable,
-    run: liveAdapterUnavailable,
+    resolve: (targets) => adapter.resolve(targets),
+    run: (oracles) => adapter.run(oracles),
     diffFacts: () => computeDiffFacts(root, diffBase),
     // The bugfix red-on-base run: check out the merge-base into a throwaway
     // worktree (real git edge) and run the reproduction oracles there. The
@@ -130,8 +132,9 @@ function liveDeps(
         { root, base: diffBase ?? defaultBase(root), oracles },
         {
           git: liveWorktreeGit(root),
-          resolve: liveAdapterUnavailable,
-          runIn: liveAdapterUnavailable,
+          resolve: (targets) => adapter.resolve(targets),
+          runIn: (worktreePath, reproductionOracles) =>
+            loadPinnedAdapterClient(root, worktreePath).run(reproductionOracles),
         },
       ),
     // The adversarial reviewer (design phase-2.md §5): the whole review-command
@@ -158,16 +161,3 @@ function liveDeps(
       : {}),
   };
 }
-
-/**
- * The dry-run resolver and oracle runner both spawn the pinned adapter via the
- * P1-11 client, which `init` records in the project config (P2). Until that pin
- * exists, fail closed rather than run the checks against no adapter.
- */
-const liveAdapterUnavailable = (): never => {
-  throw preconditionError(
-    'NO_ADAPTER_PIN',
-    'The pinned adapter that resolves and runs oracle bindings is not configured yet.',
-    'Adapter pinning lands with `crucible init` (P2); until then verify runs only via its injectable core (see the P1-16 tracer).',
-  );
-};
