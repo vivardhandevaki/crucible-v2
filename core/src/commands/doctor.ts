@@ -208,7 +208,7 @@ function checkCiTemplate(root: string): DoctorFinding[] {
   const relpath = join('.github', 'workflows', 'crucible.yml');
   const adapters = Object.keys(loadEnforcementConfig(root).adapters);
   const shipped = readFileSync(
-    ciTemplatePathForAdapter(adapters.includes('java-junit') ? 'java-junit' : adapters[0] ?? ''),
+    ciTemplatePathForAdapter(adapters.includes('java-junit') ? 'java-junit' : (adapters[0] ?? '')),
     'utf8',
   );
   const abs = join(root, relpath);
