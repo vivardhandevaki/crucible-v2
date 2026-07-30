@@ -1,0 +1,17 @@
+# java-junit adapter manifest (charter §"Adapter Manifest & Transport").
+# The core adapter client (P1-11) loads this file and spawns the invocation
+# strings below, one process per verb, feeding JSON on stdin.
+#
+# The adapter drives Maven (this task, P3-04) — and Gradle (P3-05) — from the
+# working directory the client sets (the project under test), auto-detecting the
+# build tool from `pom.xml` / `build.gradle(.kts)`. `detect` is a CLI verb too
+# but is NOT a manifest invocation: `init` calls it directly across installed
+# adapters (charter §Adapter Lifecycle), it is not part of the resolve/run wire.
+# No `scope` verb (optional in the protocol; local verify runs the full suite).
+name: java-junit
+version: 0.0.0
+runners: [junit]
+capabilities: [unit, property, contract, integration]
+invocations:
+  resolve: 'crucible-adapter-java-junit resolve'
+  run: 'crucible-adapter-java-junit run'
