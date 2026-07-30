@@ -4,11 +4,7 @@ import { join } from 'node:path';
 import { CI_TEMPLATE_PATH } from '@crucible/ci-templates';
 import { schemaBundleFile } from '@crucible/schemas';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  ADAPTER_LOCK_RELPATH,
-  hashAdapterPackage,
-  loadAdapterLock,
-} from '../adapters/lockfile.js';
+import { ADAPTER_LOCK_RELPATH, hashAdapterPackage, loadAdapterLock } from '../adapters/lockfile.js';
 import { isCrucibleError } from '../util/errors.js';
 import { loadDefaultRubric } from '../review/rubric.js';
 import { init, type InitAnswers } from './init.js';

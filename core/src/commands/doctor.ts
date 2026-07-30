@@ -56,11 +56,7 @@ import {
 
 /** Which check produced a finding — the stable category the CLI groups by. */
 export type DoctorCheckId =
-  | 'schema-bundle'
-  | 'ci-template'
-  | 'openspec-version'
-  | 'adapter-lockfile-hash'
-  | 'rubric-lines';
+  'schema-bundle' | 'ci-template' | 'openspec-version' | 'adapter-lockfile-hash' | 'rubric-lines';
 
 /**
  * A finding's weight. `drift` = a shipped TCB file diverged from its source and
