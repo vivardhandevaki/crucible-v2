@@ -6,8 +6,10 @@
 // bytes are author-controlled and sealed by the approval hash, so no tool may
 // reformat it. This module only computes paths and parses; it never mutates.
 
+import { cpSync, mkdtempSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // src/index.ts (or dist/index.js) → workspace root → toy-repo.
@@ -79,6 +81,22 @@ export const GRADLE_BASIC_DIR = join(CONFORMANCE_DIR, 'gradle-basic');
  * One manifest describes both fixtures (identical sources; different classpaths).
  */
 export const CONFORMANCE_TARGETS_PATH = join(CONFORMANCE_DIR, 'targets.json');
+
+
+/**
+ * Copy one JVM fixture's declared source surface into a private directory for a
+ * build test. Gradle/Maven output trees are deliberately excluded: tests that
+ * execute a fixture must never share mutable reports with the conformance
+ * scripts, even when Vitest projects run concurrently (P3-10).
+ */
+export function copyJvmFixture(source: string, prefix: string): string {
+  const destination = mkdtempSync(join(tmpdir(), prefix));
+  cpSync(source, destination, {
+    recursive: true,
+    filter: (path) => !['build', 'target', '.gradle'].includes(basename(path)),
+  });
+  return destination;
+}
 
 /** Normalized-result statuses the stub adapter can report (charter schema). */
 export type TestStatus = 'pass' | 'fail' | 'skip' | 'missing';

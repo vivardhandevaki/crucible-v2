@@ -11,11 +11,12 @@
 //      same decline-when-no-JDK posture the adapter itself takes.
 
 import { spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  copyJvmFixture,
   GRADLE_BASIC_DIR,
   MAVEN_BASIC_DIR,
   loadConformanceTargets,
@@ -33,6 +34,11 @@ function hasTool(cmd: string, versionArg: string): boolean {
 const HAS_JAVA = hasTool('java', '-version');
 const HAS_MVN = HAS_JAVA && hasTool('mvn', '-v');
 const HAS_GRADLE = HAS_JAVA && hasTool('gradle', '-version');
+const copies: string[] = [];
+
+afterEach(() => {
+  for (const copy of copies.splice(0)) rmSync(copy, { recursive: true, force: true });
+});
 
 /** One test outcome parsed from a JUnit `<testcase>` element. */
 type XmlStatus = 'pass' | 'fail' | 'error' | 'skip';
@@ -82,6 +88,17 @@ function assertFixtureOutcomes(targets: ConformanceTarget[], xmlDir: string): vo
 }
 
 describe('JVM conformance manifest (targets.json)', () => {
+  it('creates a private source-only copy for each JVM build invocation', () => {
+    const copy = copyJvmFixture(GRADLE_BASIC_DIR, 'crucible-jvm-copy-');
+    copies.push(copy);
+
+    expect(copy).not.toBe(GRADLE_BASIC_DIR);
+    expect(existsSync(join(copy, 'build.gradle'))).toBe(true);
+    expect(existsSync(join(copy, 'src', 'test', 'java'))).toBe(true);
+    expect(existsSync(join(copy, 'build'))).toBe(false);
+    expect(existsSync(join(copy, '.gradle'))).toBe(false);
+  });
+
   it('declares all five categories', async () => {
     const manifest = await loadConformanceTargets();
     const categories = new Set<ConformanceCategory>(manifest.targets.map((t) => t.category));
@@ -126,15 +143,17 @@ describe.skipIf(!HAS_MVN)('maven-basic builds + runs under `mvn test`', () => {
   it(
     'runs every test; plain-@Test outcomes match the manifest',
     async () => {
+      const fixture = copyJvmFixture(MAVEN_BASIC_DIR, 'crucible-jvm-maven-');
+      copies.push(fixture);
       const r = spawnSync('mvn', ['-q', '-Dmaven.test.failure.ignore=true', 'test'], {
-        cwd: MAVEN_BASIC_DIR,
+        cwd: fixture,
         encoding: 'utf8',
       });
       // failure.ignore keeps the exit at 0 while writing complete XML; a non-zero
       // status here means the build itself broke (compile error, missing dep).
       expect(r.status, r.stderr || r.stdout).toBe(0);
       const manifest = await loadConformanceTargets();
-      assertFixtureOutcomes(manifest.targets, join(MAVEN_BASIC_DIR, 'target', 'surefire-reports'));
+      assertFixtureOutcomes(manifest.targets, join(fixture, 'target', 'surefire-reports'));
     },
     BUILD_TIMEOUT_MS,
   );
@@ -144,10 +163,12 @@ describe.skipIf(!HAS_GRADLE)('gradle-basic builds + runs under `gradle test`', (
   it(
     'runs every test; plain-@Test outcomes match the manifest',
     async () => {
+      const fixture = copyJvmFixture(GRADLE_BASIC_DIR, 'crucible-jvm-gradle-');
+      copies.push(fixture);
       // --rerun-tasks defeats Gradle's up-to-date cache so XML is always fresh;
       // the intentional FAIL makes the task exit non-zero, so status is not 0.
       const r = spawnSync('gradle', ['test', '--rerun-tasks', '-q', '--console=plain'], {
-        cwd: GRADLE_BASIC_DIR,
+        cwd: fixture,
         encoding: 'utf8',
       });
       // Exit 1 (test failure) is expected; only a >1 / null status is a real break.
@@ -155,7 +176,7 @@ describe.skipIf(!HAS_GRADLE)('gradle-basic builds + runs under `gradle test`', (
       const manifest = await loadConformanceTargets();
       assertFixtureOutcomes(
         manifest.targets,
-        join(GRADLE_BASIC_DIR, 'build', 'test-results', 'test'),
+        join(fixture, 'build', 'test-results', 'test'),
       );
     },
     BUILD_TIMEOUT_MS,
