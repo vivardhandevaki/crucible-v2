@@ -2,6 +2,8 @@
 
 > **Ratified via P2-00 (2026-07-24)** — tasks below are executable. All "per P2-00-resolved" references point at the inline *Resolved P2-00* passages in `docs/design/phase-2.md`. Format and rules identical to phase-0-1 tasks (test-first; done = named tests pass + committed; one task ≈ one session).
 
+> **Completion ledger (normalized 2026-07-31).** P2-00 through P2-18 are **complete**: the named acceptance coverage is present in the committed Phase 2 implementation, with P2-17's worked-examples suite and P2-18's target-branch-rule proof as the phase anchors. The phase exit is recorded in [PHASES.md](../../PHASES.md). Individual *As-built* notes below provide implementation detail where added during delivery; this ledger supplies the status marker for every task.
+
 **P2-00 · Re-ratification of Phase 2 design** · Tier: Fable / Sol · Depends: P1-16 green
 Reads: phase-2.md (whole), architecture.md as frozen by P1, spike-notes, tracer test.
 Delivers: amended phase-2.md with all `[P1-DEP]` markers resolved; amended task list below if scope shifted; architecture.md additions for any new cross-phase contracts.

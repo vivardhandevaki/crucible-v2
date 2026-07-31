@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ADAPTER_LOCK_RELPATH } from '../adapters/lockfile.js';
+import { FRAMEWORK_PIN_RELPATH } from '../framework/pin.js';
 import { computeHashScope } from './bundle.js';
 
 let root: string;
@@ -16,7 +17,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-describe('computeHashScope — adapter lock', () => {
+describe('computeHashScope — approval-selected lockfiles', () => {
   it('includes the committed adapter lockfile whenever it exists', async () => {
     mkdirSync(join(root, '.crucible'), { recursive: true });
     writeFileSync(join(root, ADAPTER_LOCK_RELPATH), 'version: 1\nadapters: {}\n', 'utf8');
@@ -29,5 +30,23 @@ describe('computeHashScope — adapter lock', () => {
       async () => [],
     );
     expect(scope).toContain(ADAPTER_LOCK_RELPATH);
+  });
+
+  it('includes the committed framework source pin whenever it exists', async () => {
+    mkdirSync(join(root, '.crucible'), { recursive: true });
+    writeFileSync(
+      join(root, FRAMEWORK_PIN_RELPATH),
+      '{\n  "version": 1,\n  "repository": "owner/repo",\n  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n}\n',
+      'utf8',
+    );
+    const changeRel = 'openspec/changes/example';
+    const scope = await computeHashScope(
+      root,
+      changeRel,
+      join(root, changeRel),
+      [],
+      async () => [],
+    );
+    expect(scope).toContain(FRAMEWORK_PIN_RELPATH);
   });
 });

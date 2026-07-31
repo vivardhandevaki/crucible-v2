@@ -10,11 +10,14 @@
 // operator explicitly opted out of the prompts by passing the flag; without it,
 // every conflicting file is shown and confirmed one at a time.
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
 import type { Command } from 'commander';
+import { parseFrameworkSource, type FrameworkPin } from '../framework/pin.js';
 import { invalidInputError, preconditionError } from '../util/errors.js';
 import {
   init,
@@ -37,16 +40,24 @@ export function registerInit(program: Command): void {
       'take detected defaults and auto-confirm overwrites (non-interactive)',
       false,
     )
-    .action(async (opts: { yes?: boolean }) => {
+    .option(
+      '--framework-source <owner/repository@commit>',
+      'validation-only framework source pin (defaults to this Crucible checkout)',
+    )
+    .action(async (opts: { yes?: boolean; frameworkSource?: string }) => {
       const root = process.cwd();
       const yes = opts.yes === true;
 
       const detected = detectAnswers(root);
       const answers = yes ? detected : await confirmAnswers(detected);
+      const frameworkPin =
+        opts.frameworkSource === undefined
+          ? detectFrameworkPin()
+          : parseFrameworkSource(opts.frameworkSource);
 
       const adapterPackage = shippedAdapterPackage(answers.adapter);
       const report = await init(
-        { root, answers, ...(adapterPackage ? { adapterPackage } : {}) },
+        { root, answers, frameworkPin, ...(adapterPackage ? { adapterPackage } : {}) },
         { confirmOverwrite: confirmOverwriteEdge(yes) },
       );
 
@@ -121,6 +132,51 @@ export function shippedAdapterPackage(name: string): AdapterPackageSource | unde
     manifestPath: join(packageRoot, 'package', 'crucible-adapter.yaml'),
     executablePath: join(packageRoot, 'package', 'java-junit.mjs'),
   };
+}
+
+/**
+ * Pin this source checkout for the Phase-4 validation workflow. A packaged
+ * release will replace this source-bootstrap path once distribution is in
+ * scope; until then, refusing an unpinned framework is safer than a CI job
+ * silently running whatever `npx` resolves that day.
+ */
+export function detectFrameworkPin(): FrameworkPin {
+  const checkout = frameworkCheckoutRoot();
+  let remote: string;
+  let commit: string;
+  try {
+    remote = execFileSync('git', ['-C', checkout, 'remote', 'get-url', 'origin'], {
+      encoding: 'utf8',
+    }).trim();
+    commit = execFileSync('git', ['-C', checkout, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+    }).trim();
+  } catch (error) {
+    throw preconditionError(
+      'FRAMEWORK_SOURCE_UNRESOLVABLE',
+      `Could not determine the Crucible source checkout pin — ${String(error)}.`,
+      'Run `crucible init --framework-source owner/repository@<40-character-commit-sha>`.',
+    );
+  }
+  const repository = githubRepository(remote);
+  if (repository === undefined) {
+    throw preconditionError(
+      'FRAMEWORK_SOURCE_UNRESOLVABLE',
+      `Crucible source remote ${JSON.stringify(remote)} is not a GitHub repository.`,
+      'Run `crucible init --framework-source owner/repository@<40-character-commit-sha>`.',
+    );
+  }
+  return parseFrameworkSource(`${repository}@${commit}`);
+}
+
+function frameworkCheckoutRoot(): string {
+  // core/src/commands or core/dist/commands → monorepo root.
+  return dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+}
+
+function githubRepository(remote: string): string | undefined {
+  const match = /github\.com[:/]([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+?)(?:\.git)?$/.exec(remote);
+  return match?.[1];
 }
 
 /** Let the operator confirm / override the detected adapter + unit command. */

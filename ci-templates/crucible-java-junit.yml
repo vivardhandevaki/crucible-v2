@@ -46,10 +46,10 @@
 # (invariant #11: convenience never enforcement).
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# STILL DEFERRED to P2: the live adapter pin (`crucible init`) that lets `verify`
-# run its oracles against a real consumer repo — until then a real consumer run
-# reaches the adapter-pin precondition (the tier/routing/cap logic above runs
-# regardless, since it is computed from config + diff, not from the adapter).
+# The framework source used by this workflow is also read from the target branch:
+# `.crucible/framework.lock.json` names an immutable GitHub commit. This keeps a
+# PR from selecting the version of the enforcement harness that judges itself,
+# while allowing Phase 4 validation before public npm distribution exists.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Crucible
@@ -88,7 +88,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract target-branch enforcement config
+      - name: Extract target-branch enforcement config and framework pin
         # The Target-Branch Rule made concrete. crucible.yaml is taken from
         # origin/<base_ref> — the branch being merged INTO — and written OUTSIDE
         # the working tree (under RUNNER_TEMP) so the PR's own copy can never
@@ -101,6 +101,7 @@ jobs:
           git fetch --no-tags --depth=1 origin "$BASE"
           mkdir -p "$RUNNER_TEMP/crucible-target"
           git show "origin/$BASE:crucible.yaml" > "$RUNNER_TEMP/crucible-target/crucible.yaml"
+          git show "origin/$BASE:.crucible/framework.lock.json" > "$RUNNER_TEMP/crucible-target/framework.lock.json"
 
       - uses: actions/setup-node@v4
         with:
@@ -119,10 +120,46 @@ jobs:
           set -euo pipefail
           docker info
 
-      - name: Install Crucible
-        # Consumer repos pin the Crucible CLI as a dev dependency; `crucible init`
-        # (P2) writes the exact pin. Until then, install from the repo's manifest.
-        run: npm ci
+      - name: Resolve pinned Crucible framework
+        id: framework
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const lockPath = `${process.env.RUNNER_TEMP}/crucible-target/framework.lock.json`;
+          let value;
+          try {
+            value = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+          } catch (error) {
+            throw new Error(`Invalid framework pin: ${error.message}`);
+          }
+          const keys = Object.keys(value).sort();
+          if (keys.join(',') !== 'commit,repository,version' || value.version !== 1
+            || typeof value.repository !== 'string'
+            || !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(value.repository)
+            || typeof value.commit !== 'string' || !/^[0-9a-f]{40}$/.test(value.commit)) {
+            throw new Error(`Invalid framework pin at ${lockPath}`);
+          }
+          fs.appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            `repository=${value.repository}\ncommit=${value.commit}\n`,
+          );
+          NODE
+
+      - name: Checkout pinned Crucible framework
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.framework.outputs.repository }}
+          ref: ${{ steps.framework.outputs.commit }}
+          path: crucible-framework
+          persist-credentials: false
+
+      - name: Build pinned Crucible framework
+        working-directory: crucible-framework
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
 
       - name: Detect changed change-bundles
         id: changes
@@ -169,7 +206,7 @@ jobs:
             # verdict must still fail the step (fail-closed), but we also want the
             # report printed and its routing read when green.
             set +e
-            report="$(npx crucible --json --config-from "$RUNNER_TEMP/crucible-target" verify "$change" --diff-base "origin/$BASE" --review)"
+            report="$(node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$RUNNER_TEMP/crucible-target" verify "$change" --diff-base "origin/$BASE" --review)"
             code=$?
             set -e
             printf '%s\n' "$report"

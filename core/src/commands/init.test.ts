@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { CI_TEMPLATE_PATH, JAVA_JUNIT_CI_TEMPLATE_PATH } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES } from '@crucible/schemas';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FRAMEWORK_PIN_RELPATH, loadFrameworkPin, type FrameworkPin } from '../framework/pin.js';
 import { isCrucibleError } from '../util/errors.js';
 import {
   GITIGNORE_LINES,
@@ -26,6 +27,12 @@ const ANSWERS: InitAnswers = {
   runners: ['stub'],
   paths: ['**/*.ts'],
   unitCommand: 'npm test',
+};
+
+const FRAMEWORK_PIN: FrameworkPin = {
+  version: 1,
+  repository: 'vivardhandevaki/crucible-v2',
+  commit: 'a'.repeat(40),
 };
 
 /** A confirm edge that must never be consulted (asserts the no-conflict path). */
@@ -97,6 +104,17 @@ describe('init — fresh repo → complete working setup', () => {
     // Every action is a create on a fresh repo.
     expect(report.actions.every((a) => a.kind === 'created')).toBe(true);
     expect(kindOf(report, 'crucible.yaml')).toBe('created');
+  });
+});
+
+describe('init — validation framework pin', () => {
+  it('writes a strict repository+commit pin when a validation bootstrap is requested', async () => {
+    await init(
+      { root: scratch, answers: ANSWERS, frameworkPin: FRAMEWORK_PIN },
+      { confirmOverwrite: confirmNever },
+    );
+
+    expect(loadFrameworkPin(join(scratch, FRAMEWORK_PIN_RELPATH))).toEqual(FRAMEWORK_PIN);
   });
 });
 

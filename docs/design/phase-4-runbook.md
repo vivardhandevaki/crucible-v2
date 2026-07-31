@@ -10,6 +10,12 @@ Phase 4 has **no framework design doc by decision** (PHASES.md): the product's d
 4. Configure settings.yaml models per charter routing (strongest for propose); local.yaml notify hooks.
 5. First three changes deliberately span the tiers: one trivial (repo chore), one standard feature, one critical-path feature — shakes out routing, the approve surface, and escalation early, when stakes are low.
 
+## Validation bootstrap (before public distribution)
+
+Phase 4 deliberately validates Crucible before a public npm/binary release exists. Run `crucible init` from a committed Crucible GitHub checkout (or pass `--framework-source owner/repository@<40-character-lowercase-sha>`). It writes `.crucible/framework.lock.json`, a strict source pin. The shipped CI workflow reads both that pin and `crucible.yaml` from the target branch, checks out the exact commit into a separate directory, builds it with `npm ci && npm run build`, and executes that built CLI. A PR therefore cannot select the harness that judges itself.
+
+The pin is part of the approval hash scope whenever present; changing it after approval voids approval. A framework bug is fixed in the framework repository first, then the product receives a separately reviewed pin-bump change. This is a validation-only bootstrap, not a distribution mechanism: publishing and release lifecycle remain deferred under Backlog B12.
+
 ## Instrumentation (success criteria — record from day one)
 
 Source of numbers: state.yaml events + approval.yaml timestamps + PR/check metadata. Until a `crucible metrics` command exists (build it just-in-time if manual collection annoys — it's a legitimate Phase 4 framework task), keep `docs/metrics.md` in the product repo, one row per merged change:

@@ -57,6 +57,11 @@ import {
   type AdapterLock,
 } from '../adapters/lockfile.js';
 import { loadManifest } from '../adapters/manifest.js';
+import {
+  FRAMEWORK_PIN_RELPATH,
+  serializeFrameworkPin,
+  type FrameworkPin,
+} from '../framework/pin.js';
 import { invalidInputError } from '../util/errors.js';
 
 // core/src/commands/init.ts (or core/dist/commands/init.js) → core/ → assets/,
@@ -118,6 +123,8 @@ export interface InitOptions {
   answers: InitAnswers;
   /** First-party package selected by the CLI detection edge, when shipped. */
   adapterPackage?: AdapterPackageSource;
+  /** Validation-only pin for the framework source CI must build. */
+  frameworkPin?: FrameworkPin;
 }
 
 /** What init did to one target path. `skipped` = a conflict the caller declined. */
@@ -161,6 +168,20 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
   // bytes and lockfile use init's existing diff-and-confirm edge on re-run.
   if (options.adapterPackage !== undefined) {
     await installAdapterPackage(root, options.adapterPackage, deps, apply);
+  }
+
+  // 1.75. Phase-4 validation bootstrap. Public package distribution remains
+  // deferred; when the CLI has a source pin it records the exact framework
+  // checkout CI must build. This file is consumed from the target branch by the
+  // shipped workflow, never silently inferred in CI.
+  if (options.frameworkPin !== undefined) {
+    await writeFullFile(
+      root,
+      FRAMEWORK_PIN_RELPATH,
+      serializeFrameworkPin(options.frameworkPin),
+      deps,
+      apply,
+    );
   }
 
   // 2. Convenience defaults + reviewer rubric + role prompts (the .crucible TCB).

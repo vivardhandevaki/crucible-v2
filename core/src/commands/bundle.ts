@@ -24,6 +24,7 @@ import { loadOracles, type Oracle } from '../artifacts/oracles.js';
 import { loadProposal } from '../artifacts/proposal.js';
 import { loadSpecDelta, type SpecRequirement } from '../artifacts/spec-delta.js';
 import { ADAPTER_LOCK_RELPATH } from '../adapters/lockfile.js';
+import { FRAMEWORK_PIN_RELPATH } from '../framework/pin.js';
 import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
 import { type ChangeType, type TypeFacts } from '../changetype/changetype.js';
 import {
@@ -223,6 +224,7 @@ export async function computeHashScope(
   }
 
   if (existsSync(join(root, ADAPTER_LOCK_RELPATH))) covered.add(ADAPTER_LOCK_RELPATH);
+  if (existsSync(join(root, FRAMEWORK_PIN_RELPATH))) covered.add(FRAMEWORK_PIN_RELPATH);
 
   return [...covered].sort();
 }

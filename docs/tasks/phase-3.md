@@ -2,6 +2,8 @@
 
 > **Ratified via P3-00 (2026-07-29)** — tasks below are executable. The `[P2-DEP]` resolution and contract-drift amendments live inline in `docs/design/phase-3.md` (marked *Resolved/Amended P3-00*). Rules as ever: test-first, done = named tests pass + committed.
 
+> **Completion ledger (normalized 2026-07-31).** P3-00 through P3-10 are **complete**: the named acceptance coverage is present in the committed Phase 3 implementation, including P3-06 conformance, P3-08's Spring Boot flow, P3-09 doctor repair, and P3-10 dual-provider/JVM-isolation coverage. The phase exit is recorded in [PHASES.md](../../PHASES.md). Individual *As-built* notes below provide implementation detail where added during delivery; this ledger supplies the status marker for every task.
+
 **P3-00 · Re-ratification of Phase 3 design** · Tier: Fable / Sol · Depends: P2-17 green
 Delivers: phase-3.md with `[P2-DEP]` markers resolved against frozen protocol + Phase 2 learnings.
 Acceptance: zero markers remain; PHASES.md updated.
@@ -60,7 +62,7 @@ and review sessions while init, version+hash pinning, JUnit resolve/run, sealing
 local verify, tier computation, and CI review evaluation use production paths.
 Every live command now loads and hash-verifies the installed adapter bytes; an
 unknown init target fails instead of installing the stub. The same test exposes
-manual Codex/Claude Code mode. Oracle drift and JUnit skip remain independently
+manual Codex/Claude Code mode. Oracle drift and JUnit skip remain independently proven as fail-closed paths.
 
 **P3-09 · doctor adapter-lockfile-hash check** · Tier: Opus / Terra · Depends: P3-06
 Reads: charter §Adapter §"Pinned by version and content hash in a lockfile"; design phase-2.md §7 (doctor); phase-3.md §P3-06 (lockfile pin flow).

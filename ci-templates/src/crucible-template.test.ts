@@ -27,6 +27,7 @@ interface Step {
   id?: string;
   env?: Record<string, unknown>;
   with?: Record<string, unknown>;
+  'working-directory'?: string;
   'continue-on-error'?: boolean;
 }
 
@@ -119,8 +120,10 @@ describe('crucible.yml — the Target-Branch Rule (invariant #7)', () => {
     const run = stepNamed('verify').run ?? '';
     // The actual invocation line — not the `echo ::group::` label, which also
     // mentions "verify". Assert the flag/subcommand order on the real command.
-    const invocation = run.split('\n').find((l) => l.includes('npx') && l.includes('verify '));
-    expect(invocation, 'an `npx crucible ... verify` invocation line').toBeTruthy();
+    const invocation = run
+      .split('\n')
+      .find((l) => l.includes('core/dist/cli/bin.js') && l.includes('verify '));
+    expect(invocation, 'a pinned Crucible CLI verify invocation line').toBeTruthy();
     const cmd = invocation ?? '';
     expect(cmd).toContain('--config-from');
     // The config-from directory is the extracted target-branch config, NOT the PR
@@ -136,6 +139,33 @@ describe('crucible.yml — the Target-Branch Rule (invariant #7)', () => {
     // regression that points it at the checked-out (PR) crucible.yaml.
     expect(run).not.toMatch(/--config-from\s+\.?\/?crucible\.yaml/);
     expect(run).not.toMatch(/--config-from\s+["']?\$?\{?\{?\s*github\.workspace/);
+  });
+});
+
+describe('crucible.yml — validation-only framework bootstrap', () => {
+  it('loads a strict framework pin from the target branch and builds that exact checkout', () => {
+    const extract = stepNamed('target-branch enforcement config').run ?? '';
+    const pin = stepNamed('pinned Crucible framework');
+    const checkout = stepNamed('checkout pinned Crucible framework');
+    const build = stepNamed('build pinned Crucible framework');
+    const verify = stepNamed('verify').run ?? '';
+
+    expect(extract).toContain('.crucible/framework.lock.json');
+    expect(pin.id).toBe('framework');
+    expect(pin.run).toContain('JSON.parse');
+    expect(pin.run).toContain('[0-9a-f]{40}');
+    expect(pin.run).toContain('GITHUB_OUTPUT');
+    expect(checkout.uses).toBe('actions/checkout@v4');
+    expect(checkout.with).toMatchObject({
+      repository: '${{ steps.framework.outputs.repository }}',
+      ref: '${{ steps.framework.outputs.commit }}',
+      path: 'crucible-framework',
+    });
+    expect(build['working-directory']).toBe('crucible-framework');
+    expect(build.run).toContain('npm ci');
+    expect(build.run).toContain('npm run build');
+    expect(verify).toContain('crucible-framework/core/dist/cli/bin.js');
+    expect(verify).not.toContain('npx crucible');
   });
 });
 
@@ -168,8 +198,8 @@ describe('crucible.yml — tier routing (P2-03, design phase-2.md §2)', () => {
   it('diffs against the target branch so the tier is computed vs origin/<base_ref>', () => {
     const cmd = (stepNamed('verify').run ?? '')
       .split('\n')
-      .find((l) => l.includes('npx') && l.includes('verify '));
-    expect(cmd, 'an `npx crucible ... verify` invocation line').toBeTruthy();
+      .find((l) => l.includes('core/dist/cli/bin.js') && l.includes('verify '));
+    expect(cmd, 'a pinned Crucible CLI verify invocation line').toBeTruthy();
     // --diff-base is a verify subcommand option (after `verify <change>`) pointed
     // at the target branch — the tier/cap are judged against origin/<base_ref>.
     expect(cmd).toContain('--diff-base');
@@ -261,8 +291,8 @@ describe('crucible.yml — adversarial reviewer (P2-10, design phase-2.md §5)',
   it('CI always runs the reviewer: the verify invocation passes --review', () => {
     const cmd = (stepNamed('verify').run ?? '')
       .split('\n')
-      .find((l) => l.includes('npx') && l.includes('verify '));
-    expect(cmd, 'an `npx crucible ... verify` invocation line').toBeTruthy();
+      .find((l) => l.includes('core/dist/cli/bin.js') && l.includes('verify '));
+    expect(cmd, 'a pinned Crucible CLI verify invocation line').toBeTruthy();
     // "verify --review optional locally; CI always" — the shipped gate opts in.
     expect(cmd).toContain('--review');
   });

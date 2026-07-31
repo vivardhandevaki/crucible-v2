@@ -25,6 +25,8 @@ Acceptance: fixture loads in a smoke test; invalid bundle documented with its ex
 
 ## Phase 1
 
+> **Completion ledger (normalized 2026-07-31).** P1-01 through P1-16 are **complete**: their named acceptance coverage is present in the committed tracer-bullet implementation, and P1-16's permanent regression anchor is green. The phase exit is recorded in [PHASES.md](../../PHASES.md). This ledger is the authoritative per-task status marker for the pre-ledger task records below.
+
 **P1-01 · CLI skeleton & error runner** · Tier: Opus / Terra · Depends: P0-02
 Reads: architecture.md §2–3; phase-0-1.md §1.
 Delivers: `cli/` + shared runner; `CrucibleError`; command registration for all P1 verbs (stubbed).
