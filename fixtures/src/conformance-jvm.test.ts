@@ -174,10 +174,7 @@ describe.skipIf(!HAS_GRADLE)('gradle-basic builds + runs under `gradle test`', (
       // Exit 1 (test failure) is expected; only a >1 / null status is a real break.
       expect(r.status === 0 || r.status === 1, r.stderr || r.stdout).toBe(true);
       const manifest = await loadConformanceTargets();
-      assertFixtureOutcomes(
-        manifest.targets,
-        join(fixture, 'build', 'test-results', 'test'),
-      );
+      assertFixtureOutcomes(manifest.targets, join(fixture, 'build', 'test-results', 'test'));
     },
     BUILD_TIMEOUT_MS,
   );

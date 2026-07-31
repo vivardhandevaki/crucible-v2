@@ -82,7 +82,6 @@ export const GRADLE_BASIC_DIR = join(CONFORMANCE_DIR, 'gradle-basic');
  */
 export const CONFORMANCE_TARGETS_PATH = join(CONFORMANCE_DIR, 'targets.json');
 
-
 /**
  * Copy one JVM fixture's declared source surface into a private directory for a
  * build test. Gradle/Maven output trees are deliberately excluded: tests that
