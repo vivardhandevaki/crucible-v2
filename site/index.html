@@ -17,7 +17,7 @@
   })();
 </script>
 <title>Crucible — Approve the promise, never read the code</title>
-<meta name="description" content="Crucible is a framework for building software end-to-end with AI agents. Humans approve intent artifacts — specs and oracles — at a single ten-minute gate; agents write the code; deterministic machinery guarantees the code honors the approved promise. Extended TDD/BDD with one human gate, five commands, and tech-agnostic adapters." />
+<meta name="description" content="Crucible is an artifact-first AI development framework. Humans approve specs and executable oracles at one gate; agents implement; deterministic local and CI verification enforce the sealed promise. Today it ships with OpenAI Codex and Claude Code substrates plus a hash-pinned Java/JUnit adapter for Maven and Gradle." />
 <style>
   :root {
     --bg: #fbfaf8;
@@ -383,6 +383,7 @@
     text-transform: uppercase; border-radius: 999px; padding: 1px 8px; vertical-align: middle;
     white-space: nowrap; font-weight: 600; }
   .badge-wip  { color: var(--warn-ink); background: rgba(217,130,43,0.12); border: 1px solid rgba(217,130,43,0.38); }
+  .badge-done { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--live-border); }
   .badge-live { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--live-border); }
   .northstar { border: 1px solid var(--accent); background: linear-gradient(180deg, var(--accent-soft), var(--bg-panel));
     border-radius: 14px; padding: 20px 22px; margin: 24px 0; }
@@ -639,7 +640,7 @@
       <span class="chip">extended TDD/BDD, not a bureaucracy</span>
       <span class="chip">one human gate: approve</span>
       <span class="chip">oracles precede implementation</span>
-      <span class="chip">tech-agnostic via adapters</span>
+      <span class="chip">JUnit 5 · Maven + Gradle</span>
     </div>
   </div>
 </div>
@@ -988,10 +989,12 @@ $ crucible propose "fix rounding in refund display" --tier trivial
       addressing; a pinned <strong>adapter</strong> — a separate executable speaking JSON over stdin/stdout —
       honors two verbs: <code>resolve</code> (do these targets exist? no execution) and <code>run</code>
       (execute, return normalized results). Adapters map to <em>runners, not frameworks</em>: one
-      <code>java-junit</code> adapter covers plain Java, Spring Boot, Quarkus — a <code>@SpringBootTest</code>
-      with Testcontainers is just a slow JUnit test. Adapters are TCB: version- and content-hash-pinned in a
-      lockfile, certified by a conformance suite, and installed exactly once — at <code>init</code>. After
-      that, <strong>the configuration is the repo</strong>: a teammate who clones runs nothing.
+      shipped <code>java-junit</code> adapter supports JUnit 5 projects built with Maven or Gradle. Its
+      conformance suite covers resolution, normalized test results, missing targets, skips, parameterized-test
+      rejection, and build failures; the end-to-end fixture includes Spring Boot and Testcontainers. Adapters
+      are TCB: version- and content-hash-pinned in a lockfile, certified by a conformance suite, and installed
+      at <code>init</code>. After that, <strong>the configuration is the repo</strong>: a teammate clones the
+      same pinned adapter rather than choosing one locally.
     </p>
 
     <h3>The adversarial reviewer — bounded judgment</h3>
@@ -1144,7 +1147,8 @@ $ crucible propose "fix rounding in refund display" --tier trivial
         <h4>Initialize · <span style="color:var(--accent-ink)">You</span></h4>
         <p>Detects your stack, proposes adapters (“Found <code>pom.xml</code> → <code>java-junit</code> v1.x — pin it?”),
         writes the config trio, installs the schema bundle, role prompts, default rubric, and CI workflow —
-        then smoke-tests the adapter so misconfiguration surfaces now, not at first propose.</p>
+        and pins the adapter's exact package bytes. <code>doctor</code> later detects stale or tampered
+        schemas, CI templates, OpenSpec support, rubric offers, and adapter pins.</p>
         <span class="term"><b>Terminal:</b> crucible init</span>
       </li>
       <li>
@@ -1173,10 +1177,11 @@ $ crucible propose "fix rounding in refund display" --tier trivial
     <ol class="steps">
       <li>
         <h4>Explore (optional) · <span style="color:var(--accent-ink)">You + agent</span></h4>
-        <p>Chat freely in OpenAI Codex, Claude Code, or your editor — half-formed ideas, dead ends, tangents. Nothing here is
-        binding. When you're decided, the slash command <em>distills</em> the conversation's intent and hands
-        it to the CLI; the artifact author always starts with a clean context plus your decisions.</p>
-        <span class="term"><b>Chat:</b> /crucible:propose &nbsp;·&nbsp; <b>or Terminal:</b> crucible propose "lock account after 5 failed logins"</span>
+        <p>Explore freely in OpenAI Codex, Claude Code, or your editor — half-formed ideas, dead ends, tangents.
+        Nothing here is binding. When you're decided, drive the CLI with that intent; Crucible's managed
+        <code>AGENTS.md</code> instructions and <code>CLAUDE.md</code> bridge keep the artifact author on a
+        fresh context with the decided inputs.</p>
+        <span class="term"><b>Terminal:</b> crucible propose lock-account "lock account after 5 failed logins"</span>
       </li>
       <li>
         <h4>Approve — your ten minutes · <span style="color:var(--accent-ink)">You</span></h4>
@@ -1205,7 +1210,7 @@ $ crucible propose "fix rounding in refund display" --tier trivial
     <div class="tablewrap"><table>
       <thead><tr><th>You want to…</th><th>Run</th></tr></thead>
       <tbody>
-        <tr><td>Start a feature</td><td><code>crucible propose "…"</code> (or <code>/crucible:propose</code> from chat)</td></tr>
+        <tr><td>Start a feature</td><td><code>crucible propose &lt;change&gt; "…"</code></td></tr>
         <tr><td>Seal the plan</td><td><code>crucible approve</code></td></tr>
         <tr><td>Build it</td><td><code>crucible implement</code></td></tr>
         <tr><td>Check anything</td><td><code>crucible status</code> · <code>crucible why &lt;failure&gt;</code></td></tr>
@@ -1392,11 +1397,11 @@ $ crucible amend        <span class="c"># you pick (a); spec + oracle + test reg
 
     <details class="faq">
       <summary><span class="q">Q</span> What languages and frameworks does it support?</summary>
-      <p>Anything with a test runner, via adapters — which map to <em>runners, not frameworks</em>. One
-      <code>java-junit</code> adapter covers plain Java, Spring Boot, Quarkus, Micronaut (a
-      <code>@SpringBootTest</code> with Testcontainers is just a slow JUnit test). Adapters are small, separate
-      executables (~a few hundred lines), certified by a conformance suite, pinned by content hash. First-party:
-      <code>java-junit</code> first, Python/TypeScript next; the community covers the long tail.</p>
+      <p>The adapter protocol is runner-oriented, but the shipped production adapter today is
+      <code>java-junit</code>: JUnit 5 on Maven or Gradle, including a tested Spring Boot + Testcontainers
+      flow. It is a separate executable, certified by Maven and Gradle conformance fixtures and pinned by
+      content hash. The stub adapter remains for protocol conformance tests; Python and TypeScript adapters are
+      future work, not current support.</p>
     </details>
 
     <details class="faq">
@@ -1568,8 +1573,8 @@ $ crucible amend        <span class="c"># you pick (a); spec + oracle + test reg
 <section id="roadmap">
   <div class="wrap">
     <div class="section-kicker">11 — Roadmap</div>
-    <h2>The gap between the north star and today</h2>
-    <p class="subhead">Design is complete and chartered. The build runs as a tracer bullet: one thin slice end-to-end first, then deepen.</p>
+    <h2>From tracer bullet to validation</h2>
+    <p class="subhead">Phases 0–3 are complete: the artifact workflow, CI enforcement, agent substrates, and a real JUnit adapter are all shipped. Phase 4 is the next proof point.</p>
 
     <div class="northstar">
       <p><strong>North star:</strong> you describe intent in a chat, spend ten minutes at one gate, and
@@ -1577,47 +1582,40 @@ $ crucible amend        <span class="c"># you pick (a); spec + oracle + test reg
     </div>
 
     <div class="roadmap-item">
-      <h4>Phase 0 — Spike &amp; scaffold <span class="badge badge-wip">★ next</span></h4>
-      <p>Prove the OpenSpec custom-schema assumptions for real; pin the version range; scaffold the TypeScript
-      monorepo, toy fixture, and stub adapter. Reconnaissance whose explicit job is to find where the charter
-      is wrong.</p>
+      <h4>Phases 0–1 — Foundation and tracer bullet <span class="badge badge-done">✓ complete</span></h4>
+      <p>OpenSpec 1.6.0 is pinned; the TypeScript monorepo, schema bundle, stub conformance adapter, and the
+      first <code>propose → approve → implement → verify → status</code> path are complete. Permanent tests
+      prove post-approval oracle drift, skipped oracle tests, and uncovered requirements fail closed.</p>
     </div>
 
     <div class="roadmap-item">
-      <h4>Phase 1 — Tracer bullet <span class="badge badge-wip">★ WIP</span></h4>
-      <p>The thin slice: minimal <code>propose → approve → implement → verify</code> + <code>status</code> +
-      one CI check, against a stub adapter. Ends at the permanent regression anchor: an integration test
-      proving the happy path <em>and</em> the enforcement (post-approval oracle edit → red; skipped oracle →
-      red; requirement without oracle → red).</p>
+      <h4>Phase 2 — Full artifact loop <span class="badge badge-done">✓ complete</span></h4>
+      <p>Shipped computed tiers and CI routing, change types and bugfix reproduction checks, escalation/amend/override,
+      rubric-bounded review, approval surface, archive, <code>init</code>, <code>doctor</code>, notifications, and
+      <code>why</code>. The standard, refactor, and critical worked examples run end to end.</p>
     </div>
 
     <div class="roadmap-item">
-      <h4>Phase 2 — Deepen the loop</h4>
-      <p>Tiers + routing, amend/override/escalate, change types with red-on-base/green-on-fix, the adversarial
-      reviewer, the rich approve surface, <code>init</code>/<code>doctor</code>/<code>why</code>, notify hooks.
-      Exit: all three worked examples above are executable, end to end.</p>
+      <h4>Phase 3 — Codex + Claude Code and real JUnit <span class="badge badge-done">✓ complete</span></h4>
+      <p>OpenAI Codex and Claude Code now run behind one substrate interface. The hash-pinned
+      <code>java-junit</code> adapter is packaged deterministically, conforms on Maven and Gradle fixtures, and
+      powers an end-to-end Spring Boot + Testcontainers flow. <code>doctor</code> also repairs adapter-pin drift.</p>
     </div>
 
     <div class="roadmap-item">
-      <h4>Phase 3 — Real adapter: <code>java-junit</code></h4>
-      <p>Conformance fixtures first (they define “correct adapter” — the stub must pass them too), then the
-      JUnit adapter: detect, run via JUnit XML, resolve via a small Launcher-API helper. Exit: a hello-world
-      Spring Boot change flows end to end.</p>
-    </div>
-
-    <div class="roadmap-item">
-      <h4>Phase 4 — Validation project</h4>
-      <p>The success criterion, made falsifiable: a production-grade, consumer-ready Spring Boot product built
-      entirely through Crucible — instrumented from day one (gate minutes, escalations, auto-merge rate,
-      override count ≈ 0, escaped defects, verify latency). Evidence, not an anecdote.</p>
+      <h4>Phase 4 — Validation project <span class="badge badge-wip">★ next</span></h4>
+      <p>The next milestone is a production-grade, consumer-ready Spring Boot product built entirely through
+      Crucible. It will be instrumented from day one: gate minutes, escalations, auto-merge rate, override
+      count, escaped defects, and verification latency. The framework is source-pinned in the product CI until
+      public distribution exists. Evidence, not an anecdote.</p>
     </div>
 
     <div class="roadmap-item">
       <h4>Hardening — deliberately parked <span class="badge badge-wip">★ later</span></h4>
       <p>Hermetic CI sandboxing (hashes + immutability carry tamper-evidence until then) · the reviewer's own
       regression eval suite (“set the bar at the eval, not the demo”) · deterministic trajectory checks ·
-      native non-test runners (SQL constraints, architecture rules) · canary/SLO signals auto-filing ratchet
-      issues · org-scale platform hardening.</p>
+      mutation testing for critical changes · native non-test runners (SQL constraints, architecture rules) ·
+      additional language adapters · canary/SLO signals auto-filing ratchet issues · org-scale platform hardening.</p>
       <p class="today"><b>Today:</b> none of these weaken the design — each has a named interim mechanism, and
       each is a listed backlog item, not a forgotten wish.</p>
     </div>
