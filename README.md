@@ -51,6 +51,7 @@ models:
 
 An explicit role model is opaque to Crucible and overrides that provider's built-in default.
 
+Codex defaults to isolated `workspace-write`; only a gitignored `.crucible/local.yaml` may set `agent.codex_sandbox: danger-full-access` for a host that cannot nest that sandbox. Crucible never falls back automatically, this setting cannot affect CI or a merge decision, and it gives the child process full machine access.
 ## Working with an agent
 
 Start Codex, Claude Code, or another coding agent in the repository and ask it to read `AGENTS.md`, the current task, and every file named by the task's `Reads:` field. The canonical workflow is:
