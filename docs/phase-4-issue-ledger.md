@@ -1,0 +1,21 @@
+# Phase 4 Issue Ledger
+
+Running record of framework and operational issues discovered while validating
+Crucible with `yet-another-notes-app`. Add the resolution and verification when
+an issue is fixed; do not silently remove the history.
+
+| ID | Issue | Status | Resolution / next action |
+| --- | --- | --- | --- |
+| P4-001 | A consumer CI workflow could not check out the pinned private `crucible-v2` source repository. | Resolved operationally | `crucible-v2` was made public. Consumer workflows can now read the exact source pin without a project PAT. The temporary PAT and Actions secret should be removed/revoked. |
+| P4-002 | The Notes project's framework pin referred to commit `e32afd9`, which existed locally but was not reachable from the public `origin/main`; CI failed with `upload-pack: not our ref`. | Resolved | Published the existing fast-forward `main` commit. Re-running PR #3 produced green `verify` and `route` checks. |
+| P4-003 | A global `crucible` executable (`0.1.0`) shadowed the current built Crucible CLI and lacked `doctor`. | Open operational issue | Use `node /home/vivardhan/Desktop/projects/crucible-v2/core/dist/cli/bin.js <command>` during validation, or later provide an intentional installation/distribution path. |
+| P4-004 | A Java-only project’s first `propose` failed because Crucible invoked `npx openspec`, which depended on a consumer `package.json` and local OpenSpec installation. | Resolved locally | `@crucible/core` now carries the exact `@fission-ai/openspec@1.6.0` runtime, and `propose`/`archive` invoke it with Node. A regression test scaffolds a real change from a temporary repository with no npm project; build, lint, and the full test suite are green. Next: publish this framework commit, then review a Notes framework-pin bump. |
+| P4-005 | No command auto-populates Phase 4 `docs/metrics.md`. | Deferred / non-blocking | Record rows through a post-merge agent instruction for now. Add a read-only, non-enforcement `crucible metrics` command only when manual collection becomes a real friction point. |
+| P4-006 | A PAT injected into the existing `pull_request` workflow would be accessible to same-repository PR code and could be exfiltrated by a modified workflow. | Resolved by decision | Do not add PAT support to the shipped workflow. Public pinned source is the adopted bootstrap path; a private-source model requires a separate trust-boundary design. |
+
+## Resolution protocol
+
+For a framework issue, fix it in `crucible-v2` under the normal test-first
+workflow, update the relevant design/runbook documentation if a contract changes,
+and record the fix commit/PR plus verification result in this ledger. Consumer
+projects receive the fix through a separately reviewed framework-pin bump.

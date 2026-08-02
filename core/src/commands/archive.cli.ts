@@ -17,6 +17,7 @@ import type { Command } from 'commander';
 import { archive, type ArchiveDeps, type OpenSpecValidation } from './archive.js';
 import { invalidInputError } from '../util/errors.js';
 
+import { openspecExecutable } from './openspec-runner.js';
 /** Register the real `archive` subcommand on the program. */
 export function registerArchive(program: Command): void {
   program
@@ -46,10 +47,14 @@ function liveDeps(root: string): ArchiveDeps {
  */
 function validateViaOpenSpec(root: string, change: string): Promise<OpenSpecValidation> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn('npx', ['openspec', 'validate', change, '--strict', '--json'], {
-      cwd: root,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawn(
+      process.execPath,
+      [openspecExecutable(), 'validate', change, '--strict', '--json'],
+      {
+        cwd: root,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
@@ -59,7 +64,7 @@ function validateViaOpenSpec(root: string, change: string): Promise<OpenSpecVali
         invalidInputError(
           'OPENSPEC_UNAVAILABLE',
           `Could not spawn the OpenSpec CLI to validate ${change}: ${cause.message}`,
-          'Ensure the pinned @fission-ai/openspec devDependency is installed (npm install).',
+          'Rebuild or reinstall this Crucible checkout before running archive.',
         ),
       ),
     );
@@ -99,7 +104,7 @@ function parseValidation(stdout: string, stderr: string): OpenSpecValidation {
  */
 function archiveViaOpenSpec(root: string, change: string): Promise<void> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn('npx', ['openspec', 'archive', change, '--yes'], {
+    const child = spawn(process.execPath, [openspecExecutable(), 'archive', change, '--yes'], {
       cwd: root,
       stdio: ['ignore', 'ignore', 'pipe'],
     });
@@ -110,7 +115,7 @@ function archiveViaOpenSpec(root: string, change: string): Promise<void> {
         invalidInputError(
           'OPENSPEC_UNAVAILABLE',
           `Could not spawn the OpenSpec CLI to archive ${change}: ${cause.message}`,
-          'Ensure the pinned @fission-ai/openspec devDependency is installed (npm install).',
+          'Rebuild or reinstall this Crucible checkout before running archive.',
         ),
       ),
     );

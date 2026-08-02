@@ -4,11 +4,10 @@
 // experimental upstream, so no semver range is trusted: Crucible pins an exact
 // OpenSpec version and treats an upgrade as a deliberate, spike-reverified event.
 //
-// `crucible doctor` (P2-13) reads these to check a project's declared
-// `@fission-ai/openspec` pin. They are a MIRROR of the authoritative `openspec`
-// block in the monorepo root package.json — which does not ship inside the
-// published `core` package, hence the duplication. `openspec-support.test.ts`
-// guards the two from drifting apart.
+// `@crucible/core` carries this exact runtime pin so consumer repositories do
+// not need their own Node/OpenSpec installation. These constants mirror the
+// authoritative `openspec` block in the monorepo root package.json; the tests
+// guard the support contract from drifting.
 
 /** The exact OpenSpec version Crucible was verified against (the pin target). */
 export const OPENSPEC_TESTED_VERSION = '1.6.0';
