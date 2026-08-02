@@ -22,16 +22,38 @@ import { invalidInputError } from '../util/errors.js';
 export const AGENT_PROVIDERS = ['codex', 'claude-code'] as const;
 export type AgentProvider = (typeof AGENT_PROVIDERS)[number];
 
-const convenienceSchema = z.strictObject({
-  agent: z.strictObject({ provider: z.enum(AGENT_PROVIDERS) }).optional(),
-  models: z.record(z.string(), z.string()).default({}),
-  notify: z.record(z.string(), z.unknown()).default({}),
+export const CODEX_SANDBOX_MODES = ['danger-full-access'] as const;
+export type CodexSandboxMode = (typeof CODEX_SANDBOX_MODES)[number];
+export type ConvenienceConfigLayer = 'settings' | 'local';
+
+export interface ConvenienceConfig {
+  agent?: {
+    provider?: AgentProvider;
+    codex_sandbox?: CodexSandboxMode;
+  };
+  models: Record<string, string>;
+  notify: Record<string, unknown>;
+}
+
+const settingsAgentSchema = z.strictObject({ provider: z.enum(AGENT_PROVIDERS) });
+const localAgentSchema = z.strictObject({
+  provider: z.enum(AGENT_PROVIDERS).optional(),
+  codex_sandbox: z.enum(CODEX_SANDBOX_MODES).optional(),
 });
 
-export type ConvenienceConfig = z.infer<typeof convenienceSchema>;
+const convenienceSchema = (layer: ConvenienceConfigLayer) =>
+  z.strictObject({
+    agent: (layer === 'local' ? localAgentSchema : settingsAgentSchema).optional(),
+    models: z.record(z.string(), z.string()).default({}),
+    notify: z.record(z.string(), z.unknown()).default({}),
+  });
 
 /** Parse + validate one convenience file's YAML text. Empty → empty config. */
-export function parseConvenienceFile(yamlText: string, source: string): ConvenienceConfig {
+export function parseConvenienceFile(
+  yamlText: string,
+  source: string,
+  layer: ConvenienceConfigLayer = 'settings',
+): ConvenienceConfig {
   let data: unknown;
   try {
     data = parseYaml(yamlText);
@@ -44,7 +66,7 @@ export function parseConvenienceFile(yamlText: string, source: string): Convenie
   }
 
   // An empty file (null) is a valid, empty convenience config.
-  const result = convenienceSchema.safeParse(data ?? {});
+  const result = convenienceSchema(layer).safeParse(data ?? {});
   if (!result.success) {
     throw invalidInputError(
       'INVALID_CONVENIENCE_CONFIG',
@@ -52,7 +74,21 @@ export function parseConvenienceFile(yamlText: string, source: string): Convenie
       'Only `agent`, `models`, and `notify` are allowed in settings.yaml / local.yaml.',
     );
   }
-  return result.data;
+  const parsedAgent = result.data.agent;
+  const agent =
+    parsedAgent === undefined
+      ? undefined
+      : {
+          ...(parsedAgent.provider !== undefined ? { provider: parsedAgent.provider } : {}),
+          ...('codex_sandbox' in parsedAgent && parsedAgent.codex_sandbox !== undefined
+            ? { codex_sandbox: parsedAgent.codex_sandbox }
+            : {}),
+        };
+  return {
+    ...(agent ? { agent } : {}),
+    models: result.data.models,
+    notify: result.data.notify,
+  };
 }
 
 /**
@@ -63,8 +99,12 @@ export function mergeConvenience(
   base: ConvenienceConfig,
   override: ConvenienceConfig,
 ): ConvenienceConfig {
+  const agent =
+    base.agent !== undefined || override.agent !== undefined
+      ? { ...base.agent, ...override.agent }
+      : undefined;
   return {
-    ...((override.agent ?? base.agent) ? { agent: override.agent ?? base.agent } : {}),
+    ...(agent ? { agent } : {}),
     models: { ...base.models, ...override.models },
     notify: deepMerge(base.notify, override.notify),
   };
@@ -73,14 +113,14 @@ export function mergeConvenience(
 /** Read + merge `.crucible/settings.yaml` then `.crucible/local.yaml`. */
 export function loadConvenienceConfig(configRoot: string): ConvenienceConfig {
   const dir = join(configRoot, '.crucible');
-  const settings = readIfPresent(join(dir, 'settings.yaml'));
-  const local = readIfPresent(join(dir, 'local.yaml'));
+  const settings = readIfPresent(join(dir, 'settings.yaml'), 'settings');
+  const local = readIfPresent(join(dir, 'local.yaml'), 'local');
   return mergeConvenience(settings, local);
 }
 
 const EMPTY: ConvenienceConfig = { models: {}, notify: {} };
 
-function readIfPresent(path: string): ConvenienceConfig {
+function readIfPresent(path: string, layer: ConvenienceConfigLayer): ConvenienceConfig {
   let text: string;
   try {
     text = readFileSync(path, 'utf8');
@@ -92,7 +132,7 @@ function readIfPresent(path: string): ConvenienceConfig {
       'Check the file permissions on the convenience config.',
     );
   }
-  return parseConvenienceFile(text, path);
+  return parseConvenienceFile(text, path, layer);
 }
 
 function isNotFound(err: unknown): boolean {

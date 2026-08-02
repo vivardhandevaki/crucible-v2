@@ -86,6 +86,35 @@ describe('CodexSubstrate — invocation shape', () => {
     expect(calls[0]!.command).toBe('/opt/pinned/codex');
     expect(calls[0]!.timeoutMs).toBe(5000);
   });
+
+  it('uses danger-full-access only when the local runtime explicitly opts in', async () => {
+    const { spawn, calls } = recordingSpawn({});
+    await new CodexSubstrate({ spawn, sandbox: 'danger-full-access' }).run(req());
+
+    expect(calls[0]!.argv).toContain('--sandbox');
+    expect(calls[0]!.argv[calls[0]!.argv.indexOf('--sandbox') + 1]).toBe('danger-full-access');
+  });
+
+  it('never retries a failed workspace-write session with broader permissions', async () => {
+    const { spawn, calls } = recordingSpawn({
+      code: 1,
+      stderr: 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted',
+    });
+    const diagnostics: string[] = [];
+
+    const result = await new CodexSubstrate({
+      spawn,
+      reportSandboxFailure: (message) => diagnostics.push(message),
+    }).run(req());
+
+    expect(result.exitCode).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.argv).toContain('workspace-write');
+    expect(diagnostics).toEqual([expect.stringContaining('.crucible/local.yaml')]);
+    expect(diagnostics[0]).toContain('danger-full-access');
+    expect(diagnostics[0]).toContain('full access');
+    expect(diagnostics[0]).toContain('will not automatically retry');
+  });
 });
 
 describe('CodexSubstrate — frozen result contract', () => {

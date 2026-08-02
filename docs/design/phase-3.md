@@ -68,8 +68,9 @@ shape or the adapter protocol.
   `models.<role>` remains opaque. Codex defaults to Sol/Terra/Sol for
   propose/implement/review; Claude Code retains its prior defaults.
 - `CodexSubstrate` uses non-interactive JSONL, ephemeral sessions, ignored user
-  config, no approvals, and `workspace-write`. The normal Git check and project
-  instructions remain enabled. Shared subprocess, timeout, and transcript
+  config, no approvals, and `workspace-write` by default. P4-09 permits only an
+  explicit gitignored `.crucible/local.yaml` `agent.codex_sandbox: danger-full-access`
+  opt-in for hosts that cannot nest the default sandbox; it never falls back automatically or affects CI. The normal Git check and project instructions remain enabled. Shared subprocess, timeout, and transcript
   behavior is provider-independent.
 - `AGENTS.md` is canonical. `CLAUDE.md` is a managed bridge. Init migrates an
   old full Claude block in place, preserving human-authored bytes outside the

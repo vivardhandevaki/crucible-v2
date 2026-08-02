@@ -410,7 +410,7 @@ Realistic build estimate: a few days — thin CLI wrapper (any language) + Launc
 |---|---|---|---|
 | `crucible.yaml` | **Enforcement only:** risk globs, tiers, adapters, suites, trajectory, audit | Yes | Risk-globbed critical + **target-branch evaluation** |
 | `.crucible/settings.yaml` | Team convenience: `agent.provider`, `models:` routing, team notify channels | Yes | Normal change flow; *not* in risk globs |
-| `.crucible/local.yaml` | Personal: provider/model overrides and notify hooks | No (gitignored) | None needed — can't affect anyone |
+| `.crucible/local.yaml` | Personal: provider/model overrides, Codex sandbox opt-in, and notify hooks | No (gitignored) | None needed — can't affect anyone |
 
 **Boundary test (mechanical):** if editing it could change what merges, it goes in crucible.yaml; otherwise it can't go there. This is why one combined file failed: globs match files, not sections — a combined file would route a Slack-webhook edit to critical-tier human review (disproportionate ceremony), and personal settings don't belong in commits at all.
 
