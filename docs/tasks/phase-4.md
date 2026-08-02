@@ -40,7 +40,7 @@ Reads: charter §Configuration & Reviewer Law, §The Workflow, §Loop Mechanics;
 
 Delivers: a ratified, local-only configuration path for selecting Codex's child-process sandbox mode when the default `workspace-write` mode is incompatible with the host's nested sandbox.
 
-Decision to ratify before implementation: retain `workspace-write` as the default and permit `danger-full-access` only as an explicit operator opt-in in gitignored `.crucible/local.yaml`; do not silently fall back or change CI behavior.
+**Decision ratified 2026-08-02:** retain `workspace-write` as the default and permit `danger-full-access` only as an explicit operator opt-in in gitignored `.crucible/local.yaml`; do not silently fall back or change CI behavior.
 
 Acceptance:
 
