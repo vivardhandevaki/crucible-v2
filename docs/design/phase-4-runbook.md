@@ -14,6 +14,8 @@ Phase 4 has **no framework design doc by decision** (PHASES.md): the product's d
 
 Phase 4 deliberately validates Crucible before a public npm/binary release exists. Run `crucible init` from a committed Crucible GitHub checkout (or pass `--framework-source owner/repository@<40-character-lowercase-sha>`). It writes `.crucible/framework.lock.json`, a strict source pin. The shipped CI workflow reads both that pin and `crucible.yaml` from the target branch, checks out the exact commit into a separate directory, builds it with `npm ci && npm run build`, and executes that built CLI. A PR therefore cannot select the harness that judges itself.
 
+
+The framework packages and invokes its exact pinned OpenSpec runtime itself. A consumer repository, including a Java/Spring Boot project, does not need a `package.json`, `npm init`, or a separate OpenSpec installation to use `propose` or `archive`.
 The pin is part of the approval hash scope whenever present; changing it after approval voids approval. A framework bug is fixed in the framework repository first, then the product receives a separately reviewed pin-bump change. This is a validation-only bootstrap, not a distribution mechanism: publishing and release lifecycle remain deferred under Backlog B12.
 
 ## Instrumentation (success criteria — record from day one)
