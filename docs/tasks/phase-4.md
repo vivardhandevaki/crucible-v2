@@ -50,3 +50,35 @@ Acceptance:
 - the setting remains convenience-only: it is ignored by enforcement/CI and cannot alter a merge decision;
 - agent artifact judging remains unchanged: an agent failure still produces no trusted success and the bundle gate fails closed;
 - tests cover argument construction for both modes, local-only placement, invalid config, and no-fallback behavior.
+
+**P4-10 · Interactive-session authoring lifecycle** · Tier: Fable / Sol (lifecycle and trust-boundary design) + Opus / Terra (implementation) · Trigger: a governed local role session cannot author artifacts because a nested agent sandbox is unavailable or inappropriate for the operator's trust boundary
+
+Reads: charter §The Workflow, §Loop Mechanics, §Static Context Surfaces, §Configuration & Reviewer Law; architecture.md §1, §6, §8–9; design/phase-3.md §P3-10; design/phase-4-runbook.md §Validation bootstrap and §Escalation of framework bugs; P4-08 and P4-09 above; AGENTS.md invariants 1–5 and 7–12; issue ledger P4-008.
+
+Delivers: a ratified lifecycle for managed Codex and Claude Code skills that lets an already-active interactive agent session author local `propose` and `implement` work directly, without spawning a second authoring-agent process, while the pinned Crucible CLI remains the sole authority for scaffolding, validation, approval, preconditions, and verification.
+
+**Design gate (Fable / Sol — must be ratified before implementation):**
+
+- amend the fresh-context contract explicitly: interactive authoring is a separate local execution mode, not an `AgentSubstrate` role invocation; define its scope, provenance/audit treatment, and failure semantics;
+- define the deterministic CLI handoff lifecycle, including exact preflight/scaffold, artifact-validation, retry/revise, and precondition failures; a skill must not infer a valid next state or treat conversation history as authority;
+- preserve every enforcement invariant: artifact validation, approval hashes and post-approval immutability, tier computation, target-branch CI evaluation, and fail-closed missing/malformed artifacts;
+- define the role matrix. The starting hypothesis is session-native `propose` and `implement`, with adversarial `review` retained as an independent fresh-context invocation until separately ratified;
+- define the local trust boundary plainly: interactive session permissions belong to the selected agent surface, are never selected by enforcement config, and cannot alter a merge decision;
+- decide whether P4-08 is amended into the managed-skill installation surface for this lifecycle or remains a distinct thin-wrapper task.
+
+**Implementation boundary (only after the design gate):**
+
+- init installs idempotent, substrate-appropriate managed skills while preserving human-owned instructions;
+- a session-native authoring skill may write only through the ratified lifecycle and must not launch `codex exec` / `claude -p` to create the same artifacts;
+- headless `AgentSubstrate` authoring remains an optional automation path; CI behavior does not change.
+
+Acceptance:
+
+- deterministic tests prove the complete session-native propose and implement handoffs reject missing/invalid prior artifacts, interrupted sessions, malformed bundles, and unresolved bindings without trusting an agent message or session result;
+- a valid interactive proposal is indistinguishable to `approve`, `implement`, `verify`, archive, and CI from an equivalent valid headless proposal; seals and oracle immutability remain identical;
+- tests prove the installed Codex and Claude Code surfaces invoke the pinned project CLI, preserve human-owned instruction bytes, and never recursively launch a child authoring session;
+- the hub surface reports only deterministically valid next lifecycle actions and directs all enforcement decisions to the CLI;
+- the reviewer remains independent in the initial release, and any later session-native review path requires a separate ratified amendment;
+- no local skill, session setting, transcript, or state cache can alter tiering, approval validity, CI configuration selection, or merge routing;
+- documentation explains the permission trade-off and failure recovery, including how a partially scaffolded pre-approval change is resumed or revised;
+- coverage includes malformed skill metadata, missing pinned CLI, local-session interruption, partial artifacts, retry/revise behavior, and no-regression coverage for the existing headless path.
