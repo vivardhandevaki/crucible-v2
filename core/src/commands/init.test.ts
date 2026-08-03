@@ -10,6 +10,7 @@ import {
   GITIGNORE_LINES,
   MANAGED_BLOCK_FILES,
   init,
+  MANAGED_SKILL_NAMES,
   type ConfirmOverwrite,
   type InitAnswers,
   type InitReport,
@@ -115,6 +116,28 @@ describe('init — validation framework pin', () => {
     );
 
     expect(loadFrameworkPin(join(scratch, FRAMEWORK_PIN_RELPATH))).toEqual(FRAMEWORK_PIN);
+  });
+});
+
+describe('init — managed interactive skills (P4-08/P4-10)', () => {
+  it('installs equivalent validated skills and a local pinned launcher without touching human instructions', async () => {
+    writeFileSync(join(scratch, 'AGENTS.md'), '# Human-owned instructions\n', 'utf8');
+    await init(
+      { root: scratch, answers: ANSWERS, frameworkPin: FRAMEWORK_PIN },
+      { confirmOverwrite: () => true },
+    );
+
+    for (const name of MANAGED_SKILL_NAMES) {
+      for (const root of ['.agents', '.claude']) {
+        const skill = read(join(root, 'skills', name, 'SKILL.md'));
+        expect(skill).toContain(`name: ${name}`);
+        expect(skill).toContain('node .crucible/bin/crucible.mjs');
+        expect(skill).not.toContain('codex exec');
+        expect(skill).not.toContain('claude -p');
+      }
+    }
+    expect(read(join('.crucible', 'bin', 'crucible.mjs'))).toContain(FRAMEWORK_PIN.commit);
+    expect(read('AGENTS.md')).toContain('# Human-owned instructions');
   });
 });
 

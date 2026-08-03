@@ -265,6 +265,7 @@ export async function propose(options: ProposeOptions, deps: ProposeDeps): Promi
       cmd,
       summary: `bundle judged ${report.verdict} (${report.checks.length} check(s)) [type: ${type}]`,
       transcript: relative(root, transcriptPath),
+      execution_mode: 'headless',
     },
     report.verdict === 'pass' ? (revise ? 'revised' : 'proposed') : 'propose-red',
   );

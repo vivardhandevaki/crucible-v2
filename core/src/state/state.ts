@@ -29,6 +29,7 @@ import { CHANGE_TYPES } from '../changetype/changetype.js';
  * (invariant 1) — it indexes the captured trajectory for later inspection. */
 const stateEventSchema = z.strictObject({
   at: z.string().min(1),
+  execution_mode: z.enum(['headless', 'session-native']).optional(),
   cmd: z.string().min(1),
   summary: z.string(),
   transcript: z.string().min(1).optional(),
