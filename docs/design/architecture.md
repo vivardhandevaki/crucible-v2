@@ -16,6 +16,7 @@ substrate/    AgentSubstrate interface + Codex/Claude Code/Fake implementations 
 adapters/     adapter client: manifest loading, spawn, JSON transport, result normalization
 config/       crucible.yaml / settings.yaml / local.yaml loading + validation
 state/        state.yaml event log (write-only from commands; reconcile in status)
+session/      strict local authoring handoffs/checkpoints; never imported by enforcement
 notify/       convenience-only dispatch (terminal/desktop/webhook/github); may fail, never blocks (added P2-00, built P2-15)
 util/         pure helpers only
 ```
@@ -89,3 +90,56 @@ Verbs `resolve`/`run` (+ optional `scope`), JSON over stdin/stdout, normalized r
 - Framework: vitest. Unit tests colocated (`*.test.ts`); integration tests in `core/test/` run against `fixtures/toy-repo`.
 - TCB modules (hash, lint, tier, artifacts parsers, adapter client, verdict parsing) require malformed-input cases in every suite.
 - The tracer integration test (P1-16) is the permanent end-to-end regression anchor; it must stay green from Phase 1 onward.
+
+## 10. Session-native authoring (ratified P4-10, 2026-08-03)
+
+Session-native authoring is a second **local execution mode**, not an `AgentSubstrate` implementation and not a relaxation of §6. An already-active Codex or Claude Code session performs the nondeterministic writing; deterministic CLI subcommands own every preflight, scaffold, handoff, checkpoint transition, validation, and verdict. Direct `crucible propose` / `implement` retain the headless substrate path for automation.
+
+### Role matrix
+
+| Role or command | Session-native skill | Headless path |
+|---|---|---|
+| propose create + pre-approval revise | Initial release; no child agent | Retained |
+| implement (tasks first, then code) | Initial release; no child agent | Retained |
+| review | Forbidden until a separate ratification | Required fresh `AgentSubstrate` role |
+| amend + approve-time regeneration | Not in P4-10 | Existing fresh propose role |
+| approve / verify / escalate / override / archive / status / why | Thin pinned-CLI skills only | Deterministic or existing behavior |
+
+### Public CLI and handoff contract
+
+The session surface is:
+
+```
+crucible session status <change>
+crucible session propose start <change> <intent> [--type feature|bugfix|refactor]
+crucible session propose next|resume|finish <change>
+crucible session propose revise <change> <instruction>
+crucible session implement start|tasks-ready|resume|finish <change>
+```
+
+Every successful stage emits strict JSON `SessionHandoffV1`: `{ version: 1, change, role, operation, stage, change_dir, role_prompt, instructions[], next_command, input_hash }`. Unknown or missing fields fail exit 3. `session status` emits artifact-derived phase plus an allow-list of exact next commands; the hub skill may display only that list. Human-readable output may render the same object, but skills use `--json`.
+
+Gitignored `.crucible/sessions/<change>/<role>.json` checkpoints persist only explicit CLI inputs and the current stage. `input_hash` seals the relevant inputs (propose operation/type/intent; implement approval bytes). They make interruption recovery deterministic but are **not enforcement artifacts**: approval, hash scope, tier, verify, review, routing, archive, and CI have no dependency on `session/`. Missing checkpoints teach the exact restart command; malformed checkpoints exit 3; stale input hashes exit 2 and name the required restart/amend action. Deleting or forging one can at worst disrupt local guidance—it cannot produce a valid bundle, approval, verdict, or merge.
+
+### Propose lifecycle
+
+1. `start` validates name, intent, type, role prompt, and absence of an existing change; records the deterministic create handoff; then scaffolds through Crucible's packaged, pinned OpenSpec runtime with the type-specific schema. A failed scaffold is resumable from the recorded input and is never treated as success.
+2. `next` revalidates the checkpoint and asks the packaged OpenSpec runtime for status plus the next ready artifact instructions. The active session reads dependencies and writes only the returned paths. `resume` performs the same derivation after interruption. Neither command trusts conversation history or OpenSpec's completion claim.
+3. `revise` requires an existing unapproved change, records the explicit revision instruction, and returns the full dependency-ordered regeneration handoff. Approved changes still require `amend`.
+4. `finish` runs Crucible bundle parsing, type conformance, adapter binding resolution, and traceability lint. Red is exit 1 with the checkpoint retained for fixes/retry; malformed trusted inputs are exit 3. Green alone stamps `generation.yaml`, appends `execution_mode: session-native` audit provenance, and exposes `approve` as next.
+
+The Crucible propose skill is therefore **not** a wrapper around OpenSpec's `openspec-propose` skill: that upstream workflow creates `tasks.md` before approval and does not enforce Crucible oracles or seals. Only the pinned Crucible CLI may call OpenSpec's scaffold/status/instructions primitives.
+
+### Implement lifecycle
+
+1. `start` requires an existing change, parseable and valid approval seal, role prompt, and no unresolved escalation. It records the approval-file hash and emits only the tasks-stage handoff, even when an old `tasks.md` exists.
+2. `tasks-ready` revalidates the same approval hash and requires a non-empty `tasks.md` before moving the checkpoint to implementation. `resume` revalidates artifacts and returns only the current stage's handoff.
+3. `finish` requires the implementation-stage checkpoint, independently revalidates approval/tasks/escalation, and runs ordinary local `verify`. A pending escalation exits 2 naming `amend`; red verify exits 1 and remains resumable; green records session-native provenance. Any sealed-file edit is caught by the unchanged approval check.
+
+### Skills, launcher, permissions, and audit
+
+`init` owns one hub plus command-specific `SKILL.md` assets for `crucible`, propose, approve, implement, verify, review, amend, escalate, override, archive, status, and why. It installs the portable `name`/`description` subset under both `.agents/skills/<name>/` (Codex) and `.claude/skills/<name>/` (Claude Code), validates metadata before writing, and uses the existing idempotent diff-and-confirm policy so human bytes outside managed regions are preserved.
+
+Every installed skill calls `node .crucible/bin/crucible.mjs`; none calls an ambient `crucible`. `init` generates that gitignored local launcher from the source checkout used for initialization. Each call strictly loads `.crucible/framework.lock.json`, verifies the checkout's normalized GitHub repository and `HEAD` against the pin, verifies the built CLI exists, then delegates without fallback. A missing launcher/check-out/build is exit 2 with the exact `init` recovery; a malformed or mismatched pin is exit 3. This is advisory local provenance on an untrusted developer machine; CI continues to check out and build the target branch's exact pin independently.
+
+Interactive filesystem/shell permissions are selected and enforced by the host Codex/Claude surface. No Crucible enforcement or convenience setting broadens them, and a permission denial is an interrupted local stage—not a reason to fall back to P4-09's `danger-full-access`. Session checkpoints and `state.yaml` are audit/convenience only. Session-native state events set `execution_mode: session-native` and omit a Crucible transcript path; headless events set `headless` and retain their caller-minted transcript. Neither field is an enforcement input.

@@ -25,11 +25,13 @@ Reads: charter §The Workflow, §Loop Mechanics, §Preconditions, §Configuratio
 
 Delivers: init-managed, substrate-appropriate agent skills/commands for Codex and Claude Code, covering status/why and the full workflow: propose, approve, implement, verify, review, amend, escalate, override, and archive.
 
+**Decision amended by P4-10, ratified 2026-08-03:** implement P4-08 and P4-10 as one cluster. Install a hub plus command-specific skills during `init`. Propose/revise and implement use P4-10's session-native CLI handoffs; every other skill remains a thin pinned-CLI wrapper. The earlier all-roles-fresh clause applies to command-invoked roles, not the separately governed session-native mode.
+
 Acceptance:
 
 - every skill is a thin guided wrapper around the real pinned Crucible CLI; it cannot bypass artifact validation, approval hashes, target-branch enforcement, or command preconditions;
 - a hub skill reports the current governed state and recommends only valid next commands;
-- all command roles remain fresh-context invocations; interactive agent guidance never authors artifacts outside the real command path;
+- all command-invoked roles remain fresh-context invocations; session-native propose/revise and implement author only inside the real CLI handoff path;
 - init installs and updates the managed skill surfaces idempotently while preserving human-owned agent instructions;
 - tests prove each installed surface resolves the pinned framework CLI and handles precondition failures actionably on both supported substrates.
 - a simple skill wrapper is not a P4-09 sandbox fix: if an in-session authoring path is later proposed, it requires its own ratified lifecycle and explicit amendment to the fresh-context contract.
@@ -56,6 +58,8 @@ Acceptance:
 Reads: charter §The Workflow, §Loop Mechanics, §Static Context Surfaces, §Configuration & Reviewer Law; architecture.md §1, §6, §8–9; design/phase-3.md §P3-10; design/phase-4-runbook.md §Validation bootstrap and §Escalation of framework bugs; P4-08 and P4-09 above; AGENTS.md invariants 1–5 and 7–12; issue ledger P4-008.
 
 Delivers: a ratified lifecycle for managed Codex and Claude Code skills that lets an already-active interactive agent session author local `propose` and `implement` work directly, without spawning a second authoring-agent process, while the pinned Crucible CLI remains the sole authority for scaffolding, validation, approval, preconditions, and verification.
+
+**Decision ratified 2026-08-03:** the design gate is satisfied by charter + architecture §10 + runbook amendments. P4-10 absorbs P4-08 as one implementation cluster. Initial session-native scope is propose/create, pre-approval revise, and implement; review, amend, and approve-time regeneration remain fresh child roles. Skills call a validated gitignored local launcher bound to `.crucible/framework.lock.json`; CI and enforcement are unchanged. Implementation remains pending and must follow the test-first acceptance below.
 
 **Design gate (Fable / Sol — must be ratified before implementation):**
 

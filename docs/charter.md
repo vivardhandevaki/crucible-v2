@@ -24,6 +24,8 @@ explore ──► propose ──► approve ──► implement ──► verify
 
 Every command is stateless, reads only artifacts, and **refuses to run if its precondition artifact is missing or invalid**. The state machine from V1 survives intact — but it is *experienced* as five intuitive commands instead of work-order ceremony.
 
+There are two local execution modes for the agent-authored steps. **Headless mode** retains the original contract: `propose` and `implement` invoke a fresh `AgentSubstrate` role. **Session-native mode** (ratified P4-10) lets an already-active Codex or Claude Code session author propose/revise and implement work directly, but only after the pinned CLI has emitted the stage's strict handoff and only until the CLI judges the resulting files. Session-native work is not an `AgentSubstrate` invocation; conversation history, a skill, a checkpoint, and agent self-report carry no authority. `approve`, hashes, verification, tiering, target-branch CI, and merge routing are identical in both modes.
+
 | Command | Actor | Produces | Precondition |
 |---|---|---|---|
 | `explore` | Agent + human | Ephemeral notes, options, tradeoffs | — (optional) |
@@ -62,7 +64,7 @@ V2 is a **layer over OpenSpec's artifact format** (specs/ as current truth, chan
 
 ## What Survives From V1 Unchanged
 
-- Stateless agents; hand-offs are artifacts, not messages; direction emerges from preconditions.
+- Command-invoked roles stay stateless; session-native roles use explicit CLI handoffs whose validity is re-derived from artifacts and preconditions, never messages or self-report.
 - "Done" = artifact exists and validates — never agent self-report.
 - CI as the sole authority; agents cannot modify oracles, specs, gates, or harness (enforced via hashing + immutability checks now; full hermetic/pinned/network-restricted sandbox parked as a hardening milestone).
 - Deterministic risk routing + random audit sampling of auto-merges.
@@ -253,6 +255,7 @@ The Crucible schema bundle ships change *types*, each with its own artifact sequ
 ## State & Audit — state.yaml
 
 - `changes/<name>/state.yaml`: append-style event log + current snapshot (computed tier with its inputs, phase, verify history, escalation index, timestamps). **Artifacts are the truth; state.yaml is a derived cache and audit trail.** Every crucible command writes it as its last step; `status` recomputes state from the artifacts + hashes and rewrites the file if reality diverges. Editing state.yaml changes nothing — status and CI derive from artifacts, never labels.
+- Agent-backed events record `execution_mode: headless | session-native`. Headless events may index a Crucible-captured transcript; session-native events deliberately do not pretend to own the host product's conversation transcript. This provenance is audit-only and is never read by approval, tiering, verify, routing, or CI.
 - CI runs in an ephemeral checkout and can't commit state back; its audit contribution lives where CI naturally writes — check annotations and the verdict JSON attached to the PR. Local file + PR records together form the complete trail.
 
 ## Escalation — Three Enforcement Layers (honestly graded)
@@ -264,7 +267,8 @@ The Crucible schema bundle ships change *types*, each with its own artifact sequ
 ## Static Context Surfaces
 
 - **Command-invoked agents** (propose / implement / review): role prompts live in `.crucible/context/` — versioned files loaded by the CLI at invocation. TCB: hash-covered, immutable to the implement agent.
-- **Interactive agents** (OpenAI Codex, Claude Code, Cursor, etc.): `init` writes the canonical managed workflow block into `AGENTS.md` and a small compatibility bridge into `CLAUDE.md`. Both direct conversational agents to drive the CLI rather than freelance. A future provider-neutral `$crucible` skill may live under `.agents/skills/`; P3-10 intentionally ships no agent-specific shortcut.
+- **Interactive agents** (OpenAI Codex and Claude Code): `init` writes the canonical managed workflow block into `AGENTS.md`, a compatibility bridge into `CLAUDE.md`, and a hub plus command-specific Crucible skills under `.agents/skills/` and `.claude/skills/`. Skills contain procedure, never enforcement: the hub asks the pinned CLI for valid actions; command skills execute the CLI's handoffs and stop on its exit status.
+- **Session-native authoring boundary (P4-10):** only propose/create, pre-approval revise, and implement are session-native initially. Their skills may edit files only after `crucible session ...` returns the applicable handoff and must return the result to the CLI for judgment. They never invoke `codex exec`, `claude -p`, an OpenSpec skill, or an ambient OpenSpec executable. The CLI alone invokes its packaged OpenSpec runtime for scaffold/status/instructions. `review`, `amend`, and approve-time regeneration remain independent fresh-context roles until separately ratified.
 
 ## Notify Hooks
 

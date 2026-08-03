@@ -18,6 +18,20 @@ Phase 4 deliberately validates Crucible before a public npm/binary release exist
 The framework packages and invokes its exact pinned OpenSpec runtime itself. A consumer repository, including a Java/Spring Boot project, does not need a `package.json`, `npm init`, or a separate OpenSpec installation to use `propose` or `archive`.
 The pin is part of the approval hash scope whenever present; changing it after approval voids approval. A framework bug is fixed in the framework repository first, then the product receives a separately reviewed pin-bump change. This is a validation-only bootstrap, not a distribution mechanism: publishing and release lifecycle remain deferred under Backlog B12.
 
+## Session-native local workflow (P4-08 + P4-10)
+
+`crucible init` installs a `$crucible`/`/crucible` hub and command-specific Codex/Claude skills. The hub never guesses from conversation history: it asks the pinned local launcher for artifact-derived status and shows only the returned actions. Propose/revise and implement run in the already-active interactive session through `crucible session` handoffs; review and amend remain fresh child roles. The propose skill uses Crucible's packaged OpenSpec primitives through the CLI, never `/opsx:propose` or a global `openspec`.
+
+The operator chooses the interactive agent surface and its permissions before starting Crucible. Those permissions are local and advisory; Crucible never broadens them, and P4-09's `danger-full-access` remains a separate explicit opt-in rather than a fallback. CI still uses the target branch's config and source pin, so neither a skill, launcher, session checkpoint, transcript, nor `state.yaml` can change what merges.
+
+Recovery is always CLI-led:
+
+- interrupted/partially scaffolded proposal: invoke the propose skill again; `session resume` replays the persisted explicit intent and returns the next OpenSpec artifact instruction;
+- red or malformed proposal: fix only the paths named by the handoff/report, then retry `session propose finish`; unresolved bindings remain red;
+- pre-approval intent change: use session-native `propose revise`; an approval already present requires ordinary `amend`;
+- interrupted implementation: invoke the implement skill again; the approval-bound checkpoint returns either the tasks or implementation stage;
+- missing/malformed/stale checkpoint or missing pinned launcher: stop on the CLI's exit 2/3 teaching error and run the named restart or `init` command—never infer a stage or fall back to an ambient executable.
+
 ## Instrumentation (success criteria — record from day one)
 
 Source of numbers: state.yaml events + approval.yaml timestamps + PR/check metadata. Until a `crucible metrics` command exists (build it just-in-time if manual collection annoys — it's a legitimate Phase 4 framework task), keep `docs/metrics.md` in the product repo, one row per merged change:
