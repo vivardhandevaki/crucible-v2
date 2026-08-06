@@ -268,7 +268,7 @@ The Crucible schema bundle ships change *types*, each with its own artifact sequ
 
 - **Command-invoked agents** (propose / implement / review): role prompts live in `.crucible/context/` — versioned files loaded by the CLI at invocation. TCB: hash-covered, immutable to the implement agent.
 - **Interactive agents** (OpenAI Codex and Claude Code): `init` writes the canonical managed workflow block into `AGENTS.md`, a compatibility bridge into `CLAUDE.md`, and a hub plus command-specific Crucible skills under `.agents/skills/` and `.claude/skills/`. Skills contain procedure, never enforcement: the hub asks the pinned CLI for valid actions; command skills execute the CLI's handoffs and stop on its exit status.
-- **Session-native authoring boundary (P4-10):** only propose/create, pre-approval revise, and implement are session-native initially. Their skills may edit files only after `crucible session ...` returns the applicable handoff and must return the result to the CLI for judgment. They never invoke `codex exec`, `claude -p`, an OpenSpec skill, or an ambient OpenSpec executable. The CLI alone invokes its packaged OpenSpec runtime for scaffold/status/instructions. `review`, `amend`, and approve-time regeneration remain independent fresh-context roles until separately ratified.
+- **Session-native authoring boundary (P4-10, amended P4-11):** only propose/create, pre-approval revise, and implement are session-native initially. Their skills may edit files only after `crucible session ...` returns the applicable handoff and must return the result to the CLI for judgment. They never invoke `codex exec`, `claude -p`, an OpenSpec skill, or an ambient OpenSpec executable. The CLI alone invokes its packaged OpenSpec runtime for scaffold/status/instructions, suppresses OpenSpec's apply-time `tasks.md` instruction until approval, and derives any oracle-test write paths from adapter `candidateFile` results. `review`, `amend`, and approve-time regeneration remain independent fresh-context roles until separately ratified.
 
 ## Notify Hooks
 
@@ -343,7 +343,7 @@ The system SHALL lock an account after 5 consecutive failed login attempts.
 
 **The `target` is an opaque string** minted in the runner's native addressing scheme (pytest node ID; `jest: src/auth.test.ts#locks account after 5 failures`; `cargo-test: auth::lockout::fifth_failure_locks`). Core never interprets it. The adapter claiming the runner honors exactly two verbs over targets:
 
-- **`resolve(targets[]) → {target: found | missing}`** — batch dry-run collection, no execution. Powers the linter and propose-time validation.
+- **`resolve(targets[]) → {target: found | missing}`** — batch dry-run collection, no execution. Powers the linter and propose-time validation. A `found` result MUST name the existing project-relative `targetFile` that approval seals. A `missing` result MAY name a project-relative `candidateFile`: the pinned adapter's deterministic, build-model-grounded location where a propose author may create or repair that target. `candidateFile` is authoring guidance only; it never makes a missing target resolvable, never enters a seal by itself, and is ignored by lint/verify.
 - **`run(targets[]) → results[]`** — execute, return normalized results.
 
 **Normalized result schema** (the only shape core ever parses):
@@ -393,6 +393,8 @@ Per-verb complexity, honestly graded for the JVM:
 - **`scope`** — skipped for v2.0 (optional in the protocol): local verify runs the full regression suite instead — slower local loop, zero correctness cost, CI is full-suite anyway. Add module-level diff mapping later when suite size hurts.
 
 **The addressable-subset rule:** we control both sides of the seam — the propose agent writes the oracle tests the adapter must address. So the harness requires oracle-bound tests to be plainly addressable (concrete `Class#method`; no `@TestFactory` dynamic tests or exotic parameterized naming *for oracle targets*). The adapter handles only the well-behaved subset; the implement agent's own unit tests can be as exotic as it likes — nothing addresses those by target.
+
+For pre-approval authoring, the adapter may return `candidateFile` only when it can derive one without guessing runner syntax or project layout. The reference JVM adapter first reuses a project-contained configured test source that already declares the target class; otherwise it maps a syntactically addressable class to one deterministic test source root reported by Maven's/Gradle's evaluated build model. Absolute paths, traversal, paths outside the project, malformed targets, and unsupported target kinds yield no candidate. Core remains runner-agnostic and authorizes only the exact candidate paths returned by the hash-pinned adapter.
 
 Realistic build estimate: a few days — thin CLI wrapper (any language) + Launcher-API discovery helper + XML normalization + conformance fixtures (a tiny sample Maven/Gradle project with known-good and deliberately-broken tests). A few hundred lines total, and a natural first dogfooding candidate.
 

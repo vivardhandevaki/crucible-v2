@@ -89,6 +89,43 @@ describe('adapter client — resolve (integration, real stub)', () => {
   });
 });
 
+describe('adapter client — resolve union (P4-11)', () => {
+  it('accepts a candidate only on a missing target', async () => {
+    const client = stubbedClient(() =>
+      Promise.resolve(
+        ok(
+          JSON.stringify({
+            results: [
+              {
+                target: 'target',
+                status: 'missing',
+                candidateFile: 'src/test/java/com/acme/CheckoutTest.java',
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    await expect(client.resolve(['target'])).resolves.toEqual([
+      {
+        target: 'target',
+        status: 'missing',
+        candidateFile: 'src/test/java/com/acme/CheckoutTest.java',
+      },
+    ]);
+  });
+
+  it.each([
+    { target: 'target', status: 'found' },
+    { target: 'target', status: 'missing', targetFile: 'a.java' },
+  ])('rejects malformed strict resolve result %#', async (result) => {
+    const client = stubbedClient(() => Promise.resolve(ok(JSON.stringify({ results: [result] }))));
+    await expect(client.resolve(['target'])).rejects.toSatisfy(
+      (err: unknown) => isCrucibleError(err) && err.exit === 3 && err.code === 'ADAPTER_TRANSPORT',
+    );
+  });
+});
+
 describe('adapter client — run + ORC join (integration, real stub)', () => {
   it('joins run results back to their oracle IDs', async () => {
     const client = realClient();

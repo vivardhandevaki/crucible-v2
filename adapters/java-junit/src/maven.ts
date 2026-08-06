@@ -29,7 +29,7 @@ import {
   type RunResult,
 } from './reports.js';
 import { invokeResolve } from './resolve.js';
-import { groundTargetFile } from './source-file.js';
+import { candidateTargetFile, groundTargetFile } from './source-file.js';
 import { mavenTestSourceRoots } from './source-roots.js';
 import { splitTarget, WireError } from './wire.js';
 
@@ -115,10 +115,20 @@ export function resolveMaven(opts: MavenResolveOptions): ResolveResult[] {
   // `unsupported` (parameterized / dynamic templates) → `missing`, which fails
   // closed at propose time per the addressable-subset rule (invariant 11).
   return classified.map((r) => {
-    if (r.classification !== 'found') return { target: r.target, status: 'missing' };
     const className = r.className ?? splitTarget(r.target).className;
+    if (r.classification === 'missing') {
+      const candidateFile = candidateTargetFile({ root: opts.cwd, className, sourceRoots });
+      return {
+        target: r.target,
+        status: 'missing' as const,
+        ...(candidateFile ? { candidateFile } : {}),
+      };
+    }
+    if (r.classification === 'unsupported') return { target: r.target, status: 'missing' as const };
     const targetFile = groundTargetFile({ root: opts.cwd, className, sourceRoots });
-    return { target: r.target, status: 'found', ...(targetFile ? { targetFile } : {}) };
+    if (targetFile === undefined)
+      throw new WireError('resolved target cannot be grounded: ' + r.target);
+    return { target: r.target, status: 'found' as const, targetFile };
   });
 }
 

@@ -117,6 +117,15 @@ describe('approve — preconditions gate the seal (invariant 5)', () => {
     expect(existsSync(approvalPath(scratch))).toBe(false);
   });
 
+  it('refuses a pre-approval tasks.md', async () => {
+    writeFileSync(join(scratch, CHANGE_REL, 'tasks.md'), '# Tasks\n');
+    const err = await catchCrucible(() =>
+      approve({ root: scratch, change: CHANGE, yes: true }, deps()),
+    );
+    expect(err.code).toBe('TASKS_PREAPPROVAL');
+    expect(existsSync(approvalPath(scratch))).toBe(false);
+  });
+
   it('names the exact failing oracle id in the red-lint message', async () => {
     const err = await catchCrucible(() =>
       approve({ root: scratch, change: CHANGE, yes: true }, deps({ resolve: resolveAllMissing })),
