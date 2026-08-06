@@ -143,29 +143,25 @@ describe('session-native implement — approval-bound lifecycle', () => {
   });
 
   it('refuses to start without an approval and makes tasks a separate stage', async () => {
-    const noApproval = await capture(() =>
-      implementStart({ root: scratch, change: CHANGE }, deps()),
-    );
+    const noApproval = await capture(() => implementStart({ root: scratch, change: CHANGE }));
     expect(noApproval.exit).toBe(2);
     expect(noApproval.hint).toContain(`crucible approve ${CHANGE}`);
 
     sealApproval();
-    const start = await implementStart({ root: scratch, change: CHANGE }, deps());
+    const start = await implementStart({ root: scratch, change: CHANGE });
     expect(start.stage).toBe('tasks');
     expect(start.next_command).toBe(`crucible session implement tasks-ready ${CHANGE}`);
   });
 
   it('rejects an empty tasks file and verifies only after the implementation stage', async () => {
     sealApproval();
-    await implementStart({ root: scratch, change: CHANGE }, deps());
+    await implementStart({ root: scratch, change: CHANGE });
     writeFileSync(join(scratch, CHANGE_REL, 'tasks.md'), '');
-    const noTasks = await capture(() =>
-      implementTasksReady({ root: scratch, change: CHANGE }, deps()),
-    );
+    const noTasks = await capture(() => implementTasksReady({ root: scratch, change: CHANGE }));
     expect(noTasks.exit).toBe(2);
 
     writeFileSync(join(scratch, CHANGE_REL, 'tasks.md'), '# Tasks\n\n- [ ] Implement greeting\n');
-    const implementation = await implementTasksReady({ root: scratch, change: CHANGE }, deps());
+    const implementation = await implementTasksReady({ root: scratch, change: CHANGE });
     expect(implementation.stage).toBe('implementation');
     const result = await implementFinish({ root: scratch, change: CHANGE }, deps());
     expect(result.report.verdict).toBe('pass');

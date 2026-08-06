@@ -108,28 +108,19 @@ export function registerSession(program: Command): void {
     .command('start')
     .argument('<change>')
     .action(async (change: string) => {
-      write(
-        program,
-        await implementStart({ root: process.cwd(), change }, liveDeps(process.cwd())),
-      );
+      write(program, await implementStart({ root: process.cwd(), change }));
     });
   implement
     .command('tasks-ready')
     .argument('<change>')
     .action(async (change: string) => {
-      write(
-        program,
-        await implementTasksReady({ root: process.cwd(), change }, liveDeps(process.cwd())),
-      );
+      write(program, await implementTasksReady({ root: process.cwd(), change }));
     });
   implement
     .command('resume')
     .argument('<change>')
     .action(async (change: string) => {
-      write(
-        program,
-        await implementResume({ root: process.cwd(), change }, liveDeps(process.cwd())),
-      );
+      write(program, await implementResume({ root: process.cwd(), change }));
     });
   implement
     .command('finish')

@@ -259,10 +259,7 @@ export async function proposeFinish(
 }
 
 /** Bind the implementation session to a valid, current approval file. */
-export async function implementStart(
-  options: SessionOptions,
-  deps: SessionDeps,
-): Promise<SessionHandoff> {
+export async function implementStart(options: SessionOptions): Promise<SessionHandoff> {
   const approvalHash = validateImplementationPreconditions(options.root, options.change);
   const checkpoint: ImplementCheckpoint = {
     version: SESSION_VERSION,
@@ -277,10 +274,7 @@ export async function implementStart(
 }
 
 /** Advance only when a non-empty tasks.md exists on disk. */
-export async function implementTasksReady(
-  options: SessionOptions,
-  _deps: SessionDeps,
-): Promise<SessionHandoff> {
+export async function implementTasksReady(options: SessionOptions): Promise<SessionHandoff> {
   const checkpoint = loadImplementCheckpoint(options.root, options.change);
   validateImplementationPreconditions(options.root, options.change, checkpoint.input.approval_hash);
   const tasksPath = join(changeDirFor(options.root, options.change), 'tasks.md');
@@ -297,10 +291,7 @@ export async function implementTasksReady(
 }
 
 /** Revalidate the approval and return only the persisted current stage. */
-export async function implementResume(
-  options: SessionOptions,
-  _deps: SessionDeps,
-): Promise<SessionHandoff> {
+export async function implementResume(options: SessionOptions): Promise<SessionHandoff> {
   const checkpoint = loadImplementCheckpoint(options.root, options.change);
   validateImplementationPreconditions(options.root, options.change, checkpoint.input.approval_hash);
   if (checkpoint.stage === 'implementation') {
