@@ -59,7 +59,7 @@ Reads: charter §The Workflow, §Loop Mechanics, §Static Context Surfaces, §Co
 
 Delivers: a ratified lifecycle for managed Codex and Claude Code skills that lets an already-active interactive agent session author local `propose` and `implement` work directly, without spawning a second authoring-agent process, while the pinned Crucible CLI remains the sole authority for scaffolding, validation, approval, preconditions, and verification.
 
-**Decision ratified 2026-08-03:** the design gate is satisfied by charter + architecture §10 + runbook amendments. P4-10 absorbs P4-08 as one implementation cluster. Initial session-native scope is propose/create, pre-approval revise, and implement; review, amend, and approve-time regeneration remain fresh child roles. Skills call a validated gitignored local launcher bound to `.crucible/framework.lock.json`; CI and enforcement are unchanged. Implementation remains pending and must follow the test-first acceptance below.
+**Decision ratified 2026-08-03; delivered 2026-08-05:** the design gate is satisfied by charter + architecture §10 + runbook amendments. P4-10 absorbs P4-08 as one implementation cluster. Initial session-native scope is propose/create, pre-approval revise, and implement; review, amend, and approve-time regeneration remain fresh child roles. Skills call a validated gitignored local launcher bound to `.crucible/framework.lock.json`; CI and enforcement are unchanged. The cluster shipped in PR #28; the generated-launcher root correction shipped in PR #29. Notes dogfooding then exposed the pre-approval oracle-test handoff gap tracked as P4-11 below.
 
 **Design gate (Fable / Sol — must be ratified before implementation):**
 
@@ -86,3 +86,19 @@ Acceptance:
 - no local skill, session setting, transcript, or state cache can alter tiering, approval validity, CI configuration selection, or merge routing;
 - documentation explains the permission trade-off and failure recovery, including how a partially scaffolded pre-approval change is resumed or revised;
 - coverage includes malformed skill metadata, missing pinned CLI, local-session interruption, partial artifacts, retry/revise behavior, and no-regression coverage for the existing headless path.
+
+**P4-11 · Session-native oracle-test handoff and task boundary** · Tier: Fable / Sol (adapter/session contract amendment) + Opus / Terra (implementation) · Trigger: Notes dogfooding reached `oracles.md`, but the CLI could neither authorize the missing bound test files nor prevent packaged OpenSpec from offering `tasks.md` before approval
+
+Reads: charter §The Workflow, §The Approve Session, §Traceability Lint — Mechanics, §Bindings & the Adapter Protocol, §Static Context Surfaces; architecture.md §7 and §10; design/phase-3.md §P3-03 and §P3-06; design/phase-4-runbook.md §Session-native local workflow; AGENTS.md invariants 1–6 and 10–12; issue ledger P4-010.
+
+Delivers: an adapter-grounded pre-approval oracle-test stage for session-native propose, plus one execution-mode-independent gate that keeps `tasks.md` post-approval.
+
+**Decision ratified 2026-08-06:** amend the existing `resolve` result rather than add a runner-specific core parser or a third required adapter verb. `found` strictly carries existing `targetFile`; `missing` may carry a deterministic safe `candidateFile`. Candidates authorize only exact pre-approval test writes and remain unresolved until ordinary collection succeeds. Session propose filters OpenSpec's apply-time task instruction, migrates P4-10 checkpoints by artifact re-derivation, and advances `artifacts → oracle-tests → ready`. Both headless propose and approve reject any pre-approval `tasks.md`.
+
+Acceptance (write these tests red before production changes):
+
+- `core/src/adapters/client.test.ts` rejects every malformed resolve union (missing `targetFile` on `found`, `candidateFile` on `found`, `targetFile` on `missing`, unknown fields) while accepting a contained candidate on `missing`;
+- `adapters/java-junit/src/source-file.test.ts`, `maven.test.ts`, and `gradle.test.ts` prove candidate paths come only from evaluated test roots, reuse an existing class source for a missing method, select a stable configured root for a missing class, and omit candidates for malformed/unsupported/outside-project targets;
+- `core/src/session/session.test.ts` proves OpenSpec `tasks.md` is never returned pre-approval, exact candidate paths are grouped into oracle-test handoffs, all-found targets advance to ready, unlocatable targets fail closed with revision recovery, P4-10 checkpoints migrate, and finish cannot turn a candidate into green;
+- command/bundle tests prove both headless `propose` and `approve` reject a pre-approval `tasks.md`, while implement still creates and consumes it only after a valid seal;
+- full typecheck, lint, adapter suites, core suites, and build pass; the Notes `create-note` checkpoint resumes through bound-test creation without deleting or recreating its reviewed bundle.

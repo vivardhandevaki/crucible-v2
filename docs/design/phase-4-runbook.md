@@ -26,8 +26,9 @@ The operator chooses the interactive agent surface and its permissions before st
 
 Recovery is always CLI-led:
 
-- interrupted/partially scaffolded proposal: invoke the propose skill again; `session resume` replays the persisted explicit intent and returns the next OpenSpec artifact instruction;
-- red or malformed proposal: fix only the paths named by the handoff/report, then retry `session propose finish`; unresolved bindings remain red;
+- interrupted/partially scaffolded proposal: invoke the propose skill again; `session resume` replays the persisted explicit intent, migrates a legacy P4-10 authoring checkpoint if necessary, and derives the next artifact or oracle-test instruction;
+- after `oracles.md`: keep invoking the propose skill while the CLI returns exact adapter-grounded bound-test paths; `tasks.md` is never authored before approval, even if raw OpenSpec status considers it ready;
+- red or malformed proposal: fix only the paths named by the handoff/report, then retry `session propose finish`; unresolved bindings remain red, and a target the adapter cannot map safely must be corrected through the exact `propose revise` command reported by the CLI;
 - pre-approval intent change: use session-native `propose revise`; an approval already present requires ordinary `amend`;
 - interrupted implementation: invoke the implement skill again; the approval-bound checkpoint returns either the tasks or implementation stage;
 - missing/malformed/stale checkpoint or missing pinned launcher: stop on the CLI's exit 2/3 teaching error and run the named restart or `init` command—never infer a stage or fall back to an ambient executable.
