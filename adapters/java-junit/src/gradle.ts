@@ -10,8 +10,9 @@
 //            no reports. A build failure BEFORE any test runs (a compile error,
 //            or no `--tests` filter matched any test) yields ALL requested
 //            targets `error` with the build-log tail (fail-closed, attributable).
-//   resolve: `gradle testClasses` to compile, then the bundled Launcher-API
-//            helper (P3-03) classifies each target against the compiled classes;
+//   resolve: `gradle testClasses` to compile, then the configured root `test`
+//            task's evaluated classpath feeds the bundled Launcher-API helper
+//            (P3-03), which classifies each target;
 //            the three-way vocabulary folds to the wire's found | missing.
 //
 // The report-reading / target-join surface is shared with the Maven driver
@@ -31,6 +32,7 @@ import {
   type ResolveResult,
   type RunResult,
 } from './reports.js';
+import { gradleTestClasspath } from './test-classpath.js';
 import { invokeResolve } from './resolve.js';
 import { candidateTargetFile, groundTargetFile } from './source-file.js';
 import { gradleTestSourceRoots } from './source-roots.js';
@@ -101,10 +103,10 @@ export function resolveGradle(opts: GradleResolveOptions): ResolveResult[] {
     );
   }
 
-  const classpath = [
-    join(opts.cwd, 'build', 'classes', 'java', 'main'),
-    join(opts.cwd, 'build', 'classes', 'java', 'test'),
-  ];
+  const classpath = gradleTestClasspath({
+    cwd: opts.cwd,
+    ...(opts.gradleBin ? { gradleBin: opts.gradleBin } : {}),
+  });
   const classified = invokeResolve({
     jarPath: opts.jarPath,
     classpath,

@@ -11,14 +11,23 @@
 // break one on purpose without touching the shared fixture.
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { GRADLE_BASIC_DIR } from '@crucible/fixtures';
 
-import { runGradle } from './gradle.js';
+import { resolveGradle, runGradle } from './gradle.js';
 
 function hasTool(cmd: string, versionArg: string): boolean {
   return spawnSync(cmd, [versionArg], { encoding: 'utf8' }).status === 0;
@@ -30,6 +39,14 @@ const ADD = 'com.crucible.conformance.CalculatorTest#addsTwoNumbers';
 const FAIL = 'com.crucible.conformance.CalculatorTest#failsOnPurpose';
 const SKIP = 'com.crucible.conformance.CalculatorTest#skippedFeature';
 const MISSING = 'com.crucible.conformance.CalculatorTest#doesNotExist';
+
+const ADAPTER_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const JAR_PATH = join(ADAPTER_ROOT, 'resolve-helper', 'target', 'resolve-helper.jar');
+const CUSTOM_TARGET =
+  'com.crucible.conformance.CustomClasspathDiscoveryTest#resolvesWithoutExecution';
+const CUSTOM_TEST = join(
+  'src/test/java/com/crucible/conformance/CustomClasspathDiscoveryTest.java',
+);
 
 let happy: string;
 beforeAll(() => {
@@ -82,5 +99,70 @@ describe.skipIf(!HAS_GRADLE)('runGradle — compile error before tests run', () 
       expect(r.message).toMatch(/build failed before tests ran/);
       expect(r.message).toMatch(/error|FAILED|Calculator\.java|compileJava/i);
     }
+  }, 300_000);
+});
+
+describe.skipIf(!HAS_GRADLE)('resolveGradle — configured Test.classpath (P4-12)', () => {
+  let customized: string;
+
+  beforeAll(() => {
+    customized = mkdtempSync(join(tmpdir(), 'crucible-gradle-classpath-'));
+    for (const entry of ['build.gradle', 'settings.gradle', 'src']) {
+      cpSync(join(GRADLE_BASIC_DIR, entry), join(customized, entry), { recursive: true });
+    }
+    appendFileSync(
+      join(customized, 'build.gradle'),
+      [
+        '',
+        'configurations { p412DiscoveryOnly }',
+        'dependencies {',
+        "  testCompileOnly 'org.apache.commons:commons-lang3:3.17.0'",
+        "  p412DiscoveryOnly 'org.apache.commons:commons-lang3:3.17.0'",
+        '}',
+        "tasks.named('test') { classpath = classpath + configurations.p412DiscoveryOnly }",
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const source = join(customized, CUSTOM_TEST);
+    mkdirSync(dirname(source), { recursive: true });
+    writeFileSync(
+      source,
+      [
+        'package com.crucible.conformance;',
+        '',
+        'import java.nio.file.Files;',
+        'import java.nio.file.Path;',
+        'import org.apache.commons.lang3.function.FailableRunnable;',
+        'import org.junit.jupiter.api.Test;',
+        '',
+        'class CustomClasspathDiscoveryTest implements FailableRunnable<Exception> {',
+        '  @Override public void run() {}',
+        '',
+        '  @Test',
+        '  void resolvesWithoutExecution() throws Exception {',
+        '    Files.writeString(Path.of("build", "p4-12-custom-classpath-executed"), "executed");',
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const helper = spawnSync('mvn', ['-q', 'package'], {
+      cwd: join(ADAPTER_ROOT, 'resolve-helper'),
+      encoding: 'utf8',
+    });
+    if (helper.status !== 0) throw new Error(helper.stderr || helper.stdout);
+  }, 300_000);
+
+  afterAll(() => {
+    if (customized) rmSync(customized, { recursive: true, force: true });
+  });
+
+  it('uses the configured task classpath, grounds the target, and never executes its body', () => {
+    expect(resolveGradle({ cwd: customized, targets: [CUSTOM_TARGET], jarPath: JAR_PATH })).toEqual(
+      [{ target: CUSTOM_TARGET, status: 'found', targetFile: CUSTOM_TEST }],
+    );
+    expect(existsSync(join(customized, 'build', 'p4-12-custom-classpath-executed'))).toBe(false);
   }, 300_000);
 });

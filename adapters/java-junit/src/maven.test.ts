@@ -10,14 +10,16 @@
 // break one on purpose without touching the shared fixture.
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MAVEN_BASIC_DIR } from '@crucible/fixtures';
 
-import { runMaven } from './maven.js';
+import { resolveMaven, runMaven } from './maven.js';
+import { invokeResolve } from './resolve.js';
 
 function hasTool(cmd: string, versionArg: string): boolean {
   return spawnSync(cmd, [versionArg], { encoding: 'utf8' }).status === 0;
@@ -27,6 +29,12 @@ const HAS_MVN = hasTool('java', '-version') && hasTool('mvn', '-v');
 
 const ADD = 'com.crucible.conformance.CalculatorTest#addsTwoNumbers';
 const FAIL = 'com.crucible.conformance.CalculatorTest#failsOnPurpose';
+const ADAPTER_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const JAR_PATH = join(ADAPTER_ROOT, 'resolve-helper', 'target', 'resolve-helper.jar');
+const MONOREPO_ROOT = dirname(dirname(ADAPTER_ROOT));
+const SPRING_HELLO_WORLD_DIR = join(MONOREPO_ROOT, 'fixtures', 'spring-hello-world');
+const MOCKMVC_TARGET = 'com.crucible.hello.MockMvcDiscoveryTest#resolvesWithoutExecution';
+const MOCKMVC_TEST = join('src/test/java/com/crucible/hello/MockMvcDiscoveryTest.java');
 
 let happy: string;
 beforeAll(() => {
@@ -84,5 +92,71 @@ describe.skipIf(!HAS_MVN)('runMaven — compile error before tests run', () => {
       expect(r.message).toMatch(/build failed before tests ran/);
       expect(r.message).toMatch(/ERROR|BUILD FAILURE|Calculator\.java/);
     }
+  }, 300_000);
+});
+
+describe.skipIf(!HAS_MVN)('resolveMaven — dependency-backed Spring discovery (P4-12)', () => {
+  let spring: string;
+
+  beforeAll(() => {
+    spring = mkdtempSync(join(tmpdir(), 'crucible-mvn-mockmvc-'));
+    cpSync(SPRING_HELLO_WORLD_DIR, spring, { recursive: true });
+    const source = join(spring, MOCKMVC_TEST);
+    mkdirSync(dirname(source), { recursive: true });
+    writeFileSync(
+      source,
+      [
+        'package com.crucible.hello;',
+        '',
+        'import java.nio.file.Files;',
+        'import java.nio.file.Path;',
+        'import org.junit.jupiter.api.Test;',
+        'import org.springframework.beans.factory.annotation.Autowired;',
+        'import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;',
+        'import org.springframework.boot.test.context.SpringBootTest;',
+        'import org.springframework.test.web.servlet.MockMvc;',
+        'import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;',
+        '',
+        '@SpringBootTest',
+        '@AutoConfigureMockMvc',
+        'class MockMvcDiscoveryTest {',
+        '  @Autowired MockMvc mockMvc;',
+        '',
+        '  @Test',
+        '  void resolvesWithoutExecution() throws Exception {',
+        '    mockMvc.perform(post("/notes"));',
+        '    Files.writeString(Path.of("target", "p4-12-mockmvc-executed"), "executed");',
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const helper = spawnSync('mvn', ['-q', 'package'], {
+      cwd: join(ADAPTER_ROOT, 'resolve-helper'),
+      encoding: 'utf8',
+    });
+    if (helper.status !== 0) throw new Error(helper.stderr || helper.stdout);
+  }, 300_000);
+
+  afterAll(() => {
+    if (spring) rmSync(spring, { recursive: true, force: true });
+  });
+
+  it('loads MockMvc dependencies, grounds the target, and never executes its body', () => {
+    const compiled = spawnSync('mvn', ['-q', 'test-compile'], { cwd: spring, encoding: 'utf8' });
+    if (compiled.status !== 0) throw new Error(compiled.stderr || compiled.stdout);
+    expect(() =>
+      invokeResolve({
+        jarPath: JAR_PATH,
+        classpath: [join(spring, 'target', 'classes'), join(spring, 'target', 'test-classes')],
+        targets: [MOCKMVC_TARGET],
+      }),
+    ).toThrow(/RequestBuilder/);
+
+    expect(resolveMaven({ cwd: spring, targets: [MOCKMVC_TARGET], jarPath: JAR_PATH })).toEqual([
+      { target: MOCKMVC_TARGET, status: 'found', targetFile: MOCKMVC_TEST },
+    ]);
+    expect(existsSync(join(spring, 'target', 'p4-12-mockmvc-executed'))).toBe(false);
   }, 300_000);
 });
