@@ -64,6 +64,12 @@ import {
 } from '../framework/pin.js';
 import { invalidInputError } from '../util/errors.js';
 
+import {
+  MANAGED_SKILL_NAMES,
+  renderManagedSkill,
+  renderPinnedLauncher,
+  validateManagedSkill,
+} from '../session/skills.js';
 // core/src/commands/init.ts (or core/dist/commands/init.js) → core/ → assets/,
 // the same resolution `review/rubric.ts` uses for the shipped rubric default.
 const assetsRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets');
@@ -74,9 +80,12 @@ export const GITIGNORE_LINES = [
   '.crucible/local.yaml',
   '.crucible/transcripts/',
   '.crucible/verdicts/',
+  '.crucible/sessions/',
+  '.crucible/bin/',
 ] as const;
 
 /** The files that carry Crucible's managed agent block (charter §267). */
+export { MANAGED_SKILL_NAMES } from '../session/skills.js';
 export const MANAGED_BLOCK_FILES = ['AGENTS.md', 'CLAUDE.md'] as const;
 
 const MANAGED_BEGIN =
@@ -244,6 +253,23 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
   //    (charter §267). Marker-delimited, replaced in place on re-run.
   await ensureManagedBlock(root, 'AGENTS.md', managedBlock(), deps, apply);
   await ensureManagedBlock(root, 'CLAUDE.md', claudeBridgeBlock(), deps, apply);
+  for (const name of MANAGED_SKILL_NAMES) {
+    const skill = renderManagedSkill(name);
+    validateManagedSkill(skill, name);
+    for (const hostRoot of ['.agents', '.claude']) {
+      await writeFullFile(root, join(hostRoot, 'skills', name, 'SKILL.md'), skill, deps, apply);
+    }
+  }
+  if (options.frameworkPin !== undefined) {
+    const frameworkRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+    await writeFullFile(
+      root,
+      join('.crucible', 'bin', 'crucible.mjs'),
+      renderPinnedLauncher(options.frameworkPin, frameworkRoot),
+      deps,
+      apply,
+    );
+  }
 
   // 7. gitignore the personal layer + the caller-minted transcript/verdict trees.
   ensureGitignore(root, apply);

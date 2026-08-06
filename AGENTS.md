@@ -22,7 +22,7 @@ Crucible is a framework for AI-driven software development where humans approve 
 7. **Enforcement config is read from the target branch in CI** — never from the PR branch. Convenience config (settings.yaml, local.yaml) never affects enforcement.
 8. **Tiers are computed, never declared.** Force up allowed; force down impossible. Risk-glob match always dominates.
 9. **The reviewer blocks only on enumerated rubric lines.** Findings citing unknown rubric IDs → fail (the reviewer may not invent rules). Everything else → observations.
-10. **Statelessness per role.** Command-invoked agents start with fresh context: role prompt from `.crucible/context/` + the artifact bundle. Interactive sessions distill intent; they never author artifacts directly.
+10. **Explicit context per role.** Command-invoked agents start with fresh context: role prompt from `.crucible/context/` + the artifact bundle. The separately ratified session-native mode may let an already-active interactive session author propose/revise and implement work only through CLI-minted handoffs; it is not an `AgentSubstrate` invocation, and its conversation, checkpoint, or self-report is never enforcement input.
 11. **Convenience is never enforcement.** Notify hooks, agent shortcuts, status displays can fail without unblocking or blocking anything.
 12. **Deterministic core.** Everything except the agent calls (propose/implement/review) must be reproducible: same inputs → same outputs, no wall-clock or randomness in decisions.
 

@@ -65,6 +65,7 @@ export function registerReview(program: Command): void {
             cmd: 'review',
             summary: `review ${report.verdict} (rubric ${result.rubricHash.slice(0, 12)})`,
             transcript: relative(root, result.transcriptPath),
+            execution_mode: 'headless',
           },
           report.verdict === 'pass' ? 'reviewed' : 'review-red',
         );
