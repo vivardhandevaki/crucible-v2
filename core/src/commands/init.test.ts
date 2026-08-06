@@ -136,7 +136,11 @@ describe('init — managed interactive skills (P4-08/P4-10)', () => {
         expect(skill).not.toContain('claude -p');
       }
     }
-    expect(read(join('.crucible', 'bin', 'crucible.mjs'))).toContain(FRAMEWORK_PIN.commit);
+    const launcher = read(join('.crucible', 'bin', 'crucible.mjs'));
+    expect(launcher).toContain(FRAMEWORK_PIN.commit);
+    // init.ts runs from both core/src and core/dist; the generated launcher must
+    // point at the repository's one core/dist tree, never core/core/dist.
+    expect(launcher).not.toContain('/core/core/dist/cli/bin.js');
     expect(read('AGENTS.md')).toContain('# Human-owned instructions');
   });
 });
