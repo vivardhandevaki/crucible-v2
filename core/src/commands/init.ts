@@ -261,7 +261,7 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
     }
   }
   if (options.frameworkPin !== undefined) {
-    const frameworkRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+    const frameworkRoot = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
     await writeFullFile(
       root,
       join('.crucible', 'bin', 'crucible.mjs'),
