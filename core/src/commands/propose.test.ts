@@ -137,6 +137,15 @@ describe('propose — green path (acceptance: fake produces a bundle passing par
     expect(result.render).toContain(`propose ${CHANGE}: PASS`);
   });
 
+  it('judges pre-approval tasks.md as a red bundle finding', async () => {
+    const result = await propose(
+      options(),
+      deps({}, { files: { ...CANNED_BUNDLE, [join(CHANGE_REL, 'tasks.md')]: '# Tasks\n' } }),
+    );
+    expect(result.report.verdict).toBe('fail');
+    expect(result.render).toContain('tasks.md');
+  });
+
   it('scaffolds before the substrate session runs', async () => {
     await propose(options(), deps());
     expect(events).toEqual(['scaffold', 'substrate']);

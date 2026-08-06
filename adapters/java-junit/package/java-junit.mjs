@@ -550,6 +550,24 @@ function groundTargetFile(options) {
   }
   return void 0;
 }
+function candidateTargetFile(options) {
+  const existing = groundTargetFile(options);
+  if (existing !== void 0) return existing;
+  const root = realpathIfPresent(options.root);
+  if (root === void 0) return void 0;
+  const outerClass = options.className.split("$", 1)[0];
+  const parts = outerClass.split(".");
+  const simpleName = parts.pop();
+  if (simpleName === void 0 || !isJavaIdentifier(simpleName)) return void 0;
+  if (parts.some((part) => !isJavaIdentifier(part))) return void 0;
+  const sourceRel = join2(...parts, simpleName + ".java");
+  for (const configuredRoot of options.sourceRoots) {
+    const candidate = join2(resolve(options.root, configuredRoot), sourceRel);
+    if (!isContained(root, candidate)) continue;
+    return relative(root, candidate).split(sep).join("/");
+  }
+  return void 0;
+}
 function realpathIfPresent(path) {
   try {
     return realpathSync(path);
@@ -745,10 +763,20 @@ ${logTail(proc.stdout, proc.stderr)}`
   });
   const sourceRoots = gradleTestSourceRoots(opts.cwd, opts.gradleBin);
   return classified.map((r) => {
-    if (r.classification !== "found") return { target: r.target, status: "missing" };
     const className = r.className ?? splitTarget(r.target).className;
+    if (r.classification === "missing") {
+      const candidateFile = candidateTargetFile({ root: opts.cwd, className, sourceRoots });
+      return {
+        target: r.target,
+        status: "missing",
+        ...candidateFile ? { candidateFile } : {}
+      };
+    }
+    if (r.classification === "unsupported") return { target: r.target, status: "missing" };
     const targetFile = groundTargetFile({ root: opts.cwd, className, sourceRoots });
-    return { target: r.target, status: "found", ...targetFile ? { targetFile } : {} };
+    if (targetFile === void 0)
+      throw new WireError("resolved target cannot be grounded: " + r.target);
+    return { target: r.target, status: "found", targetFile };
   });
 }
 function buildTestArgs(targets) {
@@ -810,10 +838,20 @@ ${logTail(proc.stdout, proc.stderr)}`
   });
   const sourceRoots = mavenTestSourceRoots(opts.cwd, opts.mvnBin);
   return classified.map((r) => {
-    if (r.classification !== "found") return { target: r.target, status: "missing" };
     const className = r.className ?? splitTarget(r.target).className;
+    if (r.classification === "missing") {
+      const candidateFile = candidateTargetFile({ root: opts.cwd, className, sourceRoots });
+      return {
+        target: r.target,
+        status: "missing",
+        ...candidateFile ? { candidateFile } : {}
+      };
+    }
+    if (r.classification === "unsupported") return { target: r.target, status: "missing" };
     const targetFile = groundTargetFile({ root: opts.cwd, className, sourceRoots });
-    return { target: r.target, status: "found", ...targetFile ? { targetFile } : {} };
+    if (targetFile === void 0)
+      throw new WireError("resolved target cannot be grounded: " + r.target);
+    return { target: r.target, status: "found", targetFile };
   });
 }
 function buildSelector(targets) {

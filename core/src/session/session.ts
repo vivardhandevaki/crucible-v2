@@ -4,7 +4,7 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import { loadOracles, type Oracle } from '../artifacts/oracles.js';
 import { loadApproval, verifyApproval } from '../artifacts/approval.js';
@@ -54,7 +54,7 @@ const proposeCheckpointSchema = z.strictObject({
   version: z.literal(SESSION_VERSION),
   change: z.string().min(1),
   role: z.literal('propose'),
-  stage: z.enum(['scaffolding', 'authoring']),
+  stage: z.enum(['scaffolding', 'authoring', 'artifacts', 'oracle-tests', 'ready']),
   input: z.strictObject({
     intent: z.string().min(1),
     type: z.enum(['feature', 'bugfix', 'refactor']),
@@ -129,8 +129,8 @@ export async function proposeStart(
     input_hash: hashInput({ intent: options.intent, type: options.type }),
   };
   writeCheckpoint(options.root, checkpoint);
-  await completeScaffold(options.root, checkpoint, deps);
-  return proposeHandoff(options.root, checkpoint, 'start', []);
+  const complete = await completeScaffold(options.root, checkpoint, deps);
+  return proposeHandoff(options.root, complete, 'start', []);
 }
 
 /** Return only OpenSpec's current ready artifact instructions. */
@@ -141,12 +141,17 @@ export async function proposeNext(
   let checkpoint = loadProposeCheckpoint(options.root, options.change);
   if (checkpoint.stage === 'scaffolding')
     checkpoint = await completeScaffold(options.root, checkpoint, deps);
-  const instructions = validateInstructions(
+  const instructions = proposalInstructions(
     options.root,
     options.change,
     await deps.instructions(options.change, 'next'),
   );
-  return proposeHandoff(options.root, checkpoint, 'next', instructions);
+  if (instructions.length > 0) {
+    const artifacts = { ...checkpoint, stage: 'artifacts' as const };
+    writeCheckpoint(options.root, artifacts);
+    return proposeHandoff(options.root, artifacts, 'next', instructions);
+  }
+  return oracleTestHandoff(options.root, checkpoint, deps, 'next');
 }
 
 /** Resume is intentionally identical to next: it rederives, never trusts history. */
@@ -184,12 +189,12 @@ export async function proposeRevise(
     version: SESSION_VERSION,
     change: options.change,
     role: 'propose',
-    stage: 'authoring',
+    stage: 'artifacts',
     input: { intent: options.instruction, type },
     input_hash: hashInput({ intent: options.instruction, type }),
   };
   writeCheckpoint(options.root, checkpoint);
-  const instructions = validateInstructions(
+  const instructions = proposalInstructions(
     options.root,
     options.change,
     await deps.instructions(options.change, 'all'),
@@ -203,7 +208,7 @@ export async function proposeFinish(
   deps: SessionDeps,
 ): Promise<ProposeFinishResult> {
   const checkpoint = loadProposeCheckpoint(options.root, options.change);
-  if (checkpoint.stage !== 'authoring') {
+  if (checkpoint.stage === 'scaffolding') {
     throw preconditionError(
       'SESSION_NOT_READY',
       `Proposal ${options.change} is still scaffolding.`,
@@ -378,7 +383,7 @@ async function completeScaffold(
       `Run \`crucible session propose resume ${checkpoint.change}\` after fixing the pinned OpenSpec runtime.`,
     );
   }
-  const complete: ProposeCheckpoint = { ...checkpoint, stage: 'authoring' };
+  const complete: ProposeCheckpoint = { ...checkpoint, stage: 'artifacts' };
   writeCheckpoint(root, complete);
   return complete;
 }
@@ -516,7 +521,71 @@ function makeHandoff(
   });
 }
 
-function validateInstructions(
+async function oracleTestHandoff(
+  root: string,
+  checkpoint: ProposeCheckpoint,
+  deps: SessionDeps,
+  operation: string,
+): Promise<SessionHandoff> {
+  const oracles = loadOracles(join(changeDirFor(root, checkpoint.change), 'oracles.md'));
+  const targetToOracle = new Map<string, string>();
+  for (const oracle of oracles)
+    for (const target of oracle.binding.targets) {
+      if (!targetToOracle.has(target)) targetToOracle.set(target, oracle.id);
+    }
+  const targets = [...targetToOracle.keys()];
+  const results = await deps.resolve(targets);
+  const byTarget = new Map(results.map((result) => [result.target, result] as const));
+  const groups = new Map<string, string[]>();
+  for (const target of targets) {
+    const result = byTarget.get(target);
+    if (result?.status === 'found') continue;
+    const candidate = result?.candidateFile;
+    if (candidate === undefined || !isSafeCandidatePath(root, candidate)) {
+      throw preconditionError(
+        'SESSION_TARGET_UNLOCATABLE',
+        'Cannot author oracle ' +
+          (targetToOracle.get(target) ?? target) +
+          ': adapter could not map ' +
+          target +
+          ' to a safe test file.',
+        'Run session propose revise with an addressable target binding.',
+      );
+    }
+    const group = groups.get(candidate) ?? [];
+    group.push(target);
+    groups.set(candidate, group);
+  }
+  if (groups.size === 0) {
+    const ready = { ...checkpoint, stage: 'ready' as const };
+    writeCheckpoint(root, ready);
+    return proposeHandoff(root, ready, operation, []);
+  }
+  const oracleTests = { ...checkpoint, stage: 'oracle-tests' as const };
+  writeCheckpoint(root, oracleTests);
+  const instructions = [...groups.entries()].map(([path, targetsForFile]) => ({
+    path,
+    content:
+      'Write or update this bound oracle test file. It must declare and collect: ' +
+      targetsForFile.join(', ') +
+      '. Do not write implementation code or tasks.md.',
+  }));
+  return proposeHandoff(
+    root,
+    oracleTests,
+    operation,
+    instructions,
+    'crucible session propose next ' + checkpoint.change,
+  );
+}
+
+function isSafeCandidatePath(root: string, candidate: string): boolean {
+  if (candidate.length === 0 || candidate.includes('\0')) return false;
+  const absolute = resolve(root, candidate);
+  const rel = relative(root, absolute);
+  return rel.length > 0 && rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel);
+}
+function proposalInstructions(
   root: string,
   change: string,
   instructions: SessionInstruction[],
@@ -539,7 +608,23 @@ function validateInstructions(
       );
     }
   }
-  return parsed.data;
+  const tasksPath = join(rootRelative, 'tasks.md');
+  const specsPrefix = join(rootRelative, 'specs');
+  return parsed.data.filter((item) => {
+    if (item.path === tasksPath) return false;
+    if (
+      item.path === join(rootRelative, 'proposal.md') ||
+      item.path === join(rootRelative, 'design.md') ||
+      item.path === join(rootRelative, 'oracles.md') ||
+      item.path.startsWith(specsPrefix + '/')
+    )
+      return true;
+    throw invalidInputError(
+      'INVALID_OPENSPEC_INSTRUCTIONS',
+      'Pinned OpenSpec returned an unsupported proposal path: ' + item.path + '.',
+      'Re-run crucible init to restore the pinned framework launcher.',
+    );
+  });
 }
 
 function requireRolePrompt(root: string, role: 'propose' | 'implement'): void {
@@ -554,10 +639,10 @@ function requireRolePrompt(root: string, role: 'propose' | 'implement'): void {
 }
 
 function loadProposeCheckpoint(root: string, change: string): ProposeCheckpoint {
-  const checkpoint = parseCheckpoint(
-    checkpointPath(root, change, 'propose'),
-    proposeCheckpointSchema,
-  );
+  const parsed = parseCheckpoint(checkpointPath(root, change, 'propose'), proposeCheckpointSchema);
+  const checkpoint =
+    parsed.stage === 'authoring' ? { ...parsed, stage: 'artifacts' as const } : parsed;
+  if (parsed.stage === 'authoring') writeCheckpoint(root, checkpoint);
   if (checkpoint.change !== change || checkpoint.input_hash !== hashInput(checkpoint.input)) {
     throw preconditionError(
       'SESSION_INPUT_STALE',

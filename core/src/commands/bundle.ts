@@ -114,6 +114,13 @@ export async function judgeBundle(
     loadOracles(join(changeDir, 'oracles.md')),
   );
 
+  if (existsSync(join(changeDir, 'tasks.md'))) {
+    findings.push({
+      check: 'bundle',
+      id: 'tasks.md',
+      message: join(changeRel, 'tasks.md') + ': tasks are authored only after approval',
+    });
+  }
   const bundle: CheckResult = {
     name: 'bundle',
     status: findings.length === 0 ? 'pass' : 'fail',

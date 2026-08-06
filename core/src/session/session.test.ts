@@ -66,6 +66,7 @@ function deps(overrides: Partial<SessionDeps> = {}): SessionDeps {
       const source = join(TOY_REPO_ROOT, CHANGE_REL);
       const destination = join(scratch, 'openspec', 'changes', change);
       cpSync(source, destination, { recursive: true });
+      rmSync(join(destination, 'tasks.md'), { force: true });
       writeFileSync(join(destination, '.openspec.yaml'), `schema: ${schema}\n`);
     },
     instructions: async () => [
@@ -134,6 +135,58 @@ describe('session-native propose — CLI-owned lifecycle', () => {
     expect(readFileSync(join(scratch, CHANGE_REL, 'state.yaml'), 'utf8')).toContain(
       'session-native',
     );
+  });
+});
+
+describe('session-native propose — oracle handoff (P4-11)', () => {
+  it('suppresses OpenSpec tasks and returns an exact missing-oracle test handoff', async () => {
+    await proposeStart(
+      { root: scratch, change: CHANGE, intent: 'Add a greeting.', type: 'feature' },
+      deps(),
+    );
+    const next = await proposeNext(
+      { root: scratch, change: CHANGE },
+      deps({
+        instructions: async () => [{ path: join(CHANGE_REL, 'tasks.md'), content: 'Tasks.' }],
+        resolve: (targets) =>
+          Promise.resolve(
+            targets.map((target): TargetResolution =>
+              target === 'greeting::returns_hello_for_a_name'
+                ? {
+                    target,
+                    status: 'missing',
+                    candidateFile: 'src/test/java/com/acme/GreetingControllerTest.java',
+                  }
+                : { target, status: 'found', targetFile: TARGET_FILES[target]! },
+            ),
+          ),
+      }),
+    );
+    expect(next.stage).toBe('oracle-tests');
+    expect(next.instructions[0]?.path).toBe('src/test/java/com/acme/GreetingControllerTest.java');
+    expect(next.next_command).toBe('crucible session propose next ' + CHANGE);
+  });
+
+  it('cannot judge a pre-approval tasks.md as a valid proposal', async () => {
+    await proposeStart(
+      { root: scratch, change: CHANGE, intent: 'Add a greeting.', type: 'feature' },
+      deps(),
+    );
+    writeFileSync(join(scratch, CHANGE_REL, 'tasks.md'), '# Tasks\n');
+    const result = await proposeFinish({ root: scratch, change: CHANGE }, deps());
+    expect(result.report.verdict).toBe('fail');
+  });
+  it('migrates a legacy authoring checkpoint by artifact re-derivation', async () => {
+    await proposeStart(
+      { root: scratch, change: CHANGE, intent: 'Add a greeting.', type: 'feature' },
+      deps(),
+    );
+    const path = join(scratch, '.crucible', 'sessions', CHANGE, 'propose.json');
+    const checkpoint = JSON.parse(readFileSync(path, 'utf8')) as { stage: string };
+    checkpoint.stage = 'authoring';
+    writeFileSync(path, JSON.stringify(checkpoint));
+    const next = await proposeNext({ root: scratch, change: CHANGE }, deps());
+    expect(next.stage).toBe('artifacts');
   });
 });
 

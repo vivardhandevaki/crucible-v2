@@ -189,6 +189,14 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
   }
 
   // Parse the bundle. Missing artifact → exit 2 (loaders); malformed → exit 3.
+  if (existsSync(join(changeDir, 'tasks.md'))) {
+    throw preconditionError(
+      'TASKS_PREAPPROVAL',
+      'Cannot approve ' + change + ': tasks.md exists before approval.',
+      'Remove the unapproved tasks.md, then re-run the proposal gate before approval.',
+    );
+  }
+
   // The proposal's Unspecified/Seams are surfaced prominently in the overview.
   const proposal = loadProposal(join(changeDir, 'proposal.md'));
   // The pinned change type (charter §Change Types): a FEATURE requires a spec
