@@ -103,7 +103,7 @@ Do not start `session propose` for a pin/workflow-only rollout. It is a framewor
 
 If `session propose start` was invoked accidentally, remove that unapproved empty scaffold and its ignored checkpoint before committing the pin branch; they are not evidence and must not enter the PR. For a required-to-advisory reviewer transition, follow architecture §13 order: remove only the judge branch-protection requirement first, merge the pin, then submit the separate risk-routed mode change. `verify` and `route` stay required.
 
-## Planned enforcement-config edits (P4-17; do not use before ratification)
+## Planned enforcement-config edits (P4-17)
 
 When a governed bundle specifies a future edit to `crucible.yaml`, approval's pre-implementation diff may not yet contain that risk path. Approve it with `crucible approve --tier critical <change>` so the human completes the critical per-oracle walk and the approval carries a durable critical floor. Do not edit config before approval to manufacture the tier, and do not use the P4-16 pin-only lane for policy.
 

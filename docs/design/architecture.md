@@ -203,7 +203,7 @@ CI continues to load workflows and enforcement from the old target branch. The p
 
 After merge, collaborators rerun `init` from the now-pinned checkout to refresh their local launcher. Enforcement changes follow separately under the new target-branch framework. For the P4-15 required-to-advisory transition, remove the detached judge from branch protection before the pin PR, keep any old missing-credential result visibly red rather than manufacturing success, merge the isolated pin, then merge the separate risk-routed `review.ci_mode: advisory` PR. `verify` and `route` remain required throughout.
 
-## 14. Durable approval tier floor (proposed P4-17)
+## 14. Durable approval tier floor (ratified P4-17, 2026-08-10)
 
 Approval and verification share one pure tier function but observe the diff at different times. Approval normally sees the proposal artifacts and pre-implementation oracle tests; CI sees the completed implementation. A planned risk-path edit can therefore be absent from approval's facts even though it must receive critical ceremony. P4-17 carries the existing force-up contract across that time boundary.
 

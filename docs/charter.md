@@ -711,7 +711,7 @@ A product framework-pin upgrade changes the judge itself, not product behavior. 
 
 This is a narrow bootstrap lane, not an exemption for product or enforcement changes. The PR contains no product source, product tests, OpenSpec change bundle, `crucible.yaml`, convenience config, or unrelated edits. A policy change such as `review.ci_mode` follows in a separate target-config PR after the new framework is on the target branch. The old target-branch harness judges the pin PR; PR-owned workflows cannot judge themselves. A local launcher mismatch never permits fallback to an ambient or new CLI for an ordinary change.
 
-## Proposed P4-17 Amendment — Durable Per-Change Tier Floor
+## P4-17 Amendment — Durable Per-Change Tier Floor (ratified 2026-08-10)
 
 The settled `--tier critical` force-up is enforcement input, not a transient display preference. `crucible approve --tier <trivial|standard|critical>` computes the ordinary fact-based tier first, takes the maximum, applies that effective tier's approval ceremony, and records the effective result as `approval.yaml.minimum_tier`. The field is an upward-only floor: local verify and CI recompute from their own diff facts and enforcement config, then take the maximum of that computation and the approved floor. No flag or artifact value can force a tier down.
 

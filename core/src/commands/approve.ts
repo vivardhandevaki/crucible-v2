@@ -147,6 +147,8 @@ export interface ApproveOptions {
    * omitted → no tier, and the critical ack regime is off.
    */
   config?: EnforcementConfig;
+  /** Explicit upward-only tier force from the approval command. */
+  forcedTier?: TierName;
   /** Model id for the regeneration session (convenience; opaque here). */
   model?: string;
   /** Render width (design §8: the CLI passes `process.stdout.columns`). Default 80. */
@@ -261,6 +263,7 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
         specDelta: requirements.length > 0,
         touchedPaths: facts.touchedPaths,
         diffLines: facts.diffLines,
+        ...(options.forcedTier !== undefined ? { forced: options.forcedTier } : {}),
       },
       options.config,
     );
@@ -314,6 +317,7 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
       approved_by: deps.approvedBy(),
       approved_at: deps.now(),
       ...(acks ? { acks } : {}),
+      ...(decision ? { minimum_tier: decision.tier } : {}),
     });
     writeFileSync(join(changeDir, 'approval.yaml'), serializeApproval(approval), 'utf8');
 

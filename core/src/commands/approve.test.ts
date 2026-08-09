@@ -609,3 +609,41 @@ describe('approve — inline edit → revalidate → regen-test-diff loop (desig
     expect(existsSync(approvalPath(scratch))).toBe(false);
   });
 });
+
+describe('approve — durable tier floor (P4-17)', () => {
+  it('forces a standard pre-implementation diff to critical and seals that floor', async () => {
+    const result = await approve(
+      {
+        root: scratch,
+        change: CHANGE,
+        yes: false,
+        config: toyConfig(scratch),
+        forcedTier: 'critical',
+      },
+      deps({ diffFacts: standardFacts, walk: () => Promise.resolve('ack') }),
+    );
+    expect(result.tier).toBe('critical');
+    const approval = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
+    expect(approval.minimum_tier).toBe('critical');
+    expect(approval.acks?.map((ack) => ack.oracle)).toEqual([
+      'ORC-greeting-001',
+      'ORC-greeting-002',
+    ]);
+  });
+
+  it('refuses --yes when a critical floor is forced over standard facts', async () => {
+    const err = await catchCrucible(() =>
+      approve(
+        {
+          root: scratch,
+          change: CHANGE,
+          yes: true,
+          config: toyConfig(scratch),
+          forcedTier: 'critical',
+        },
+        deps({ diffFacts: standardFacts }),
+      ),
+    );
+    expect(err.code).toBe('CRITICAL_NEEDS_GATE');
+  });
+});

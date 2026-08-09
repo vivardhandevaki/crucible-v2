@@ -24,6 +24,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 import { invalidInputError, preconditionError } from '../util/errors.js';
 import { hashFile } from '../hash/hash.js';
+import type { TierName } from '../tier/tier.js';
 
 /** A lowercase sha256 hex digest (64 chars). */
 const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/, 'must be a lowercase sha256 hex digest');
@@ -41,7 +42,7 @@ const amendmentSchema = z.strictObject({
  * One per-oracle acknowledgment recorded on a CRITICAL-tier approval (charter
  * §Tier Definitions "per-oracle test acknowledgment"; design phase-2.md §8). The
  * ack is part of what the human attested at the gate, so it lives in the sealed
- * record — but it is audit, NOT hash scope: `verifyApproval` never consults it.
+ * record. It remains outside hash scope, but `verifyApproval` validates its exact set when critical.
  */
 const ackSchema = z.strictObject({
   oracle: z.string().min(1),
@@ -56,8 +57,9 @@ export const approvalSchema = z.strictObject({
   approved_at: z.string().min(1),
   files: fileMap,
   amendments: z.array(amendmentSchema),
-  /** Present only on a critical-tier seal; absent for trivial/standard (schema
-   * version is unchanged — an older reader simply never sees the key). */
+  /** The effective approval tier, an upward-only floor for final verification. */
+  minimum_tier: z.enum(['trivial', 'standard', 'critical']).optional(),
+  /** Present only on a critical-tier seal; absent for trivial/standard. */
   acks: z.array(ackSchema).optional(),
 });
 
@@ -71,13 +73,25 @@ export interface ApprovalMeta {
   change: string;
   approved_by: string;
   approved_at: string;
-  /** Critical-tier per-oracle acks to record (design phase-2.md §8); omitted
-   * for other tiers. Sorted by oracle id here for byte-stable serialization. */
+  /** Effective approval tier, persisted when the authoritative tier edge ran. */
+  minimum_tier?: TierName;
+  /** Critical-tier per-oracle acks, sorted by oracle id for byte-stable output. */
   acks?: Ack[];
 }
 
-/** verifyApproval result: valid, or void with every offending relpath named. */
-export type VerifyResult = { valid: true } | { valid: false; void: true; mismatches: string[] };
+export interface ApprovalViolation {
+  id: string;
+  message: string;
+}
+
+export type VerifyResult =
+  | { valid: true }
+  | { valid: false; void: true; mismatches: string[]; violations?: ApprovalViolation[] };
+
+export interface ApprovalVerificationOptions {
+  /** Current oracle IDs when the final effective tier is critical. */
+  criticalOracleIds?: readonly string[];
+}
 
 /**
  * Seal a bundle: hash each covered file (relative to `root`) and build the
@@ -97,6 +111,7 @@ export function sealBundle(root: string, relpaths: string[], meta: ApprovalMeta)
     approved_by: meta.approved_by,
     approved_at: meta.approved_at,
     files,
+    ...(meta.minimum_tier !== undefined ? { minimum_tier: meta.minimum_tier } : {}),
     amendments: [],
     // Acks are recorded only on a critical seal; sorted for byte-stable output.
     ...(meta.acks && meta.acks.length > 0
@@ -139,17 +154,63 @@ export function amendApproval(
  * sorted — every relpath whose content differs or that has gone missing
  * (invariant 6). Used by `implement` (precondition) and `verify` (check).
  */
-export function verifyApproval(root: string, approval: Approval): VerifyResult {
+export function verifyApproval(
+  root: string,
+  approval: Approval,
+  options: ApprovalVerificationOptions = {},
+): VerifyResult {
   const mismatches: string[] = [];
   for (const [rel, sealed] of Object.entries(approval.files)) {
     if (currentHash(join(root, rel)) !== sealed) {
       mismatches.push(rel);
     }
   }
-  if (mismatches.length === 0) {
+  const violations =
+    options.criticalOracleIds === undefined
+      ? []
+      : criticalAcknowledgmentViolations(approval, options.criticalOracleIds);
+  if (mismatches.length === 0 && violations.length === 0) {
     return { valid: true };
   }
-  return { valid: false, void: true, mismatches: mismatches.sort() };
+  return {
+    valid: false,
+    void: true,
+    mismatches: mismatches.sort(),
+    ...(violations.length > 0 ? { violations } : {}),
+  };
+}
+
+/** Critical approvals acknowledge every and only current oracle exactly once. */
+function criticalAcknowledgmentViolations(
+  approval: Approval,
+  oracleIds: readonly string[],
+): ApprovalViolation[] {
+  const expected = new Set(oracleIds);
+  const seen = new Set<string>();
+  const violations: ApprovalViolation[] = [];
+  for (const ack of approval.acks ?? []) {
+    if (!expected.has(ack.oracle)) {
+      violations.push({
+        id: ack.oracle,
+        message: 'critical approval acknowledges unknown oracle ' + ack.oracle,
+      });
+    } else if (seen.has(ack.oracle)) {
+      violations.push({
+        id: ack.oracle,
+        message: 'critical approval acknowledges oracle ' + ack.oracle + ' more than once',
+      });
+    }
+    seen.add(ack.oracle);
+  }
+  for (const oracleId of expected) {
+    if (!seen.has(oracleId)) {
+      violations.push({
+        id: oracleId,
+        message: 'critical approval lacks acknowledgment for oracle ' + oracleId,
+      });
+    }
+  }
+  return violations.sort((a, b) => a.id.localeCompare(b.id) || a.message.localeCompare(b.message));
 }
 
 /**

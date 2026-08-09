@@ -383,6 +383,12 @@ export function approvalCheck(result: VerifyResult): CheckResult {
     id: rel,
     message: `sealed file ${rel} changed or is missing since approval — the hash mismatch voids the approval`,
   }));
+  findings.push(
+    ...(result.violations ?? []).map((violation): VerifyFinding => ({
+      check: 'approval',
+      ...violation,
+    })),
+  );
   return { name: 'approval', status: 'fail', findings };
 }
 

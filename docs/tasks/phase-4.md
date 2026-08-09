@@ -198,11 +198,11 @@ Acceptance:
 
 **P4-17 · Durable per-change tier floor** · Tier: Fable / Sol (enforcement design) + Opus / Terra (implementation) · Trigger: the Notes advisory-policy approval saw only its pre-implementation bundle/test diff, computed `standard`, and could not invoke the charter's settled `--tier critical` even though the approved implementation would edit self-risk-globbed `crucible.yaml`.
 
-Reads: charter §Tier Computation Rules, §Approval/Amend/Override, §Approve Session, §Tier Computation — Operational Details, §Configuration & Reviewer Law, proposed P4-17 amendment; architecture.md §12–14; design/phase-2.md §2, §8, and P4-17 amendment; design/phase-4-runbook.md §Planned enforcement-config edits; AGENTS.md invariants 1–3, 5–8, 11–12; issue ledger P4-016.
+Reads: charter §Tier Computation Rules, §Approval/Amend/Override, §Approve Session, §Tier Computation — Operational Details, §Configuration & Reviewer Law, P4-17 amendment; architecture.md §12–14; design/phase-2.md §2, §8, and P4-17 amendment; design/phase-4-runbook.md §Planned enforcement-config edits; AGENTS.md invariants 1–3, 5–8, 11–12; issue ledger P4-016.
 
 Delivers: strict `approve --tier <tier>` wiring, an optional deterministic `approval.yaml.minimum_tier`, authoritative maximum-based recomputation in verify/CI, and fail-closed critical-ack completeness. It does not add a declared-tier override, a config-only bypass, a new change type, or a P4-16 exemption.
 
-**Decision proposed 2026-08-10; implementation blocked pending ratification:** approval persists its effective tier as an upward-only floor. CI combines the floor with target-branch config and final diff facts. Every effective critical approval must prove an exact acknowledgment set for the current oracles. The seal scope remains the approved artifacts, bound tests, and existing lock inputs; the explicitly specified config bytes remain implementation under target-branch judgment.
+**Decision ratified and implemented 2026-08-10:** approval persists its effective tier as an upward-only floor. CI combines the floor with target-branch config and final diff facts. Every effective critical approval must prove an exact acknowledgment set for the current oracles. The seal scope remains the approved artifacts, bound tests, and existing lock inputs; the explicitly specified config bytes remain implementation under target-branch judgment.
 
 Acceptance (write these tests red before production changes):
 
