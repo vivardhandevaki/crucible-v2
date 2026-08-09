@@ -17,9 +17,10 @@ describe('built CLI consumer surface (P4-13)', () => {
     // Node 22 can strip erasable TypeScript by default, but the pinned consumer
     // workflow uses Node 20. Disable that local convenience when available so
     // this test exercises the same plain-JavaScript contract everywhere.
-    const nodeArgs = Number.parseInt(process.versions.node.split('.')[0]!, 10) >= 22
-      ? ['--no-experimental-strip-types', builtCli, '--help']
-      : [builtCli, '--help'];
+    const nodeArgs =
+      Number.parseInt(process.versions.node.split('.')[0]!, 10) >= 22
+        ? ['--no-experimental-strip-types', builtCli, '--help']
+        : [builtCli, '--help'];
     const output = execFileSync(process.execPath, nodeArgs, {
       cwd: repoRoot,
       encoding: 'utf8',
