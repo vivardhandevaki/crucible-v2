@@ -5,7 +5,52 @@ on:
 permissions:
   contents: read
 jobs:
+  policy:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    outputs:
+      mode: '${{ steps.select.outputs.mode }}'
+    steps:
+      - name: Checkout target branch only
+        uses: actions/checkout@v4
+        with:
+          {
+            ref: '${{ github.event.pull_request.base.sha }}',
+            fetch-depth: 0,
+            persist-credentials: false,
+          }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Resolve target-branch framework pin
+        id: framework
+        run: |
+          set -euo pipefail
+          node -e 'const p=require("./.crucible/framework.lock.json");if(!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(p.repository)||!/^[0-9a-f]{40}$/.test(p.commit))throw Error("invalid framework pin");require("fs").appendFileSync(process.env.GITHUB_OUTPUT,`repository=${p.repository}\ncommit=${p.commit}\n`);'
+      - name: Checkout pinned Crucible framework
+        uses: actions/checkout@v4
+        with:
+          repository: '${{ steps.framework.outputs.repository }}'
+          ref: '${{ steps.framework.outputs.commit }}'
+          path: crucible-framework
+          persist-credentials: false
+      - name: Build pinned Crucible framework
+        working-directory: crucible-framework
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+      - name: Select target-branch CI review policy
+        id: select
+        run: |
+          set -euo pipefail
+          MODE="$(node crucible-framework/core/dist/cli/bin.js ci-review policy .)"
+          printf 'mode=%s\n' "$MODE" >> "$GITHUB_OUTPUT"
+          if [ "$MODE" = advisory ]; then
+            echo "CI_REVIEW_ADVISORY: no CI adversarial reviewer ran"
+          fi
   prepare:
+    needs: policy
+    if: ${{ needs.policy.outputs.mode == 'required' }}
     runs-on: ubuntu-latest
     permissions: { contents: read }
     steps:
@@ -66,7 +111,8 @@ jobs:
           path: '${{ runner.temp }}/crucible-review'
           if-no-files-found: error
   review-agent:
-    needs: prepare
+    needs: [policy, prepare]
+    if: ${{ always() && needs.policy.outputs.mode == 'required' && needs.prepare.result == 'success' }}
     runs-on: ubuntu-latest
     permissions: { contents: read }
     outputs:
@@ -86,7 +132,8 @@ jobs:
           prompt-file: '${{ runner.temp }}/crucible-review/request.json'
           output-schema-file: '${{ runner.temp }}/crucible-review/batch-schema.json'
   judge:
-    needs: [prepare, review-agent]
+    needs: [policy, prepare, review-agent]
+    if: ${{ always() && needs.policy.outputs.mode == 'required' }}
     runs-on: ubuntu-latest
     permissions: { contents: read, pull-requests: write }
     steps:

@@ -8,10 +8,16 @@ import {
   makeCiReviewRequest,
 } from '../review/ci.js';
 import { CheckFailure, invalidInputError } from '../util/errors.js';
+import { ciReviewMode, loadEnforcementConfig } from '../config/enforcement.js';
 
 /** Internal, file-only CLI for the P4-14 detached reviewer transport. */
 export function registerCiReview(program: Command): void {
   const ci = program.command('ci-review').description('Internal detached CI reviewer transport');
+  ci.command('policy')
+    .argument('<config-root>')
+    .action((configRoot: string) => {
+      process.stdout.write(ciReviewMode(loadEnforcementConfig(configRoot)) + '\n');
+    });
   ci.command('prepare')
     .argument('<input>')
     .argument('<output>')

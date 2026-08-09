@@ -14,6 +14,9 @@ interface Step {
 interface Job {
   steps?: Step[];
   permissions?: Record<string, string>;
+  needs?: string | string[];
+  if?: string;
+  outputs?: Record<string, string>;
 }
 
 interface Workflow {
@@ -37,13 +40,32 @@ function step(jobName: string, name: string): Step {
   return result;
 }
 
-describe('crucible-review.yml — detached credentialed reviewer (P4-14)', () => {
-  it('is target-branch-owned and has separate prepare, action, and secretless judge jobs', () => {
+describe('crucible-review.yml — detached credentialed reviewer (P4-14/P4-15)', () => {
+  it('is target-branch-owned and has a credential-free policy job plus separate required-mode jobs', () => {
     expect(workflow.name).toBe('Crucible review');
     expect(workflow.on && 'pull_request_target' in workflow.on).toBe(true);
+    expect(job('policy')).toBeTruthy();
     expect(job('prepare')).toBeTruthy();
     expect(job('review-agent')).toBeTruthy();
     expect(job('judge')).toBeTruthy();
+  });
+
+  it('selects policy through target-branch pinned core and makes advisory conspicuous without a verdict', () => {
+    const policy = job('policy');
+    const text = (policy.steps ?? []).map((entry) => entry.run ?? '').join('\n');
+    expect(text).toContain('ci-review policy');
+    expect(text).toContain('CI_REVIEW_ADVISORY');
+    expect(JSON.stringify(policy)).not.toContain('OPENAI_API_KEY');
+    expect(JSON.stringify(policy)).not.toContain('ci-review judge');
+    expect(policy.outputs?.mode).toContain('mode');
+  });
+
+  it('schedules prepare, agent, and judge only when target policy is required', () => {
+    for (const name of ['prepare', 'review-agent', 'judge']) {
+      const candidate = job(name);
+      expect(candidate.needs).toBeDefined();
+      expect(candidate.if).toContain("needs.policy.outputs.mode == 'required'");
+    }
   });
 
   it('never checks out or executes PR code in the credentialed job', () => {
