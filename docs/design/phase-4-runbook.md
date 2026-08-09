@@ -28,6 +28,7 @@ Recovery is always CLI-led:
 
 - interrupted/partially scaffolded proposal: invoke the propose skill again; `session resume` replays the persisted explicit intent, migrates a legacy P4-10 authoring checkpoint if necessary, and derives the next artifact or oracle-test instruction;
 - after `oracles.md`: keep invoking the propose skill while the CLI returns exact adapter-grounded bound-test paths; `tasks.md` is never authored before approval, even if raw OpenSpec status considers it ready;
+- dependency-backed JVM oracle tests: `resolve` compiles and asks Maven/Gradle for the evaluated test execution classpath, but does not run tests. Dependency/model/tool/linkage failure is a framework-side adapter failure, not a missing target and not a new oracle-test handoff; stop and use the framework-bug escalation below rather than editing the product test to evade class loading;
 - red or malformed proposal: fix only the paths named by the handoff/report, then retry `session propose finish`; unresolved bindings remain red, and a target the adapter cannot map safely must be corrected through the exact `propose revise` command reported by the CLI;
 - pre-approval intent change: use session-native `propose revise`; an approval already present requires ordinary `amend`;
 - interrupted implementation: invoke the implement skill again; the approval-bound checkpoint returns either the tasks or implementation stage;
@@ -56,6 +57,8 @@ Pull an item **only when the product first needs it**, as a normal framework tas
 ## Escalation of framework bugs
 
 A framework bug found mid-product is fixed in the framework repo under its normal discipline (test-first, amendment of design docs), pinned version bumped in the product. Never patch around the framework inside the product — that's exactly the drift Crucible exists to prevent.
+
+For P4-12 specifically, leave the product proposal and session checkpoint in place while the framework's Java/JUnit classpath defect is fixed. After the framework fix is merged and the product receives a separately reviewed pin bump, rerun `session propose next`; ordinary resolver discovery must return every bound target as `found` before the checkpoint may become `ready`. Do not approve, implement, or replace a dependency-backed integration test with a weaker test while resolution is unavailable.
 
 ## Definition of done (Phase 4 = charter headline)
 

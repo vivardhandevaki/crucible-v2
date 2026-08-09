@@ -32,8 +32,9 @@ fails closed at propose time.
 ## `src/resolve.ts` — wrapper invocation
 
 `invokeResolve(...)` is the thin TypeScript seam that spawns the jar with an
-explicit classpath (the project-under-test's compiled classes appended to the
-fat jar) and fail-closed-validates its JSON output. A spawn failure, non-zero
+explicit evaluated test-execution classpath (project outputs plus the build
+tool's test runtime dependencies, appended to the fat jar) and fail-closed-
+validates its JSON output. A spawn failure, non-zero
 exit, non-JSON stdout, or schema violation all throw — a resolve that cannot
 speak is never a clean/empty result. P3-04 grows this into the full stdin/stdout
 wire adapter and its manifest.

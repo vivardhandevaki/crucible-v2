@@ -42,9 +42,10 @@ import org.junit.platform.launcher.core.LauncherFactory;
  *
  * <p>Output: a single JSON object on stdout,
  * {@code {"results":[{"target","classification","className"?,"methodName"?}]}},
- * one entry per argument, in input order. Any per-target refl­ection failure
- * is a classification ({@code missing}), never a crash — a resolve that cannot
- * see a target must say so, not fall over.
+ * one entry per argument, in input order. An absent target class is classified
+ * {@code missing}; a linkage or discovery failure for an existing class makes
+ * the helper fail nonzero, so the adapter cannot mistake an unloadable target
+ * for a clean resolution result.
  */
 public final class ResolveHelper {
 
@@ -152,7 +153,7 @@ public final class ResolveHelper {
     // not a load-and-run — the no-execute guarantee holds even for the probe.
     try {
       Class.forName(className, false, ResolveHelper.class.getClassLoader());
-    } catch (ClassNotFoundException | LinkageError e) {
+    } catch (ClassNotFoundException e) {
       return ClassView.absent();
     }
 
