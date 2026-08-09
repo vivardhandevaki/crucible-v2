@@ -10,7 +10,6 @@ import { z } from 'zod';
 import type { Rubric } from './rubric.js';
 import {
   evaluateVerdict,
-  observationSchema,
   verdictSchema,
   type Observation,
   type VerdictOutcome,
