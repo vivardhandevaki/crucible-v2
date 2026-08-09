@@ -95,9 +95,9 @@ describe('P4-14 CI review request', () => {
         }),
       ),
     ).toThrow(/path/i);
-    expect(() => makeCiReviewRequest(input({ diff: 'x'.repeat(CI_REVIEW_MAX_REQUEST_BYTES) }))).toThrow(
-      /exceeds/i,
-    );
+    expect(() =>
+      makeCiReviewRequest(input({ diff: 'x'.repeat(CI_REVIEW_MAX_REQUEST_BYTES) })),
+    ).toThrow(/exceeds/i);
   });
 });
 
@@ -112,13 +112,17 @@ describe('P4-14 CI review batch judgment', () => {
     const request = makeCiReviewRequest(input());
     const stale = JSON.parse(batch(request));
     stale.head_sha = 'c'.repeat(40);
-    expect(judgeCiReviewBatch({ text: JSON.stringify(stale), request, rubric: RUBRIC }).status).toBe('fail');
+    expect(
+      judgeCiReviewBatch({ text: JSON.stringify(stale), request, rubric: RUBRIC }).status,
+    ).toBe('fail');
 
     const extra = JSON.parse(batch(request));
     extra.changes.push({ ...extra.changes[0], change: 'extra' });
-    expect(judgeCiReviewBatch({ text: JSON.stringify(extra), request, rubric: RUBRIC }).status).toBe('fail');
-    expect(judgeCiReviewBatch({ text: 'the agent said it passed', request, rubric: RUBRIC }).status).toBe(
-      'fail',
-    );
+    expect(
+      judgeCiReviewBatch({ text: JSON.stringify(extra), request, rubric: RUBRIC }).status,
+    ).toBe('fail');
+    expect(
+      judgeCiReviewBatch({ text: 'the agent said it passed', request, rubric: RUBRIC }).status,
+    ).toBe('fail');
   });
 });

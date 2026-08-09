@@ -50,9 +50,9 @@ describe('crucible-review.yml — detached credentialed reviewer (P4-14)', () =>
     const agent = job('review-agent');
     expect(agent.steps?.some((entry) => entry.uses?.startsWith('actions/checkout@'))).toBe(false);
     expect(agent.steps?.some((entry) => entry.run?.includes('npm ci'))).toBe(false);
-    expect(agent.steps?.some((entry) => entry.run?.includes('mvn') || entry.run?.includes('gradle'))).toBe(
-      false,
-    );
+    expect(
+      agent.steps?.some((entry) => entry.run?.includes('mvn') || entry.run?.includes('gradle')),
+    ).toBe(false);
   });
 
   it('pins the official action and scopes the API key only to its input', () => {
@@ -79,7 +79,7 @@ describe('crucible-review.yml — detached credentialed reviewer (P4-14)', () =>
     const text = (prepare.steps ?? []).map((entry) => entry.run ?? '').join('\n');
     expect(text).toContain('github.event.pull_request.base.sha');
     expect(text).toContain('github.event.pull_request.head.sha');
-    expect(text).toContain('git show');
+    expect(text).toContain("'show'");
     expect(text).toContain('ci-review prepare');
     expect(JSON.stringify(workflow)).not.toContain('allow-users: "*"');
   });

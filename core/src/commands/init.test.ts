@@ -1,7 +1,11 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CI_REVIEW_TEMPLATE_PATH, CI_TEMPLATE_PATH, JAVA_JUNIT_CI_TEMPLATE_PATH } from '@crucible/ci-templates';
+import {
+  CI_REVIEW_TEMPLATE_PATH,
+  CI_TEMPLATE_PATH,
+  JAVA_JUNIT_CI_TEMPLATE_PATH,
+} from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES } from '@crucible/schemas';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FRAMEWORK_PIN_RELPATH, loadFrameworkPin, type FrameworkPin } from '../framework/pin.js';

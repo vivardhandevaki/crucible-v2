@@ -8,7 +8,13 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Rubric } from './rubric.js';
-import { evaluateVerdict, observationSchema, verdictSchema, type Observation, type VerdictOutcome } from './verdict.js';
+import {
+  evaluateVerdict,
+  observationSchema,
+  verdictSchema,
+  type Observation,
+  type VerdictOutcome,
+} from './verdict.js';
 import { invalidInputError } from '../util/errors.js';
 
 export const CI_REVIEW_VERSION = 1;
@@ -89,7 +95,8 @@ export function makeCiReviewRequest(input: CiReviewRequestInput): CiReviewReques
     .sort((a, b) => a.name.localeCompare(b.name));
   const names = new Set<string>();
   for (const change of changes) {
-    if (names.has(change.name)) throw invalid('INVALID_CI_REVIEW_REQUEST', `duplicate change ${change.name}`);
+    if (names.has(change.name))
+      throw invalid('INVALID_CI_REVIEW_REQUEST', `duplicate change ${change.name}`);
     names.add(change.name);
   }
   if (byteLength(value.diff) > CI_REVIEW_MAX_DIFF_BYTES) {
@@ -110,7 +117,10 @@ export function makeCiReviewRequest(input: CiReviewRequestInput): CiReviewReques
     changes,
   };
   if (byteLength(stableJson(base)) > CI_REVIEW_MAX_REQUEST_BYTES) {
-    throw invalid('INVALID_CI_REVIEW_REQUEST', `request exceeds ${CI_REVIEW_MAX_REQUEST_BYTES} bytes`);
+    throw invalid(
+      'INVALID_CI_REVIEW_REQUEST',
+      `request exceeds ${CI_REVIEW_MAX_REQUEST_BYTES} bytes`,
+    );
   }
   return { ...base, request_hash: sha256(stableJson(base)) };
 }
@@ -121,18 +131,29 @@ export function judgeCiReviewBatch(input: {
   request: CiReviewRequest;
   rubric: Rubric;
 }): CiReviewBatchOutcome {
-  if (input.text === undefined) return fail('NO_BATCH_VERDICT', 'no reviewer batch verdict was produced');
+  if (input.text === undefined)
+    return fail('NO_BATCH_VERDICT', 'no reviewer batch verdict was produced');
   if (byteLength(input.text) > CI_REVIEW_MAX_VERDICT_BYTES) {
-    return fail('BATCH_VERDICT_TOO_LARGE', `reviewer batch verdict exceeds ${CI_REVIEW_MAX_VERDICT_BYTES} bytes`);
+    return fail(
+      'BATCH_VERDICT_TOO_LARGE',
+      `reviewer batch verdict exceeds ${CI_REVIEW_MAX_VERDICT_BYTES} bytes`,
+    );
   }
   let raw: unknown;
   try {
     raw = JSON.parse(input.text);
   } catch (cause) {
-    return fail('MALFORMED_BATCH_VERDICT', `reviewer batch verdict is not JSON — ${messageOf(cause)}`);
+    return fail(
+      'MALFORMED_BATCH_VERDICT',
+      `reviewer batch verdict is not JSON — ${messageOf(cause)}`,
+    );
   }
   const parsed = ciReviewBatchSchema.safeParse(raw);
-  if (!parsed.success) return fail('MALFORMED_BATCH_VERDICT', `reviewer batch verdict invalid — ${issue(parsed.error)}`);
+  if (!parsed.success)
+    return fail(
+      'MALFORMED_BATCH_VERDICT',
+      `reviewer batch verdict invalid — ${issue(parsed.error)}`,
+    );
   const batch = parsed.data;
   if (
     batch.request_hash !== input.request.request_hash ||
@@ -147,7 +168,10 @@ export function judgeCiReviewBatch(input: {
   const observations: Observation[] = [];
   for (const verdict of batch.changes) {
     if (!expected.has(verdict.change) || seen.has(verdict.change)) {
-      return fail('BATCH_CHANGE_SET_MISMATCH', `reviewer batch has an unexpected or duplicate change ${verdict.change}`);
+      return fail(
+        'BATCH_CHANGE_SET_MISMATCH',
+        `reviewer batch has an unexpected or duplicate change ${verdict.change}`,
+      );
     }
     seen.add(verdict.change);
     if (verdict.reviewed_sha !== input.request.head_sha) {
@@ -161,7 +185,12 @@ export function judgeCiReviewBatch(input: {
     observations.push(...outcome.observations);
     if (outcome.status === 'fail') return fail(outcome.code, outcome.reason, observations);
   }
-  if (seen.size !== expected.size) return fail('BATCH_CHANGE_SET_MISMATCH', 'reviewer batch omitted a requested change', observations);
+  if (seen.size !== expected.size)
+    return fail(
+      'BATCH_CHANGE_SET_MISMATCH',
+      'reviewer batch omitted a requested change',
+      observations,
+    );
   return { status: 'pass', observations };
 }
 
@@ -169,9 +198,13 @@ function canonicalArtifacts(artifacts: Record<string, string>): Record<string, s
   const sorted = Object.entries(artifacts).sort(([a], [b]) => a.localeCompare(b));
   const result: Record<string, string> = {};
   for (const [path, text] of sorted) {
-    if (!isSafePath(path)) throw invalid('INVALID_CI_REVIEW_REQUEST', `artifact path is unsafe: ${path}`);
+    if (!isSafePath(path))
+      throw invalid('INVALID_CI_REVIEW_REQUEST', `artifact path is unsafe: ${path}`);
     if (byteLength(text) > CI_REVIEW_MAX_ARTIFACT_BYTES) {
-      throw invalid('INVALID_CI_REVIEW_REQUEST', `artifact ${path} exceeds ${CI_REVIEW_MAX_ARTIFACT_BYTES} bytes`);
+      throw invalid(
+        'INVALID_CI_REVIEW_REQUEST',
+        `artifact ${path} exceeds ${CI_REVIEW_MAX_ARTIFACT_BYTES} bytes`,
+      );
     }
     result[path] = text;
   }
@@ -179,7 +212,12 @@ function canonicalArtifacts(artifacts: Record<string, string>): Record<string, s
 }
 
 function isSafePath(path: string): boolean {
-  return path.length > 0 && !path.startsWith('/') && !path.includes('\\') && path.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
+  return (
+    path.length > 0 &&
+    !path.startsWith('/') &&
+    !path.includes('\\') &&
+    path.split('/').every((part) => part !== '' && part !== '.' && part !== '..')
+  );
 }
 
 function stableJson(value: unknown): string {
@@ -203,7 +241,11 @@ function byteLength(text: string): number {
 }
 
 function invalid(code: string, message: string): ReturnType<typeof invalidInputError> {
-  return invalidInputError(code, message, 'Fix the target-branch CI reviewer input; no reviewer action was started.');
+  return invalidInputError(
+    code,
+    message,
+    'Fix the target-branch CI reviewer input; no reviewer action was started.',
+  );
 }
 
 function issue(error: z.ZodError): string {
@@ -211,7 +253,11 @@ function issue(error: z.ZodError): string {
   return `${first.path.join('.') || '(root)'}: ${first.message}`;
 }
 
-function fail(code: string, reason: string, observations: Observation[] = []): CiReviewBatchOutcome {
+function fail(
+  code: string,
+  reason: string,
+  observations: Observation[] = [],
+): CiReviewBatchOutcome {
   return { status: 'fail', code, reason, observations };
 }
 
