@@ -1,0 +1,123 @@
+name: Crucible review
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - name: Checkout target branch only
+        uses: actions/checkout@v4
+        with:
+          {
+            ref: '${{ github.event.pull_request.base.sha }}',
+            fetch-depth: 0,
+            persist-credentials: false,
+          }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Fetch PR objects as inert data
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "${{ github.event.pull_request.head.sha }}"
+      - name: Resolve target-branch framework pin
+        id: framework
+        run: |
+          set -euo pipefail
+          node -e 'const p=require("./.crucible/framework.lock.json");if(!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(p.repository)||!/^[0-9a-f]{40}$/.test(p.commit))throw Error("invalid framework pin");require("fs").appendFileSync(process.env.GITHUB_OUTPUT,`repository=${p.repository}\ncommit=${p.commit}\n`);'
+      - name: Checkout pinned Crucible framework
+        uses: actions/checkout@v4
+        with:
+          repository: '${{ steps.framework.outputs.repository }}'
+          ref: '${{ steps.framework.outputs.commit }}'
+          path: crucible-framework
+          persist-credentials: false
+      - name: Build pinned Crucible framework
+        working-directory: crucible-framework
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+      - name: Prepare target-bound review request
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/crucible-review"
+          BASE="${{ github.event.pull_request.base.sha }}" HEAD="${{ github.event.pull_request.head.sha }}" node <<'NODE'
+          const fs=require('node:fs'), cp=require('node:child_process');
+          const out=process.env.RUNNER_TEMP+'/crucible-review', base=process.env.BASE, head=process.env.HEAD;
+          const git=(args)=>cp.execFileSync('git',args,{encoding:'utf8'});
+          const names=[...new Set(git(['diff','--name-only',`${base}...${head}`]).split('\n').map(p=>/^openspec\/changes\/([^/]+)\//.exec(p)?.[1]).filter(Boolean))].sort();
+          const changes=names.map(name=>{const approved_artifacts={};for(const p of git(['ls-tree','-r','--name-only',head,`openspec/changes/${name}`]).split('\n').filter(Boolean)){if(/\.(md|ya?ml)$/.test(p))approved_artifacts[p]=git(['show',`${head}:${p}`]);}return {name,approved_artifacts};});
+          fs.writeFileSync(out+'/input.json',JSON.stringify({repository:process.env.GITHUB_REPOSITORY,pull_request:Number(process.env.PR_NUMBER),base_sha:base,head_sha:head,rubric:git(['show',`${base}:.crucible/rubric.yaml`]),prompt:fs.readFileSync('crucible-framework/core/assets/context/review.md','utf8'),diff:git(['diff','--no-ext-diff','--unified=80',`${base}...${head}`]),changes}));
+          fs.writeFileSync(out+'/batch-schema.json',JSON.stringify({type:'object',additionalProperties:false,required:['version','request_hash','base_sha','head_sha','changes'],properties:{version:{const:1},request_hash:{type:'string'},base_sha:{type:'string'},head_sha:{type:'string'},changes:{type:'array'}}}));
+          NODE
+        env:
+          PR_NUMBER: '${{ github.event.pull_request.number }}'
+      - name: Canonicalize review request with pinned core
+        run: |
+          set -euo pipefail
+          node crucible-framework/core/dist/cli/bin.js ci-review prepare "$RUNNER_TEMP/crucible-review/input.json" "$RUNNER_TEMP/crucible-review/request.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crucible-review-request
+          path: '${{ runner.temp }}/crucible-review'
+          if-no-files-found: error
+  review-agent:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    outputs:
+      batch: '${{ steps.codex.outputs.final-message }}'
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: crucible-review-request, path: '${{ runner.temp }}/crucible-review' }
+      - name: Codex adversarial reviewer
+        id: codex
+        uses: openai/codex-action@dd78cb653811af44014baa08fe954e28d32c1bf9
+        with:
+          openai-api-key: '${{ secrets.OPENAI_API_KEY }}'
+          codex-version: 0.104.0
+          safety-strategy: drop-sudo
+          permission-profile: :read-only
+          codex-home: '${{ runner.temp }}/codex-home'
+          prompt-file: '${{ runner.temp }}/crucible-review/request.json'
+          output-schema-file: '${{ runner.temp }}/crucible-review/batch-schema.json'
+  judge:
+    needs: [prepare, review-agent]
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: write }
+    steps:
+      - name: Checkout target branch only
+        uses: actions/checkout@v4
+        with: { ref: '${{ github.event.pull_request.base.sha }}', persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Resolve target-branch framework pin
+        id: judge-framework
+        run: |
+          set -euo pipefail
+          node -e 'const p=require("./.crucible/framework.lock.json");if(!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(p.repository)||!/^[0-9a-f]{40}$/.test(p.commit))throw Error("invalid framework pin");require("fs").appendFileSync(process.env.GITHUB_OUTPUT,`repository=${p.repository}\ncommit=${p.commit}\n`);'
+      - name: Checkout pinned Crucible framework
+        uses: actions/checkout@v4
+        with:
+          repository: '${{ steps.judge-framework.outputs.repository }}'
+          ref: '${{ steps.judge-framework.outputs.commit }}'
+          path: crucible-framework
+          persist-credentials: false
+      - name: Build target-branch pinned Crucible framework
+        working-directory: crucible-framework
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+      - uses: actions/download-artifact@v4
+        with: { name: crucible-review-request, path: '${{ runner.temp }}/crucible-review' }
+      - name: Judge detached reviewer batch
+        env: { BATCH: '${{ needs.review-agent.outputs.batch }}' }
+        run: |
+          set -euo pipefail
+          printf '%s' "$BATCH" > "$RUNNER_TEMP/crucible-review/batch.json"
+          node crucible-framework/core/dist/cli/bin.js ci-review judge "$RUNNER_TEMP/crucible-review/request.json" "$RUNNER_TEMP/crucible-review/batch.json"

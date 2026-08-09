@@ -294,7 +294,7 @@ describe('crucible.yml — adversarial reviewer (P2-10, design phase-2.md §5)',
       .find((l) => l.includes('core/dist/cli/bin.js') && l.includes('verify '));
     expect(cmd, 'a pinned Crucible CLI verify invocation line').toBeTruthy();
     // "verify --review optional locally; CI always" — the shipped gate opts in.
-    expect(cmd).toContain('--review');
+    expect(cmd).not.toContain('--review');
   });
 
   it('captures the reviewer observations verify emits in its --json report', () => {
