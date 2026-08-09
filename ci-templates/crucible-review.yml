@@ -95,7 +95,20 @@ jobs:
         with: { ref: '${{ github.event.pull_request.base.sha }}', persist-credentials: false }
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
+      - name: Resolve target-branch framework pin
+        id: judge-framework
+        run: |
+          set -euo pipefail
+          node -e 'const p=require("./.crucible/framework.lock.json");if(!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(p.repository)||!/^[0-9a-f]{40}$/.test(p.commit))throw Error("invalid framework pin");require("fs").appendFileSync(process.env.GITHUB_OUTPUT,`repository=${p.repository}\ncommit=${p.commit}\n`);'
+      - name: Checkout pinned Crucible framework
+        uses: actions/checkout@v4
+        with:
+          repository: '${{ steps.judge-framework.outputs.repository }}'
+          ref: '${{ steps.judge-framework.outputs.commit }}'
+          path: crucible-framework
+          persist-credentials: false
       - name: Build target-branch pinned Crucible framework
+        working-directory: crucible-framework
         run: |
           set -euo pipefail
           npm ci
@@ -107,4 +120,4 @@ jobs:
         run: |
           set -euo pipefail
           printf '%s' "$BATCH" > "$RUNNER_TEMP/crucible-review/batch.json"
-          node core/dist/cli/bin.js ci-review judge "$RUNNER_TEMP/crucible-review/request.json" "$RUNNER_TEMP/crucible-review/batch.json"
+          node crucible-framework/core/dist/cli/bin.js ci-review judge "$RUNNER_TEMP/crucible-review/request.json" "$RUNNER_TEMP/crucible-review/batch.json"
