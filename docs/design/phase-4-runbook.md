@@ -89,3 +89,16 @@ Production-grade, consumer-ready product shipped end-to-end through Crucible; va
 A validation project may deliberately defer API spend by merging target-branch `review.ci_mode: advisory`. Until that config is present, P4-14 required mode remains law and a missing key is red. In advisory mode require only `verify` and `route`; the workflow reports that CI review did not run, makes no model call, and emits no reviewer verdict. Local review is recommended feedback but never merge evidence. Oracle and regression suites remain mandatory.
 
 To enable later: add `OPENAI_API_KEY`, merge a dedicated risk-routed config PR changing the mode to `required`, validate the detached reviewer, then require its judge check. Never infer advisory mode from secret absence or describe it as full adversarial-review enforcement.
+
+
+## Framework source-pin upgrades (P4-16)
+
+Do not start `session propose` for a pin/workflow-only rollout. It is a framework bootstrap event with no honest product oracle, and P4-14 already gives it a no-governed-change path under the old harness.
+
+1. Start from a clean product target branch and keep unrelated local files untouched.
+2. Build the already-merged candidate framework checkout and invoke its `init` directly from the product root. Confirm only understood Crucible-managed file replacements.
+3. Inspect the diff. The isolated PR may contain the framework lock and candidate-`init` managed harness bytes only. It must contain no product source/tests, `openspec/changes/**`, `crucible.yaml`, settings/local config, or unrelated edits.
+4. Open a human-reviewed pin PR. Target-branch CI remains the old harness; the proposed workflow cannot judge itself. Require the old deterministic checks and never synthesize a passing review result.
+5. After merge, rerun `init` from the target pin to refresh the ignored local launcher. Only then start ordinary governed work or a separate target-config change.
+
+If `session propose start` was invoked accidentally, remove that unapproved empty scaffold and its ignored checkpoint before committing the pin branch; they are not evidence and must not enter the PR. For a required-to-advisory reviewer transition, follow architecture §13 order: remove only the judge branch-protection requirement first, merge the pin, then submit the separate risk-routed mode change. `verify` and `route` stay required.

@@ -178,3 +178,20 @@ Acceptance (write these tests red before production changes):
 - init/doctor/templates install and validate the policy-aware workflow idempotently; generated default config omits the field or writes `required`, never advisory;
 - runbook and diagnostics name the exact branch-protection sets: advisory requires `verify` + `route`; required additionally requires the detached judge. A mismatch is reported as operational misconfiguration, not silently repaired;
 - full typecheck, lint, tests, build, deterministic packages, and existing P4-14 regressions pass. Notes then receives isolated pin and risk-routed config PRs before PR #8 is rerun.
+
+
+**P4-16 · Framework source-pin upgrade lane** · Tier: Fable / Sol (bootstrap authority clarification; no production implementation) · Trigger: the Notes P4-15 rollout invoked candidate `init` before starting a product proposal, exposing that an exact-pin launcher cannot honestly represent a judge upgrade as a product feature with a new red product oracle.
+
+Reads: charter §Adapter Lifecycle, §Configuration & Reviewer Law, P4-15 and P4-16 amendments; architecture.md §10–13; design/phase-4-runbook.md §Validation bootstrap, §Advisory CI-review rollout, and §Framework source-pin upgrades; AGENTS.md invariants 1–3, 5–7, 11–12; issue ledger P4-015.
+
+Delivers: a ratified classification and rollout ceremony only. A framework pin plus deterministic candidate-`init` managed harness bytes is one isolated, human-reviewed bootstrap PR under the P4-14 no-governed-change path. Product code/tests, OpenSpec bundles, `crucible.yaml`, convenience config, unrelated edits, ambient CLI fallback, and invented product oracles are forbidden. Enforcement policy follows separately after the pin reaches the target branch.
+
+**Decision ratified 2026-08-10:** the framework repository merged commit and green CI judge framework behavior; a consumer product oracle does not. Candidate `init` is authorized only to stage the isolated pin/managed-byte diff. The old target harness judges the PR, and the proposed workflow never judges itself. No new framework command or code is required for the current validation rollout; distribution-grade upgrade UX remains deferred.
+
+Acceptance:
+
+- the charter and architecture distinguish bootstrap evidence from product-oracle evidence without weakening artifact truth or exact-pin launcher failure;
+- the runbook names the isolated allowlist, old-target authority, explicit human review, and recovery from an accidental empty proposal;
+- P4-15 transition order keeps `verify` and `route` required, never treats missing credentials as advisory, and never manufactures a passing review;
+- Notes recovery removes only the accidental unapproved pin proposal/checkpoint, preserves unrelated files and the `create-note` bundle, and opens an isolated pin/workflow PR before the separate `review.ci_mode` change;
+- documentation formatting and diff checks pass; no production code or tests change in this design task.
