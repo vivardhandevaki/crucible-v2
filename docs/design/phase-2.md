@@ -114,3 +114,7 @@ Reads with: charter (§Loop Mechanics, §Configuration & Reviewer Law, §Tier De
 ## §9 Deferred within Phase 2
 
 Weekly audit digest (A7) → just-in-time in Phase 4 unless earlier need; stacked changes (A6) → same; mutation testing → Phase 3+ (needs real adapter; PIT decision is backlog A5).
+
+## P4-15 reviewer-policy amendment (ratified 2026-08-10)
+
+“CI always” in §5 now means always when target-branch `review.ci_mode` is `required`; absence remains required. Explicit `advisory` mode schedules no reviewer agent or judge and requires only `verify` + `route`. It emits no passing review result and cannot consume a local verdict. Deterministic verification and routing are unchanged; architecture §12 owns the state transitions.

@@ -159,3 +159,22 @@ Acceptance (write these tests red before production changes):
 - multi-change and no-change fixtures prove the exact set contract. A governed multi-change PR gets one verdict per change; a pin/workflow-only rollout PR takes the explicitly designed no-change path under the old harness and cannot manufacture a review pass for a governed change;
 - generated-template/init/doctor tests cover installing and detecting both workflows idempotently without overwriting human-owned bytes outside managed surfaces, and runbook tests or snapshots name `OPENAI_API_KEY` plus required checks `verify`, `review`, and `route`;
 - existing local review, FakeSubstrate, reviewer verdict, observations, route, target-branch, built-CLI, full typecheck/lint/test/build, and deterministic package suites remain green. A manual Notes validation then performs the two-PR rollout and reruns preserved PR #8 without editing its sealed artifacts or implementation.
+
+**P4-15 · Explicit advisory CI-review mode** · Tier: Fable / Sol (enforcement-policy amendment) + Opus / Terra (implementation) · Trigger: Notes adopted P4-14 but its operator deliberately defers paid API credentials while retaining mandatory deterministic/oracle enforcement and advisory local review.
+
+Reads: charter §P4-15 Amendment, §Two Venues, §Target-Branch Rule; architecture.md §11–12; design/phase-2.md §5 and P4-15 amendment; design/phase-4-runbook.md §Detached CI reviewer setup and §Advisory CI-review rollout; AGENTS.md invariants 1–5, 7, 9–12; issue ledger P4-014.
+
+Delivers: one strict target-branch enforcement field, `review.ci_mode: advisory|required`, and workflow policy gating that makes no paid model call in advisory mode while leaving all mechanical/oracle enforcement untouched. Absence defaults to required. Secret detection, repository variables, convenience config, local verdict reuse, and a fake passing review are out of scope.
+
+**Decision ratified 2026-08-10:** `verify` and `route` remain required in every mode. Required mode preserves P4-14 byte-for-byte after policy selection. Advisory mode schedules no prepare/agent/judge jobs, reads no API secret, and emits a conspicuous policy result but no review verdict. Branch protection omits the judge only in advisory mode. Local review is feedback, not authority.
+
+Acceptance (write these tests red before production changes):
+
+- enforcement-config parser accepts only `advisory|required`, defaults absence to `required`, rejects null/boolean/unknown/duplicate/unknown-field shapes, and proves convenience config cannot override it;
+- target-branch-rule tests prove a PR changing its own mode is judged by the base mode and cannot suppress review for itself;
+- workflow tests prove one credential-free policy job reads target config through pinned core; `advisory` schedules no request preparation, Codex Action, artifact transfer, or judge, does not reference the secret, and reports `CI_REVIEW_ADVISORY` without manufacturing pass verdict JSON;
+- required-mode tests preserve every P4-14 security assertion and prove missing/empty key, action failure, malformed output, or judge failure stays red;
+- mechanical/JVM workflows remain byte-equivalent apart from intentional config plumbing and continue running current oracles, full regression, seals, traceability, tiering, and routing in both modes;
+- init/doctor/templates install and validate the policy-aware workflow idempotently; generated default config omits the field or writes `required`, never advisory;
+- runbook and diagnostics name the exact branch-protection sets: advisory requires `verify` + `route`; required additionally requires the detached judge. A mismatch is reported as operational misconfiguration, not silently repaired;
+- full typecheck, lint, tests, build, deterministic packages, and existing P4-14 regressions pass. Notes then receives isolated pin and risk-routed config PRs before PR #8 is rerun.
