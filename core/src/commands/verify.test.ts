@@ -706,3 +706,83 @@ describe('verify — adversarial reviewer input (P2-10, design phase-2.md §5)',
     expect(report.checks.some((c) => c.name === 'review')).toBe(false);
   });
 });
+
+describe('verify — durable approval tier floor and critical ceremony (P4-17)', () => {
+  function writeTieredApproval(
+    minimum_tier: 'trivial' | 'standard' | 'critical' | undefined,
+    acks: Array<{ oracle: string; at: string }> | undefined,
+  ): void {
+    const base = sealBundle(scratch, [join(CHANGE_REL, 'oracles.md')], {
+      version: 1,
+      change: CHANGE,
+      approved_by: 'ada@example.com',
+      approved_at: '2026-08-10T00:00:00Z',
+    });
+    writeFileSync(
+      join(scratch, CHANGE_REL, 'approval.yaml'),
+      serializeApproval({
+        ...base,
+        ...(minimum_tier ? { minimum_tier } : {}),
+        ...(acks ? { acks } : {}),
+      }),
+      'utf8',
+    );
+  }
+
+  const allAcks = [
+    { oracle: 'ORC-greeting-001', at: '2026-08-10T00:00:00Z' },
+    { oracle: 'ORC-greeting-002', at: '2026-08-10T00:00:00Z' },
+  ];
+
+  it('keeps a critical approval floor and human routing when final facts are standard', async () => {
+    writeTieredApproval('critical', allAcks);
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: loadEnforcementConfig(scratch) },
+      deps({ diffFacts: () => ({ touchedPaths: ['src/greeting.ts'], diffLines: 20 }) }),
+    );
+    expect(report.verdict).toBe('pass');
+    expect(report.tier?.tier).toBe('critical');
+    expect(report.routing?.decision).toBe('human');
+    expect(report.checks.find((check) => check.name === 'approval')?.status).toBe('pass');
+  });
+
+  it('cannot use a lower approval floor to mask a target-config risk match', async () => {
+    writeTieredApproval('trivial', allAcks);
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: loadEnforcementConfig(scratch) },
+      deps({ diffFacts: () => ({ touchedPaths: ['crucible.yaml'], diffLines: 20 }) }),
+    );
+    expect(report.verdict).toBe('pass');
+    expect(report.tier?.tier).toBe('critical');
+    expect(report.routing?.decision).toBe('human');
+  });
+
+  it('fails a final critical diff when a prior standard approval lacks critical acknowledgments', async () => {
+    writeTieredApproval('standard', undefined);
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: loadEnforcementConfig(scratch) },
+      deps({ diffFacts: () => ({ touchedPaths: ['crucible.yaml'], diffLines: 20 }) }),
+    );
+    const approval = report.checks.find((check) => check.name === 'approval');
+    expect(report.verdict).toBe('fail');
+    expect(approval?.status).toBe('fail');
+    expect(approval?.findings.map((finding) => finding.id)).toContain('ORC-greeting-001');
+  });
+
+  it('fails closed on duplicate and unknown critical acknowledgments', async () => {
+    writeTieredApproval('critical', [
+      allAcks[0]!,
+      allAcks[0]!,
+      { oracle: 'ORC-unknown-999', at: '2026-08-10T00:00:00Z' },
+    ]);
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: loadEnforcementConfig(scratch) },
+      deps({ diffFacts: () => ({ touchedPaths: ['src/greeting.ts'], diffLines: 20 }) }),
+    );
+    const approval = report.checks.find((check) => check.name === 'approval');
+    expect(report.verdict).toBe('fail');
+    expect(approval?.findings.map((finding) => finding.id)).toEqual(
+      expect.arrayContaining(['ORC-greeting-001', 'ORC-greeting-002', 'ORC-unknown-999']),
+    );
+  });
+});

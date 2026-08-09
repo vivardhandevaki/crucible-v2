@@ -450,7 +450,20 @@ describe.skipIf(process.env['CRUCIBLE_REAL_SUBSTRATE'] === '1')(
         proposeSubstrate(FEATURE_BUNDLE),
         'partial refunds on orders (touches the payments risk path)',
       );
-      await doApprove(FEATURE);
+      const { resolve } = adapterDeps(scratch);
+      const approved = await approve(
+        { root: scratch, change: FEATURE, yes: false, config: loadEnforcementConfig(scratch) },
+        {
+          resolve,
+          confirm: () => Promise.resolve(true),
+          now,
+          approvedBy: () => APPROVER,
+          diffFacts: RISK_PATH,
+          pager: () => undefined,
+          walk: () => Promise.resolve('ack'),
+        },
+      );
+      expect(approved.approved).toBe(true);
 
       // Mid-implementation the agent hits ambiguity it may not improvise on. It
       // does NOT guess — it escalates, which writes escalation.yaml and notifies.

@@ -18,7 +18,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
-import type { Command } from 'commander';
+import { InvalidArgumentError, type Command } from 'commander';
 import { resolveAgentRuntime } from '../substrate/runtime.js';
 import {
   approve,
@@ -35,10 +35,21 @@ import {
   type EnforcementConfig,
 } from '../config/enforcement.js';
 import { loadPinnedAdapterClient } from '../adapters/runtime.js';
+import { TIER_NAMES, type TierName } from '../tier/tier.js';
 
 /** Model used when convenience config routes nothing to `models.propose`. */
 
 /** Register the real `approve` subcommand on the program. */
+/** Strict parser for the charter's upward-only approval tier force. */
+export function parseTier(value: string): TierName {
+  if ((TIER_NAMES as readonly string[]).includes(value)) {
+    return value as TierName;
+  }
+  throw new InvalidArgumentError(
+    `tier must be one of ${TIER_NAMES.join(', ')}; received ${JSON.stringify(value)}`,
+  );
+}
+
 export function registerApprove(program: Command): void {
   program
     .command('approve')
@@ -55,10 +66,15 @@ export function registerApprove(program: Command): void {
       'the git ref to diff against for tier computation ' +
         '(default: merge-base of HEAD and origin/HEAD)',
     )
+    .option(
+      '--tier <tier>',
+      'raise the approval tier (never lowers the fact-based tier)',
+      parseTier,
+    )
     .action(
       async (
         change: string,
-        opts: { yes?: boolean; confirmConsistency?: boolean; diffBase?: string },
+        opts: { yes?: boolean; confirmConsistency?: boolean; diffBase?: string; tier?: TierName },
       ) => {
         const root = process.cwd();
 
@@ -77,6 +93,7 @@ export function registerApprove(program: Command): void {
           model: proposeModel(root),
           width: process.stdout.columns ?? 80,
           color: process.stdout.isTTY === true && process.env.NO_COLOR === undefined,
+          ...(opts.tier !== undefined ? { forcedTier: opts.tier } : {}),
         };
 
         const result = await approve(options, liveDeps(root, opts.diffBase));

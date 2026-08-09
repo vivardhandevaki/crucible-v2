@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildProgram, P1_VERBS } from './program.js';
 import { type RunnerIO, runProgram } from './runner.js';
+import { parseTier } from '../commands/approve.cli.js';
 
 function captureIO(): { io: RunnerIO; out: () => string; err: () => string } {
   const outChunks: string[] = [];
@@ -135,5 +136,15 @@ describe('buildProgram', () => {
     const cap = captureIO();
     await runProgram(buildProgram(), ['--help'], cap.io);
     expect(cap.out()).toContain('--config-from');
+  });
+});
+
+describe('approve --tier parsing (P4-17)', () => {
+  it.each(['trivial', 'standard', 'critical'] as const)('accepts %s', (tier) => {
+    expect(parseTier(tier)).toBe(tier);
+  });
+
+  it.each(['', 'CRITICAL', 'urgent', 'critical '])('rejects malformed tier %s', (tier) => {
+    expect(() => parseTier(tier)).toThrow(/tier/i);
   });
 });

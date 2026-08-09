@@ -244,3 +244,26 @@ describe('parseApproval — fail closed on malformed input', () => {
     expect(err.exit).toBe(3);
   });
 });
+
+describe('approval.yaml minimum_tier (P4-17)', () => {
+  it('round-trips a durable critical floor and preserves it through amend', () => {
+    const bundle = copyToyRepo();
+    const approval = sealBundle(bundle, BUNDLE_FILES, { ...META, minimum_tier: 'critical' });
+    const restored = parseApproval(serializeApproval(approval), 'approval.yaml');
+    expect(restored.minimum_tier).toBe('critical');
+
+    const amended = amendApproval(bundle, BUNDLE_FILES, '2026-08-10T00:00:00Z', restored);
+    expect(amended.minimum_tier).toBe('critical');
+  });
+
+  it.each(['minimum_tier: urgent', 'minimum_tier: CRITICAL', 'minimum_tier: null'])(
+    'rejects malformed floor %s at exit 3',
+    (minimumTier) => {
+      const approval = serializeApproval(sealBundle(BUNDLE_ROOT, BUNDLE_FILES, META));
+      const err = catchCrucible(() =>
+        parseApproval(`${approval}\n${minimumTier}\n`, 'approval.yaml'),
+      );
+      expect(err.exit).toBe(3);
+    },
+  );
+});

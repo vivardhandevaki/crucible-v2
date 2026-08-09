@@ -18,7 +18,7 @@ Crucible is a framework for AI-driven software development where humans approve 
 3. **Fail-closed everywhere.** Malformed JSON, unparseable artifacts, unresolvable bindings, missing preconditions → failure, never a warning or a skip.
 4. **`skip` = fail for oracle targets.** A skipped judge is a fail-closed event.
 5. **Preconditions gate every command.** Each command refuses to run unless the prior stage's artifact exists and validates, and says exactly what to run instead.
-6. **Hashes seal.** approval.yaml stores sha256 of every bundle file + bound test file; any mismatch voids approval. Post-approval, oracle/TCB paths are immutable to implement.
+6. **Hashes seal.** approval.yaml stores sha256 of every bundle file + bound test file; any mismatch voids approval. Post-approval, sealed oracle/harness inputs are immutable to implement. An explicitly specified enforcement-config edit requires a sealed critical floor and remains subject to target-branch evaluation.
 7. **Enforcement config is read from the target branch in CI** — never from the PR branch. Convenience config (settings.yaml, local.yaml) never affects enforcement.
 8. **Tiers are computed, never declared.** Force up allowed; force down impossible. Risk-glob match always dominates.
 9. **The reviewer blocks only on enumerated rubric lines.** Findings citing unknown rubric IDs → fail (the reviewer may not invent rules). Everything else → observations.
