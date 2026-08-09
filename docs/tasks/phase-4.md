@@ -184,9 +184,9 @@ Acceptance (write these tests red before production changes):
 
 Reads: charter §Adapter Lifecycle, §Configuration & Reviewer Law, P4-15 and P4-16 amendments; architecture.md §10–13; design/phase-4-runbook.md §Validation bootstrap, §Advisory CI-review rollout, and §Framework source-pin upgrades; AGENTS.md invariants 1–3, 5–7, 11–12; issue ledger P4-015.
 
-Delivers: a proposed classification and rollout ceremony only. A framework pin plus deterministic candidate-`init` managed harness bytes is one isolated, human-reviewed bootstrap PR under the P4-14 no-governed-change path. Product code/tests, OpenSpec bundles, `crucible.yaml`, convenience config, unrelated edits, ambient CLI fallback, and invented product oracles are forbidden. Enforcement policy follows separately after the pin reaches the target branch.
+Delivers: a ratified classification and rollout ceremony only. A framework pin plus deterministic candidate-`init` managed harness bytes is one isolated, human-reviewed bootstrap PR under the P4-14 no-governed-change path. Product code/tests, OpenSpec bundles, `crucible.yaml`, convenience config, unrelated edits, ambient CLI fallback, and invented product oracles are forbidden. Enforcement policy follows separately after the pin reaches the target branch.
 
-**Proposed decision 2026-08-10:** the framework repository merged commit and green CI judge framework behavior; a consumer product oracle does not. Candidate `init` is authorized only to stage the isolated pin/managed-byte diff. The old target harness judges the PR, and the proposed workflow never judges itself. No new framework command or code is required for the current validation rollout; distribution-grade upgrade UX remains deferred.
+**Decision ratified 2026-08-10:** the framework repository merged commit and green CI judge framework behavior; a consumer product oracle does not. Candidate `init` is authorized only to stage the isolated pin/managed-byte diff. The old target harness judges the PR, and the proposed workflow never judges itself. No new framework command or code is required for the current validation rollout; distribution-grade upgrade UX remains deferred.
 
 Acceptance:
 

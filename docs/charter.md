@@ -705,7 +705,7 @@ Oracle artifact schema & binding spec · tier definitions (trivial/standard/crit
 P4-15 supersedes P4-14 only where P4-14 says CI review is unconditionally required. Target-branch `crucible.yaml` owns the strict enforcement field `review.ci_mode: advisory|required`; absence means `required`. `verify` and `route` are always required. In `required` mode the detached reviewer remains required and fail-closed exactly as P4-14 specifies. In `advisory` mode no CI reviewer runs, no secret is read, and no reviewer verdict exists; local review remains advisory and may not be represented as merge evidence. A missing credential never selects advisory mode. Oracles, regression, traceability, approval seals, tier computation, and routing are identical in both modes.
 
 
-## Proposed P4-16 Amendment — Framework Source Upgrades Are Bootstrap Changes
+## P4-16 Amendment — Framework Source Upgrades Are Bootstrap Changes
 
 A product framework-pin upgrade changes the judge itself, not product behavior. It therefore uses the isolated pin/workflow-only rollout already defined by P4-14, not a fabricated OpenSpec change or product oracle. The evidence is the merged framework commit and its own green framework CI, the exact committed source pin, deterministic `init`-managed bytes, the old target branch checks, and explicit human review of the isolated TCB diff. Agent self-report remains irrelevant.
 

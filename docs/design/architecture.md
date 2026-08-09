@@ -193,7 +193,7 @@ Mode selection never depends on secret presence, repository variables, PR config
 Enabling is ordered: create `OPENAI_API_KEY`; merge a dedicated risk-routed target-config PR changing `advisory → required`; validate detached review on a harmless PR; then add its judge check to branch protection. Disabling reverses the authority edge: remove the judge requirement first, then merge `required → advisory`. A branch-protection/config mismatch is an operational misconfiguration, never a reason to infer a mode.
 
 
-## 13. Framework source-pin upgrade lane (proposed P4-16, 2026-08-10)
+## 13. Framework source-pin upgrade lane (ratified P4-16, 2026-08-10)
 
 The exact-pin launcher creates an intentional authority edge: the currently pinned checkout drives ordinary work, while a candidate checkout may be invoked directly only for the explicit `init` bootstrap that stages its own pin and managed bytes. Treating that bootstrap as a product proposal is both circular and dishonest—a product oracle cannot establish that its judge is trustworthy, and running candidate `init` first would make the supposed oracle green before approval.
 
