@@ -15,6 +15,8 @@ Phase 4 has **no framework design doc by decision** (PHASES.md): the product's d
 Phase 4 deliberately validates Crucible before a public npm/binary release exists. Run `crucible init` from a committed Crucible GitHub checkout (or pass `--framework-source owner/repository@<40-character-lowercase-sha>`). It writes `.crucible/framework.lock.json`, a strict source pin. The shipped CI workflow reads both that pin and `crucible.yaml` from the target branch, checks out the exact commit into a separate directory, builds it with `npm ci && npm run build`, and executes that built CLI. A PR therefore cannot select the harness that judges itself.
 
 
+The built CLI executes under plain Node. Every workspace package statically reachable from it must export built JavaScript rather than TypeScript source; missing build output is a fail-closed framework error, never a reason to introduce a TypeScript loader in the consumer workflow.
+
 The framework packages and invokes its exact pinned OpenSpec runtime itself. A consumer repository, including a Java/Spring Boot project, does not need a `package.json`, `npm init`, or a separate OpenSpec installation to use `propose` or `archive`.
 The pin is part of the approval hash scope whenever present; changing it after approval voids approval. A framework bug is fixed in the framework repository first, then the product receives a separately reviewed pin-bump change. This is a validation-only bootstrap, not a distribution mechanism: publishing and release lifecycle remain deferred under Backlog B12.
 
@@ -60,6 +62,7 @@ A framework bug found mid-product is fixed in the framework repo under its norma
 
 For P4-12 specifically, leave the product proposal and session checkpoint in place while the framework's Java/JUnit classpath defect is fixed. After the framework fix is merged and the product receives a separately reviewed pin bump, rerun `session propose next`; ordinary resolver discovery must return every bound target as `found` before the checkpoint may become `ready`. Do not approve, implement, or replace a dependency-backed integration test with a weaker test while resolution is unavailable.
 
+For P4-13 specifically, leave the product implementation and PR in place while the built-CLI package-export defect is fixed. Do not edit a consumer workflow to add a TypeScript loader or bypass target-branch enforcement. After the framework fix is merged and the product receives a separately reviewed pin bump, re-run the existing PR's CI; the same pinned built CLI must reach ordinary verification under Node 20.
 ## Definition of done (Phase 4 = charter headline)
 
 Production-grade, consumer-ready product shipped end-to-end through Crucible; validation-report.md written; zero un-ratcheted escaped defects; backlog re-groomed with Phase-4 learnings (esp. distribution readiness).
