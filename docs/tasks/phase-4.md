@@ -122,3 +122,19 @@ Acceptance (write these tests red before production changes):
 - malformed/failure coverage rejects build-tool spawn and non-zero exits, missing/unreadable output files, malformed JSON or delimiter output, empty/non-string entries, nonexistent Maven dependency entries, Gradle dependency-resolution failure, an absent/wrong-type Gradle `test` task, helper non-zero/bad JSON, and linkage failure for an existing target; none may degrade to `missing` or produce a candidate;
 - existing genuinely absent targets still return `missing` (and P4-11 candidates where safe), parameterized/dynamic targets remain unsupported→`missing`, found-target grounding remains exact, input ordering remains stable, and Maven/Gradle conformance stays green;
 - rebuild the packaged adapter twice and prove byte-identical output, then pass adapter typecheck/lint/tests, full conformance, core regression suites, and root build. Product validation after merge/pin reruns the preserved Notes checkpoint to `ready`; approval and implementation remain explicitly out of P4-12.
+
+**P4-13 · Built-CLI workspace runtime exports** · Tier: Terra (packaging repair) · Trigger: the Notes `create-note` PR's target-branch CI checked out and built its pinned framework, then Node 20 aborted before verification because `@crucible/ci-templates` exported `src/index.ts` to the compiled CLI.
+
+Reads: charter §Configuration & Reviewer Law, §The Target-Branch Rule, and §Adapters Are Part of the Trusted Computing Base; architecture.md §1 and §6–9; design/phase-4-runbook.md §Validation bootstrap and §Escalation of framework bugs; AGENTS.md invariants 1–5, 7, 11, and 12; issue ledger P4-012.
+
+Delivers: plain-Node runtime exports for every workspace package statically imported by the built CLI during consumer CI. This is limited to `@crucible/ci-templates` and `@crucible/schemas`; test-only workspaces and consumer workflow behavior are unchanged.
+
+**Decision amended 2026-08-10 (CI build-order evidence):** production `main` and default exports point to `dist/`, while `types` exports remain `src/index.ts` so the workspace typecheck can run before build. Node never selects a `types` condition, so consumer CI still executes only built JavaScript. CI keeps building the exact target-branch framework pin with `npm ci && npm run build`, then executes its built CLI under plain Node. There is no TypeScript loader and no runtime source-export fallback: missing build output must abort before enforcement can make a decision.
+
+Acceptance (write these tests red before production changes):
+
+- a built-CLI consumer-surface regression runs `core/dist/cli/bin.js --help` under plain-Node semantics after a workspace build and proves the CLI loads without a `.ts` extension error;
+- the regression disables Node 22's local TypeScript stripping when available, so it faithfully retains the Node 20 CI contract;
+- `@crucible/ci-templates` and `@crucible/schemas` expose `src` declarations for pre-build typechecking but export built JavaScript at runtime, while fixtures and other source-only/test-only packages remain untouched;
+- a clean checkout proves typecheck succeeds before build; after build, a missing runtime artifact fails the Node process rather than loading TypeScript source;
+- root typecheck, lint, build, and tests pass. After merge, Notes receives a separately reviewed framework-pin bump; only then may PR #8 re-run the target-branch verify gate.
