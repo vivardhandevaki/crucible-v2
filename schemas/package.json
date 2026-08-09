@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "description": "The shipped Crucible OpenSpec change-type bundles (crucible / crucible-bugfix / crucible-refactor). Plain files installed by copying; `crucible init` copies them into a target repo's openspec/schemas/.",
-  "//": "The built core CLI loads this package under plain Node in consumer CI, so its runtime export is dist/index.js. The bundle DATA lives under crucible*/; src/index.ts only computes paths — it never parses or mutates the bundles (that is core's changetype/ TCB).",
+  "//": "The built core CLI loads this package under plain Node in consumer CI, so its runtime export is dist/index.js. TypeScript checks run before build, so declarations remain source-visible. The bundle DATA lives under crucible*/; src/index.ts only computes paths — it never parses or mutates the bundles (that is core's changetype/ TCB).",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "src/index.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "default": "./dist/index.js"
     }
   },

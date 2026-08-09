@@ -129,12 +129,12 @@ Reads: charter §Configuration & Reviewer Law, §The Target-Branch Rule, and §A
 
 Delivers: plain-Node runtime exports for every workspace package statically imported by the built CLI during consumer CI. This is limited to `@crucible/ci-templates` and `@crucible/schemas`; test-only workspaces and consumer workflow behavior are unchanged.
 
-**Decision ratified 2026-08-10:** retain workspace source imports for test tooling, but make production package `main`, `types`, and default exports point to `dist/`. CI keeps building the exact target-branch framework pin with `npm ci && npm run build`, then executes its built CLI under plain Node. There is no TypeScript loader and no source-export fallback: missing build output must abort before enforcement can make a decision.
+**Decision amended 2026-08-10 (CI build-order evidence):** production `main` and default exports point to `dist/`, while `types` exports remain `src/index.ts` so the workspace typecheck can run before build. Node never selects a `types` condition, so consumer CI still executes only built JavaScript. CI keeps building the exact target-branch framework pin with `npm ci && npm run build`, then executes its built CLI under plain Node. There is no TypeScript loader and no runtime source-export fallback: missing build output must abort before enforcement can make a decision.
 
 Acceptance (write these tests red before production changes):
 
 - a built-CLI consumer-surface regression runs `core/dist/cli/bin.js --help` under plain-Node semantics after a workspace build and proves the CLI loads without a `.ts` extension error;
 - the regression disables Node 22's local TypeScript stripping when available, so it faithfully retains the Node 20 CI contract;
-- `@crucible/ci-templates` and `@crucible/schemas` export built JavaScript and declarations, while fixtures and other source-only/test-only packages remain untouched;
-- a missing built runtime artifact fails the Node process rather than loading TypeScript source; there is no fallback path;
+- `@crucible/ci-templates` and `@crucible/schemas` expose `src` declarations for pre-build typechecking but export built JavaScript at runtime, while fixtures and other source-only/test-only packages remain untouched;
+- a clean checkout proves typecheck succeeds before build; after build, a missing runtime artifact fails the Node process rather than loading TypeScript source;
 - root typecheck, lint, build, and tests pass. After merge, Notes receives a separately reviewed framework-pin bump; only then may PR #8 re-run the target-branch verify gate.

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -11,6 +11,23 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const builtCli = join(repoRoot, 'core', 'dist', 'cli', 'bin.js');
 
 describe('built CLI consumer surface (P4-13)', () => {
+  it('uses source declarations before build and built JavaScript at runtime', () => {
+    for (const workspace of ['ci-templates', 'schemas']) {
+      const packageJson = JSON.parse(
+        readFileSync(join(repoRoot, workspace, 'package.json'), 'utf8'),
+      ) as {
+        main: string;
+        types: string;
+        exports: { '.': { default: string; types: string } };
+      };
+
+      expect(packageJson.main).toBe('dist/index.js');
+      expect(packageJson.exports['.'].default).toBe('./dist/index.js');
+      expect(packageJson.types).toBe('src/index.ts');
+      expect(packageJson.exports['.'].types).toBe('./src/index.ts');
+    }
+  });
+
   it('loads with plain Node after the workspace build', () => {
     expect(existsSync(builtCli), 'run npm run build before this consumer-surface test').toBe(true);
 
