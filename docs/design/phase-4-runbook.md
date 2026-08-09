@@ -83,3 +83,9 @@ For P4-14 specifically, leave the Notes `create-note` implementation and PR unch
 ## Definition of done (Phase 4 = charter headline)
 
 Production-grade, consumer-ready product shipped end-to-end through Crucible; validation-report.md written; zero un-ratcheted escaped defects; backlog re-groomed with Phase-4 learnings (esp. distribution readiness).
+
+## Advisory CI-review rollout (P4-15)
+
+A validation project may deliberately defer API spend by merging target-branch `review.ci_mode: advisory`. Until that config is present, P4-14 required mode remains law and a missing key is red. In advisory mode require only `verify` and `route`; the workflow reports that CI review did not run, makes no model call, and emits no reviewer verdict. Local review is recommended feedback but never merge evidence. Oracle and regression suites remain mandatory.
+
+To enable later: add `OPENAI_API_KEY`, merge a dedicated risk-routed config PR changing the mode to `required`, validate the detached reviewer, then require its judge check. Never infer advisory mode from secret absence or describe it as full adversarial-review enforcement.

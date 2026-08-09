@@ -181,3 +181,13 @@ Official OpenAI guidance is part of the implementation constraint: use `openai/c
 4. Only then re-run preserved product changes. A failed reviewer transport is fixed in the framework or repository setup; it is never bypassed by approving the product bundle, weakening the rubric, or disabling review.
 
 This amendment supersedes P2-10 only where it says the shipped CI workflow supplies `VerifyDeps.review` inside `verify --review`. Local behavior, the fresh-review requirement, the verdict schema/evaluator, rubric law, and observations semantics remain unchanged. CI review transport is now detached to keep the credential outside every job that executes untrusted project code.
+
+## 12. Explicit advisory CI-review mode (ratified P4-15, 2026-08-10)
+
+P4-15 permits a temporary, deliberately weaker validation posture without weakening deterministic verification. Target-branch `crucible.yaml` owns `review.ci_mode: advisory|required`. The field is strict; unknown values fail closed, and absence defaults to `required`, so existing projects never silently lose review.
+
+The detached workflow begins with a credential-free policy job using target-branch pinned core and config. In `required` mode P4-14 is unchanged: prepare, credentialed action, and secretless judge run; missing credentials or any transport/verdict defect is red; branch protection requires `verify`, `route`, and the judge. In `advisory` mode reviewer jobs are not scheduled, no secret is read, no agent call is made, and no verdict/check success is synthesized. The policy job reports `CI_REVIEW_ADVISORY: no CI adversarial reviewer ran`; branch protection requires only `verify` and `route`.
+
+Mode selection never depends on secret presence, repository variables, PR config, convenience settings, local state, or an agent report. Local `verify --review` is useful feedback but non-authoritative. Oracle and regression execution remain in the ordinary credential-free workflow and are identical in both modes.
+
+Enabling is ordered: create `OPENAI_API_KEY`; merge a dedicated risk-routed target-config PR changing `advisory → required`; validate detached review on a harmless PR; then add its judge check to branch protection. Disabling reverses the authority edge: remove the judge requirement first, then merge `required → advisory`. A branch-protection/config mismatch is an operational misconfiguration, never a reason to infer a mode.
