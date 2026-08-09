@@ -47,7 +47,7 @@ import {
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { ciTemplatePathForAdapter } from '@crucible/ci-templates';
+import { CI_REVIEW_TEMPLATE_PATH, ciTemplatePathForAdapter } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES, schemaBundleDir } from '@crucible/schemas';
 import {
   ADAPTER_LOCK_RELPATH,
@@ -249,7 +249,16 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
     apply,
   );
 
+  await writeFullFile(
+    root,
+    join('.github', 'workflows', 'crucible-review.yml'),
+    readFileSync(CI_REVIEW_TEMPLATE_PATH, 'utf8'),
+    deps,
+    apply,
+  );
+
   // 6. The managed agent block — teach a conversational agent to DRIVE the CLI
+  //
   //    (charter §267). Marker-delimited, replaced in place on re-run.
   await ensureManagedBlock(root, 'AGENTS.md', managedBlock(), deps, apply);
   await ensureManagedBlock(root, 'CLAUDE.md', claudeBridgeBlock(), deps, apply);

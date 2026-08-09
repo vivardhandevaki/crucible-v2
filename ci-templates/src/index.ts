@@ -16,6 +16,9 @@ export const CI_TEMPLATE_FILE = 'crucible.yml';
 /** JVM variant: the same enforcement gate plus JDK and Docker readiness. */
 export const JAVA_JUNIT_CI_TEMPLATE_FILE = 'crucible-java-junit.yml';
 
+/** Target-branch-owned detached reviewer workflow (P4-14). */
+export const CI_REVIEW_TEMPLATE_FILE = 'crucible-review.yml';
+
 // src/index.ts (or dist/index.js) → workspace root, where crucible.yml lives.
 const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -24,6 +27,9 @@ export const CI_TEMPLATE_PATH = join(workspaceRoot, CI_TEMPLATE_FILE);
 
 /** Absolute path to the JVM/Testcontainers-ready enforcement workflow. */
 export const JAVA_JUNIT_CI_TEMPLATE_PATH = join(workspaceRoot, JAVA_JUNIT_CI_TEMPLATE_FILE);
+
+/** Absolute path to the credential-isolated reviewer workflow. */
+export const CI_REVIEW_TEMPLATE_PATH = join(workspaceRoot, CI_REVIEW_TEMPLATE_FILE);
 
 /** Select the shipped workflow from the enforcement adapter, never convenience config. */
 export function ciTemplatePathForAdapter(adapter: string): string {

@@ -206,7 +206,7 @@ jobs:
             # verdict must still fail the step (fail-closed), but we also want the
             # report printed and its routing read when green.
             set +e
-            report="$(node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$RUNNER_TEMP/crucible-target" verify "$change" --diff-base "origin/$BASE" --review)"
+            report="$(node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$RUNNER_TEMP/crucible-target" verify "$change" --diff-base "origin/$BASE")"
             code=$?
             set -e
             printf '%s\n' "$report"
