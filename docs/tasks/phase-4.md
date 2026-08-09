@@ -195,3 +195,21 @@ Acceptance:
 - P4-15 transition order keeps `verify` and `route` required, never treats missing credentials as advisory, and never manufactures a passing review;
 - Notes recovery removes only the accidental unapproved pin proposal/checkpoint, preserves unrelated files and the `create-note` bundle, and opens an isolated pin/workflow PR before the separate `review.ci_mode` change;
 - documentation formatting and diff checks pass; no production code or tests change in this design task.
+
+**P4-17 · Durable per-change tier floor** · Tier: Fable / Sol (enforcement design) + Opus / Terra (implementation) · Trigger: the Notes advisory-policy approval saw only its pre-implementation bundle/test diff, computed `standard`, and could not invoke the charter's settled `--tier critical` even though the approved implementation would edit self-risk-globbed `crucible.yaml`.
+
+Reads: charter §Tier Computation Rules, §Approval/Amend/Override, §Approve Session, §Tier Computation — Operational Details, §Configuration & Reviewer Law, proposed P4-17 amendment; architecture.md §12–14; design/phase-2.md §2, §8, and P4-17 amendment; design/phase-4-runbook.md §Planned enforcement-config edits; AGENTS.md invariants 1–3, 5–8, 11–12; issue ledger P4-016.
+
+Delivers: strict `approve --tier <tier>` wiring, an optional deterministic `approval.yaml.minimum_tier`, authoritative maximum-based recomputation in verify/CI, and fail-closed critical-ack completeness. It does not add a declared-tier override, a config-only bypass, a new change type, or a P4-16 exemption.
+
+**Decision proposed 2026-08-10; implementation blocked pending ratification:** approval persists its effective tier as an upward-only floor. CI combines the floor with target-branch config and final diff facts. Every effective critical approval must prove an exact acknowledgment set for the current oracles. The seal scope remains the approved artifacts, bound tests, and existing lock inputs; the explicitly specified config bytes remain implementation under target-branch judgment.
+
+Acceptance (write these tests red before production changes):
+
+- CLI tests accept exactly `trivial|standard|critical`, reject missing/unknown/case-variant values without opening the gate, and pass the force to approve;
+- approve tests prove a standard fact set plus `--tier critical` renders critical reasons, refuses `--yes`, requires every oracle acknowledgment, and serializes `minimum_tier: critical`; matching and lower requested tiers cannot reduce the computed result;
+- approval artifact tests prove deterministic round-trip, legacy omission compatibility, preservation through amend, and rejection of null, non-enum, unknown-field, and malformed values;
+- verify tests prove `max(final facts, minimum_tier)`: a critical floor keeps human routing when final facts are standard, a lower floor cannot mask a target-branch risk match, and target-branch caps/risk globs remain authoritative;
+- critical approval validation rejects missing, duplicate, and unknown acknowledgments and accepts the exact current-oracle set; a final diff that newly becomes critical under a standard/noncritical approval is red rather than merely rerouted;
+- target-branch-rule/worked-flow coverage proves a PR editing `crucible.yaml` is judged by base config, keeps all oracle/regression/seal/traceability checks, and cannot use its approval floor to force down or evade human routing;
+- root typecheck, lint, build, full tests, and deterministic package suites pass. Only after merge and a separate Notes framework-pin rollout may the preserved advisory-policy proposal be approved with `--tier critical` and implemented.

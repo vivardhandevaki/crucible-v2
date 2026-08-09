@@ -118,3 +118,11 @@ Weekly audit digest (A7) → just-in-time in Phase 4 unless earlier need; stacke
 ## P4-15 reviewer-policy amendment (ratified 2026-08-10)
 
 “CI always” in §5 now means always when target-branch `review.ci_mode` is `required`; absence remains required. Explicit `advisory` mode schedules no reviewer agent or judge and requires only `verify` + `route`. It emits no passing review result and cannot consume a local verdict. Deterministic verification and routing are unchanged; architecture §12 owns the state transitions.
+
+## P4-17 durable tier-floor amendment (proposed)
+
+The pure P2 tier function already implements `max(computed, forced)`; P4-17 wires that settled input through the approval boundary. The approve CLI gains strict `--tier <trivial|standard|critical>` parsing, passes the value into `computeTier`, uses the effective tier for the one-rich-gate ceremony, and writes that effective value as optional `approval.yaml.minimum_tier`. New CLI approvals with tier facts write the field deterministically; legacy approvals may omit it.
+
+Authoritative verify loads the approval floor and supplies it as the pure computation's force input while independently assembling final diff facts and target-branch config. The approval check additionally validates the critical ceremony against the parsed current oracle set: effective critical means acknowledgments are an exact set, not merely an audit array. A lower floor is harmless because maximum semantics prevent downgrade; an unknown field/value, duplicate acknowledgment, missing critical acknowledgment, or acknowledgment for an unknown oracle fails closed.
+
+Acceptance is test-first across the existing seams: CLI parsing, approve core/surface, approval schema/serialization, verify core, target-branch behavior, and one worked enforcement-config change. No new state cache authority, config layer, change type, or no-governed-change path is introduced.
