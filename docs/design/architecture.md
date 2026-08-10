@@ -102,8 +102,8 @@ Session-native authoring is a second **local execution mode**, not an `AgentSubs
 |---|---|---|
 | propose create + pre-approval revise | Initial release; no child agent | Retained |
 | implement (tasks first, then code) | Initial release; no child agent | Retained |
-| review | Forbidden until a separate ratification | Required fresh `AgentSubstrate` role |
-| amend + approve-time regeneration | Not in P4-10 | Existing fresh propose role |
+| review | P4-20; separate fresh interactive session | Headless `AgentSubstrate` retained |
+| amend + approve-time regeneration | P4-21; no child agent | Existing fresh propose role retained |
 | approve / verify / escalate / override / archive / status / why | Thin pinned-CLI skills only | Deterministic or existing behavior |
 
 ### Public CLI and handoff contract
@@ -116,6 +116,8 @@ crucible session propose start <change> <intent> [--type feature|bugfix|refactor
 crucible session propose next|resume|finish <change>
 crucible session propose revise <change> <instruction>
 crucible session implement start|tasks-ready|resume|finish <change>
+crucible session amend start <change> <resolution>
+crucible session amend next|resume|finish|seal <change>
 ```
 
 Every successful stage emits strict JSON `SessionHandoffV1`: `{ version: 1, change, role, operation, stage, change_dir, role_prompt, instructions[], next_command, input_hash }`. Unknown or missing fields fail exit 3. `session status` emits artifact-derived phase plus an allow-list of exact next commands; the hub skill may display only that list. Human-readable output may render the same object, but skills use `--json`.
@@ -283,3 +285,24 @@ The managed review skill is deliberately low-freedom: it checks the CLI handoff,
 Headless `crucible review` remains the explicit child-`AgentSubstrate` command for automation and is not silently redirected. The detached CI reviewer is unchanged. There is no automatic fallback between transports. A red verdict with block findings still requires `review-address` before implementation edits. An infrastructure-only or missing-verdict red may be retried only through an explicit human `session implement review-retry` transition that preserves the unchanged committed snapshot and remints a new one-use verdict path.
 
 Existing P4-19 checkpoints migrate by revalidation, never by trust. `review-pending` can start the new review lifecycle. A legacy `review-red` checkpoint carries no trustworthy failure detail, so the human must explicitly choose `review-retry` or `review-address`; neither choice creates a pass. An approved consumer branch cannot update its sealed framework lock in place: merge the framework fix, use the isolated target-branch pin rollout, then restart/reapprove the affected product change from the new pin rather than hand-editing its approval.
+
+## 17. Session-native amendment (proposed P4-21, 2026-08-10)
+
+Notes dogfooding exposed both remaining assumptions in the headless-only amendment path. A legitimate post-approval `tasks.md` made the shared bundle judge report “tasks are authored only after approval,” and after that file was moved aside the fresh propose-role Codex subprocess failed under the same nested Bubblewrap restriction that motivated P4-10 and P4-20. The subprocess produced no trusted regeneration, so core correctly left the old seal unchanged. The operator rejects `danger-full-access`; the repair is an explicit session-native amendment transport plus a phase-correct tasks rule, not a sandbox fallback or manual seal edit.
+
+Session-native amend is an authoring role, not an independent review role. It may run in the already-active interactive session because the human's subsequent re-seal remains the authority edge. The role reads the propose prompt and receives only CLI-minted instructions. It cannot approve itself, choose the hash scope, clear an escalation, or advance implementation. Headless `crucible amend` remains a distinct automation path through `AgentSubstrate`; neither transport silently falls back to the other.
+
+### Lifecycle and checkpoint
+
+1. `session amend start <change> <resolution>` requires a non-empty resolution, an existing valid approval, a parseable change type and role prompt, and a parseable escalation when one exists. It snapshots the exact approval bytes/hash, resolution, escalation bytes/hash-or-absence, original sealed file map, and the implementation checkpoint identity when present. It refuses a second live amendment. The returned `role: amend` handoff names only proposal/design/spec/oracle paths and the currently sealed bound-test paths; it never names `tasks.md`, approval, generation, state, config, or implementation files.
+2. `next` and `resume` revalidate those bound inputs. They derive dependency-ordered artifact work from the packaged OpenSpec runtime while filtering `tasks.md`, then use ordinary adapter `resolve` to return exact safe candidate paths for newly introduced bound tests. An unresolved target without a contained candidate fails closed and teaches artifact revision. A candidate remains red until a later resolve returns `found` with an existing target file. Existing implementation files and `tasks.md` may already differ from the merge base, but the amendment handoff never authorizes changing them.
+3. `finish` requires the amendment checkpoint, unchanged approval artifact, unchanged resolution/escalation binding, complete artifacts, and every binding grounded. It judges the bundle in post-approval mode: a present `tasks.md` is excluded from the bundle and hash scope rather than rejected. Red or malformed output re-seals nothing, clears nothing, and keeps a resumable checkpoint. Green records a ready-to-seal checkpoint plus the newly derived hash scope and returns only `session amend seal`.
+4. `seal` is an interactive human edge, not an agent-authoring handoff. It recomputes every start/finish binding and reruns the full judge immediately before rendering the exact old-seal-to-current-scope diff. Decline writes nothing and leaves the checkpoint ready. Confirmation appends one ordinary `approval.amendments[]` entry while updating live hashes, re-stamps `generation.yaml`, clears only the bound escalation, records audit provenance, invalidates obsolete local-review evidence, and removes the amendment checkpoint. Any implementation checkpoint restarts at `tasks` against the new approval; the next action is `session implement start`.
+
+The checkpoint lives at `.crucible/sessions/<change>/amend.json` and is convenience/audit state only. Its strict schema and input hash make interruption recovery deterministic, but it is not accepted as proof of approval or regeneration. Deleting it after sealed bytes change cannot legitimize those bytes: ordinary approval verification stays red, and a new `start` refuses because the old seal no longer validates. Malformed, path-traversing, stale, mismatched-change, or forged-stage checkpoints exit 3 or 2 without sealing.
+
+### Phase-aware tasks rule and write boundary
+
+“Tasks are authored only after approval” is a phase rule, not a universal bundle-shape rule. Pre-approval propose (headless and session-native) plus first approval still reject any `tasks.md`. Both headless and session-native amend first prove that a valid approval existed, then invoke bundle judgment in an explicit post-approval mode that ignores `tasks.md`; no caller may infer that mode merely from file presence. `tasks.md` stays outside `computeHashScope`, amendment diffs, generation ordering, and the managed amend skill's allowed paths. Malformed or missing artifacts, approvals, bindings, and adapter output remain fail-closed.
+
+The CLI compares tracked and untracked project bytes at `finish`/`seal` with the amendment's derived write set. Pre-existing implementation dirt may remain byte-identical, allowing escalation recovery mid-implementation; any new change outside current/previous sealed paths, exact adapter candidates, and CLI-owned checkpoint/state files fails with the offending paths. This boundary is local process protection, not merge evidence. The approval seal, immutable bound tests after re-seal, deterministic verify, and target-branch CI remain the enforcement boundary.
