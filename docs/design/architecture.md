@@ -306,3 +306,17 @@ The checkpoint lives at `.crucible/sessions/<change>/amend.json` and is convenie
 “Tasks are authored only after approval” is a phase rule, not a universal bundle-shape rule. Pre-approval propose (headless and session-native) plus first approval still reject any `tasks.md`. Both headless and session-native amend first prove that a valid approval existed, then invoke bundle judgment in an explicit post-approval mode that ignores `tasks.md`; no caller may infer that mode merely from file presence. `tasks.md` stays outside `computeHashScope`, amendment diffs, generation ordering, and the managed amend skill's allowed paths. Malformed or missing artifacts, approvals, bindings, and adapter output remain fail-closed.
 
 The CLI compares tracked and untracked project bytes at `finish`/`seal` with the amendment's derived write set. Pre-existing implementation dirt may remain byte-identical, allowing escalation recovery mid-implementation; any new change outside current/previous sealed paths, exact adapter candidates, and CLI-owned checkpoint/state files fails with the offending paths. This boundary is local process protection, not merge evidence. The approval seal, immutable bound tests after re-seal, deterministic verify, and target-branch CI remain the enforcement boundary.
+
+## 18. Enforcement diff facts exclude derived state (ratified P4-22, 2026-08-10)
+
+Notes P4-21 dogfooding proved that the shared git edge currently contradicts the charter State & Audit law. A critically approved policy diff reached 419 lines, was amended and independently reviewed twice, yet remained at 415 because each mandatory reseal/reimplementation/review cycle appended committed `state.yaml` events. The cache thereby affected diff-cap enforcement even though no enforcement path is allowed to trust it.
+
+P4-22 corrects only the shared `computeDiffFacts` boundary used by approve, verify, and CI. Its public result contains enforcement-effective facts:
+
+1. Obtain the canonical merge-base-to-HEAD name and numstat data from git. Missing history, command failure, truncated/malformed records, invalid counts, or inconsistent records remain exit 3. Binary `-` counts retain the existing zero-line treatment.
+2. Classify only `openspec/changes/<change>/state.yaml` and `openspec/changes/archive/<entry>/state.yaml` as derived state. Matching is repository-relative, POSIX-normalized, case-sensitive, and exact; extra nesting, alternate names/extensions, and traversal forms are not excluded.
+3. Remove exact derived-state paths from `touchedPaths` and omit their added/deleted counts from `diffLines`. Risk matching, tier computation, cap enforcement, routing, and reports consume only these effective facts.
+
+The filter does not rewrite or ignore files in git, approval hashing, amendment write-boundary checks, status reconciliation, raw review diffs, or archival history. It creates no configurable exemption and accepts no agent-supplied path list. All non-state change artifacts and product/harness bytes remain counted. A state-only diff therefore has zero enforcement paths and zero lines, while a mixed diff is judged exactly as if its derived state rows were absent.
+
+This is a correction to invariant 1, not a weaker cap. The state parser, append-style event behavior, command-supplied deterministic timestamps, and fail-closed artifact checks remain unchanged. P4-21 seal and fresh-review lifecycle also remains unchanged; repeated audit events simply cease feeding back into its enforcement budget.
