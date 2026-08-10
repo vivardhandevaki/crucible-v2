@@ -220,3 +220,48 @@ The floor comes from the change branch but can only increase ceremony, tighten t
 Critical ceremony is a relational approval invariant rather than audit-only metadata. Whenever the effective tier is critical and an approval exists, `acks` must contain each current oracle ID exactly once and no unknown ID. Missing, duplicate, or extra acknowledgments make the approval check red; malformed fields remain exit 3. This also detects a standard approval whose later implementation unexpectedly enters a risk path. Critical changes with no current oracles still require the interactive confirmation, while the exact required acknowledgment set is empty.
 
 The approval hash scope is unchanged. An enforcement-config change is ordinary governed implementation only when the sealed proposal/spec/design/oracle bundle explicitly specifies it and the approval records a critical floor. `crucible.yaml` itself is not added to that seal: its proposed bytes are the implementation under judgment, and CI deliberately evaluates the PR using the target branch's config. Direct config-only PRs, pre-approval config edits that make the oracle green, and P4-16's bootstrap lane remain invalid substitutes.
+
+## 15. Explicit review posture and local review loop (ratified P4-18/P4-19, 2026-08-10)
+
+Dogfooding exposed a legitimate single-maintainer deployment shape: the project may deliberately decline paid PR-agent review and may have no second GitHub identity capable of satisfying the critical-tier non-author approval gate. This is a policy choice, not a missing-credential fallback. P4-18 therefore separates three controls that earlier text coupled: deterministic verification, PR AI review, and independent human approval. Deterministic verification remains mandatory in every posture and continues to execute current oracles, the full CI regression suite, traceability, approval seals, diff caps, and tier computation.
+
+### Target-branch PR policy
+
+Target-branch `crucible.yaml` owns two strict, independent fields:
+
+```yaml
+review:
+  ci_mode: advisory|required
+  human_mode: advisory|required
+```
+
+Absence of either field means `required`, preserving existing projects. Unknown, null, duplicate, or wrong-typed values fail closed. Neither field is inferred from `OPENAI_API_KEY`, repository variables, contributor identity, convenience config, local verdicts, or agent output. `ci_mode: advisory` retains P4-15 semantics: no PR reviewer is scheduled and no verdict is manufactured. `human_mode: advisory` retains tier/routing computation and reports every human-routing reason, but does not install a blocking GitHub `route` job. It is a consciously weaker solo-maintainer posture, never rendered as independent approval.
+
+The generated check matrix is exact:
+
+| `ci_mode` | `human_mode` | PR checks installed by Crucible |
+| --- | --- | --- |
+| `required` | `required` | `verify`, detached review judge, `route` |
+| `advisory` | `required` | `verify`, `route` |
+| `required` | `advisory` | `verify`, detached review judge |
+| `advisory` | `advisory` | `verify` only |
+
+The omitted checks are absent, not successful/skipped substitutes. Target-branch managed workflow bytes must agree structurally with the target-branch config; pinned core rejects a missing required job or an installed disabled job before ordinary verification can turn green. `doctor` reports the same mismatch locally. GitHub branch-protection/ruleset configuration remains an external operator action: `init` prints the exact required-check set but does not consume a token or mutate repository settings. A stale external required check blocks operationally and is never interpreted as a framework pass.
+
+Tier and routing facts do not change. Critical changes still compute `routing: human`; the report additionally carries the configured human-review enforcement posture and warns conspicuously when that recommendation is advisory. P4-17 critical oracle acknowledgments remain mandatory. An `override.yaml` is not usable in advisory-human mode: override is an emergency bypass whose settled contract requires independent human review, so verify fails closed until `human_mode: required` and its route job are restored.
+
+`crucible init` asks explicitly for PR AI-review and independent-human-review modes. It never asks for, probes, or stores an API key. Non-interactive `--yes` retains the backward-compatible safe defaults (`required`/`required`). Selecting required CI review prints the separately performed `OPENAI_API_KEY` and branch-protection setup; selecting advisory omits the detached PR workflow. Re-running init/doctor renders and checks the selected workflow variants idempotently with the existing diff-and-confirm ownership rules.
+
+Because workflows and enforcement are target-branch-owned, a policy PR cannot disable its own old gate. Moving to solo posture is ordered: remove only the soon-to-be-disabled external required checks; merge an isolated framework-pin/managed-workflow update under the remaining old checks; then merge a separately governed, critical-floor config PR carrying both desired modes and generated workflow bytes. The old target policy judges each transition PR. No red check is converted to green, and no current PR may claim the new posture before it reaches the target branch.
+
+### Fresh local reviewer lifecycle
+
+P4-19 makes local adversarial review a first-class session stage while preserving architecture §6: the reviewer is a fresh `AgentSubstrate` role, never the already-active implementing session. “Independent” means separate context, role prompt, and preferably model family; it does not mean organizational independence and does not make a developer-machine verdict CI evidence.
+
+Team convenience config owns `review.local_mode: required|advisory|off` in `.crucible/settings.yaml`; a personal local override may select the same values. This setting can shape only local handoffs. It cannot affect verify's CI verdict, tier, routing, generated workflows, or branch protection. Omission preserves the existing advisory behavior. Interactive init offers the choice; the recommended solo profile writes `required`, while `--yes` remains backward compatible.
+
+When local mode is required, session-native implementation advances `tasks → implementation → review-pending`. A green mechanical local verify is required before `review-pending`, but it does not complete the session. The handoff requires the intended branch diff to be committed; staged or tracked working-tree edits fail the review precondition, while untracked files are explicitly reported as excluded because they are not part of the proposed commit. The fresh reviewer judges the canonical `merge-base...HEAD` diff against the sealed bundle and current rubric. Its verdict and the checkpoint bind base SHA, HEAD SHA, approval hash, rubric hash, and verdict-file hash. A changed HEAD, approval, rubric, or diff invalidates the result and requires a fresh review.
+
+A green fail-closed verdict advances to `reviewed` and exposes final `crucible verify`. A red, missing, malformed, stale, or rubric-invalid verdict advances to `review-red`; it never launches implementation automatically. After reading the cited rubric findings, the human explicitly runs the review-address transition, which returns the session to `implementation` with exact instructions permitting updates only to `tasks.md` and unsealed implementation files. The implementer fixes and recommits, mechanical verify runs again, and a new fresh reviewer judges the new snapshot. Sealed artifacts or bound tests still require ordinary `amend` and reapproval. There is no self-reported pass, automatic agent-to-agent loop, committed local verdict, or reuse of a local verdict in CI.
+
+Advisory local mode offers the same review path but permits an explicit skip recorded only in the audit trail; off mode retains the present implementation-to-verify handoff. A local reviewer failure remains visible and actionable but cannot itself weaken deterministic verification. The initial P4-18/P4-19 rollout ships both tasks before a product selects `human_mode: advisory`, so the recommended solo posture never arrives without the local independent-review loop it relies on.
