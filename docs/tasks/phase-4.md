@@ -289,3 +289,21 @@ Acceptance (write these tests red before production changes):
 - managed-skill/init tests install idempotent Codex and Claude amend skills that call only the pinned session commands, stop for the human seal, preserve human-owned instruction bytes, and never invoke `codex exec`, Claude headless mode, an ambient CLI, or a sandbox fallback;
 - existing headless amend/escalation behavior, direct-edit seal invalidation, P4-10 propose/implement, P4-20 fresh review, target-branch enforcement, and deterministic approval/package suites remain green;
 - focused tests plus root format, typecheck, lint, build, full suite, deterministic packages, and a worked Notes amend/reseal/reimplementation/fresh-review/final-verify flow pass before resuming the policy PR.
+
+**P4-22 · Derived audit state excluded from enforcement diff facts** · Tier: Fable / Sol (tier-input contract correction) + Opus / Terra (implementation) · Trigger: Notes completed the P4-21 amendment/reseal/reimplementation/fresh-review loop, but final verify remained 415/400 because every mandatory lifecycle transition grew committed `state.yaml`, a derived cache forbidden from influencing enforcement.
+
+Reads: charter §Tier Computation Rules, §Tier Computation — Operational Details, §State & Audit, and P4-22 amendment; architecture.md §§9, 17–18; design/phase-2.md §2; design/phase-4-runbook.md §Session-native amendment recovery and §Derived-state diff recovery; AGENTS.md invariants 1–3, 5, 7–8, 11–12; issue ledger P4-020.
+
+Delivers: one shared deterministic derived-path classifier and effective git diff-facts computation for approve, verify, and CI. It excludes only exact active/archive Crucible `state.yaml` rows from both touched paths and line totals. It does not exempt checkpoints, verdicts, tasks, approval/generation artifacts, product files, harness/config/workflow bytes, or user-configured paths; alter state persistence; weaken git/tool failures; change caps; or modify P4-21 lifecycle.
+
+**Decision proposed 2026-08-10:** enforcement facts must be observationally identical before and after any number of state-only audit appends. Filter exact repository-relative `openspec/changes/<change>/state.yaml` and `openspec/changes/archive/<entry>/state.yaml` paths at the shared git boundary; retain the raw diff for review/history and reject malformed Git records rather than guessing.
+
+Acceptance (write these tests red before production changes):
+
+- pure classifier tests accept only exact active and archived state paths and reject wrong case/extension, missing change names, extra nesting, spec/lookalike files, absolute/traversal paths, and unrelated `state.yaml` files;
+- diff-facts tests with real git prove state-only additions/updates/deletions yield no touched paths and zero lines, while mixed diffs preserve every non-state path and its exact added+deleted count;
+- rename, spaces, quoting, binary rows, malformed/non-numeric/truncated rows, missing history, and git tool failures have deterministic behavior; malformed non-binary data and command failures remain exit 3 with no partial facts;
+- approve and verify tests prove identical effective facts, target-branch risk globs cannot match excluded state, and near-cap changes stay at the same tier/verdict after arbitrarily many deterministic state events;
+- regression tests prove proposal/spec/design/oracle/approval/generation/tasks/bound tests, product code, config, workflows, locks, nested/lookalike state files, and archived non-state files remain fully counted;
+- P4-21 amendment/reseal/reimplementation/fresh-review tests prove audit events remain committed and visible while final diff-cap enforcement ignores only their exact state rows;
+- focused tests plus format, typecheck, lint, build, full suite, deterministic packages, and a worked Notes policy flow pass before resuming the consumer rollout.
