@@ -296,7 +296,7 @@ Reads: charter §Tier Computation Rules, §Tier Computation — Operational Deta
 
 Delivers: one shared deterministic derived-path classifier and effective git diff-facts computation for approve, verify, and CI. It excludes only exact active/archive Crucible `state.yaml` rows from both touched paths and line totals. It does not exempt checkpoints, verdicts, tasks, approval/generation artifacts, product files, harness/config/workflow bytes, or user-configured paths; alter state persistence; weaken git/tool failures; change caps; or modify P4-21 lifecycle.
 
-**Decision proposed 2026-08-10:** enforcement facts must be observationally identical before and after any number of state-only audit appends. Filter exact repository-relative `openspec/changes/<change>/state.yaml` and `openspec/changes/archive/<entry>/state.yaml` paths at the shared git boundary; retain the raw diff for review/history and reject malformed Git records rather than guessing.
+**Decision ratified 2026-08-10:** enforcement facts must be observationally identical before and after any number of state-only audit appends. Filter exact repository-relative `openspec/changes/<change>/state.yaml` and `openspec/changes/archive/<entry>/state.yaml` paths at the shared git boundary; retain the raw diff for review/history and reject malformed Git records rather than guessing.
 
 Acceptance (write these tests red before production changes):
 

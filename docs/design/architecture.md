@@ -307,7 +307,7 @@ The checkpoint lives at `.crucible/sessions/<change>/amend.json` and is convenie
 
 The CLI compares tracked and untracked project bytes at `finish`/`seal` with the amendment's derived write set. Pre-existing implementation dirt may remain byte-identical, allowing escalation recovery mid-implementation; any new change outside current/previous sealed paths, exact adapter candidates, and CLI-owned checkpoint/state files fails with the offending paths. This boundary is local process protection, not merge evidence. The approval seal, immutable bound tests after re-seal, deterministic verify, and target-branch CI remain the enforcement boundary.
 
-## 18. Enforcement diff facts exclude derived state (proposed P4-22, 2026-08-10)
+## 18. Enforcement diff facts exclude derived state (ratified P4-22, 2026-08-10)
 
 Notes P4-21 dogfooding proved that the shared git edge currently contradicts the charter State & Audit law. A critically approved policy diff reached 419 lines, was amended and independently reviewed twice, yet remained at 415 because each mandatory reseal/reimplementation/review cycle appended committed `state.yaml` events. The cache thereby affected diff-cap enforcement even though no enforcement path is allowed to trust it.
 

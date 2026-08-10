@@ -745,7 +745,7 @@ Core owns the lifecycle and the authority boundary. It derives the permitted bun
 
 `tasks.md` remains post-approval, unsealed implementation state. Its legitimate presence is ignored by amendment bundle judgment and it is never returned as an amendment write target; pre-approval propose and approve continue to reject it. The init-managed amend skill calls only the pinned `session amend` commands and never launches `codex exec`, selects a broader sandbox, or falls back to headless execution. Existing headless `crucible amend` remains available and receives the same phase-aware `tasks.md` correction; CI, approval hash law, oracle immutability outside amendment, and target-branch enforcement are unchanged.
 
-## P4-22 Amendment — Derived State Is Not a Diff Fact (proposed 2026-08-10)
+## P4-22 Amendment — Derived State Is Not a Diff Fact (ratified 2026-08-10)
 
 Diff caps and risk-glob matches judge enforcement-relevant repository changes, not the derived audit cache. Exact active-change and archived-change `state.yaml` files under `openspec/changes/` are therefore excluded from both tier-computation inputs: they contribute neither a touched path nor added/deleted lines. This makes the existing State & Audit law operationally complete: commands may keep committing deterministic audit events, but those events cannot raise a tier, consume a diff budget, alter routing, or block verification.
 
