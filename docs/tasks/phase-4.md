@@ -276,7 +276,7 @@ Reads: charter §The Workflow, §Approval/Amend/Override, §Editing Artifacts, a
 
 Delivers: a CLI-minted session-native amendment lifecycle, an init-managed low-freedom amend skill, a separate human seal step, and phase-aware bundle judgment that permits but ignores downstream `tasks.md` only after a valid approval. It does not change approval hash scope, authorize manual approval edits, weaken adapter resolution, make checkpoints authoritative, broaden Codex permissions, merge review with authoring, change CI, or remove the existing headless amendment path.
 
-**Decision proposed for ratification 2026-08-10:** let the active interactive session perform post-approval regeneration through strict `session amend start/next/resume/finish` handoffs; pinned core binds the old approval/resolution/escalation, derives all allowed artifact/test paths, and judges the result. Only a separate interactive `session amend seal` human edge may append hashes and clear escalation. Treat `tasks.md` as ignored post-approval implementation state, while preserving its existing pre-approval rejection everywhere.
+**Decision ratified 2026-08-10:** let the active interactive session perform post-approval regeneration through strict `session amend start/next/resume/finish` handoffs; pinned core binds the old approval/resolution/escalation, derives all allowed artifact/test paths, and judges the result. Only a separate interactive `session amend seal` human edge may append hashes and clear escalation. Treat `tasks.md` as ignored post-approval implementation state, while preserving its existing pre-approval rejection everywhere.
 
 Acceptance (write these tests red before production changes):
 
