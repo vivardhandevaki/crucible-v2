@@ -33,19 +33,25 @@ export interface ConvenienceConfig {
   };
   models: Record<string, string>;
   notify: Record<string, unknown>;
+  review?: { local_mode?: LocalReviewMode };
 }
+
+export const LOCAL_REVIEW_MODES = ['required', 'advisory', 'off'] as const;
+export type LocalReviewMode = (typeof LOCAL_REVIEW_MODES)[number];
 
 const settingsAgentSchema = z.strictObject({ provider: z.enum(AGENT_PROVIDERS) });
 const localAgentSchema = z.strictObject({
   provider: z.enum(AGENT_PROVIDERS).optional(),
   codex_sandbox: z.enum(CODEX_SANDBOX_MODES).optional(),
 });
+const reviewSchema = z.strictObject({ local_mode: z.enum(LOCAL_REVIEW_MODES).optional() });
 
 const convenienceSchema = (layer: ConvenienceConfigLayer) =>
   z.strictObject({
     agent: (layer === 'local' ? localAgentSchema : settingsAgentSchema).optional(),
     models: z.record(z.string(), z.string()).default({}),
     notify: z.record(z.string(), z.unknown()).default({}),
+    review: reviewSchema.optional(),
   });
 
 /** Parse + validate one convenience file's YAML text. Empty → empty config. */
@@ -88,6 +94,9 @@ export function parseConvenienceFile(
     ...(agent ? { agent } : {}),
     models: result.data.models,
     notify: result.data.notify,
+    ...(result.data.review?.local_mode === undefined
+      ? {}
+      : { review: { local_mode: result.data.review.local_mode } }),
   };
 }
 
@@ -107,6 +116,9 @@ export function mergeConvenience(
     ...(agent ? { agent } : {}),
     models: { ...base.models, ...override.models },
     notify: deepMerge(base.notify, override.notify),
+    ...(base.review !== undefined || override.review !== undefined
+      ? { review: { ...base.review, ...override.review } }
+      : {}),
   };
 }
 
@@ -119,6 +131,11 @@ export function loadConvenienceConfig(configRoot: string): ConvenienceConfig {
 }
 
 const EMPTY: ConvenienceConfig = { models: {}, notify: {} };
+
+/** Local workflow-only review mode; omission preserves the old advisory behavior. */
+export function localReviewMode(config: ConvenienceConfig): LocalReviewMode {
+  return config.review?.local_mode ?? 'advisory';
+}
 
 function readIfPresent(path: string, layer: ConvenienceConfigLayer): ConvenienceConfig {
   let text: string;

@@ -66,9 +66,26 @@ const implementCheckpointSchema = z.strictObject({
   version: z.literal(SESSION_VERSION),
   change: z.string().min(1),
   role: z.literal('implement'),
-  stage: z.enum(['tasks', 'implementation']),
+  stage: z.enum(['tasks', 'implementation', 'review-pending', 'review-red', 'reviewed']),
   input: z.strictObject({ approval_hash: z.string().regex(/^[0-9a-f]{64}$/) }),
   input_hash: z.string().regex(/^[0-9a-f]{64}$/),
+  review_snapshot: z
+    .strictObject({
+      base: z.string().regex(/^[0-9a-f]{40,64}$/),
+      head: z.string().regex(/^[0-9a-f]{40,64}$/),
+      approval_hash: z.string().regex(/^[0-9a-f]{64}$/),
+      rubric_hash: z.string().regex(/^[0-9a-f]{64}$/),
+      verdict_hash: z.string().regex(/^[0-9a-f]{64}$/),
+    })
+    .optional(),
+});
+
+const localReviewSnapshotSchema = z.strictObject({
+  base: z.string().regex(/^[0-9a-f]{40,64}$/),
+  head: z.string().regex(/^[0-9a-f]{40,64}$/),
+  approval_hash: z.string().regex(/^[0-9a-f]{64}$/),
+  rubric_hash: z.string().regex(/^[0-9a-f]{64}$/),
+  verdict_hash: z.string().regex(/^[0-9a-f]{64}$/),
 });
 
 type ProposeCheckpoint = z.infer<typeof proposeCheckpointSchema>;
@@ -81,6 +98,22 @@ export interface SessionDeps {
   instructions: (change: string, mode: 'next' | 'all') => Promise<SessionInstruction[]>;
   resolve: ResolveFn;
   run: (oracles: readonly Oracle[]) => Promise<OracleResult[]>;
+  /** Convenience-only local-review posture, resolved by the CLI. */
+  localReviewMode?: 'required' | 'advisory' | 'off';
+  /** Fresh reviewer edge. The active implementation session never supplies it. */
+  review?: (change: string) => Promise<LocalReviewResult>;
+}
+
+/** Fresh-review output is evidence only after every snapshot binding validates. */
+export interface LocalReviewResult {
+  verdict: 'pass' | 'fail';
+  snapshot: {
+    base: string;
+    head: string;
+    approval_hash: string;
+    rubric_hash: string;
+    verdict_hash: string;
+  };
 }
 
 export interface SessionOptions {
@@ -341,16 +374,92 @@ export async function implementFinish(
     },
     report.verdict === 'pass' ? 'implemented' : 'implement-red',
   );
+  const requiresReview = deps.localReviewMode === 'required' && report.verdict === 'pass';
+  const nextCheckpoint: ImplementCheckpoint = requiresReview
+    ? { ...checkpoint, stage: 'review-pending' }
+    : checkpoint;
+  if (requiresReview) writeCheckpoint(options.root, nextCheckpoint);
   const handoff = implementHandoff(
     options.root,
-    checkpoint,
+    nextCheckpoint,
     'finish',
-    report.verdict === 'pass'
-      ? `crucible verify ${options.change}`
-      : `crucible session implement resume ${options.change}`,
+    requiresReview
+      ? `crucible session implement review ${options.change}`
+      : report.verdict === 'pass'
+        ? `crucible verify ${options.change}`
+        : `crucible session implement resume ${options.change}`,
   );
-  if (report.verdict === 'pass') removeCheckpoint(options.root, options.change, 'implement');
+  if (report.verdict === 'pass' && !requiresReview)
+    removeCheckpoint(options.root, options.change, 'implement');
   return { handoff, report, render: renderReport(report, 'session implement') };
+}
+
+/** Run the separately supplied fresh reviewer only after green required-mode verify. */
+export async function implementReview(
+  options: SessionOptions,
+  deps: SessionDeps,
+): Promise<SessionHandoff> {
+  const checkpoint = loadImplementCheckpoint(options.root, options.change);
+  if (checkpoint.stage !== 'review-pending' || deps.localReviewMode !== 'required') {
+    throw preconditionError(
+      'LOCAL_REVIEW_NOT_PENDING',
+      `A required local review is not pending for ${options.change}.`,
+      `Run \`crucible session implement finish ${options.change}\` after implementation verifies green.`,
+    );
+  }
+  validateImplementationPreconditions(options.root, options.change, checkpoint.input.approval_hash);
+  if (deps.review === undefined) {
+    throw invalidInputError(
+      'LOCAL_REVIEW_UNAVAILABLE',
+      'The fresh local reviewer could not be configured.',
+      'Restore the managed review skill with `crucible init` and retry.',
+    );
+  }
+  let outcome: LocalReviewResult | undefined;
+  try {
+    outcome = await deps.review(options.change);
+  } catch {
+    // A reviewer transport failure is a red local-review result, never a pass
+    // inferred from the previous green mechanical verification.
+  }
+  const snapshot = localReviewSnapshotSchema.safeParse(outcome?.snapshot);
+  const validSnapshot =
+    snapshot.success && snapshot.data.approval_hash === checkpoint.input.approval_hash;
+  const next: ImplementCheckpoint = {
+    ...checkpoint,
+    stage: outcome?.verdict === 'pass' && validSnapshot ? 'reviewed' : 'review-red',
+    ...(validSnapshot ? { review_snapshot: snapshot.data } : {}),
+  };
+  writeCheckpoint(options.root, next);
+  return implementHandoff(
+    options.root,
+    next,
+    'review',
+    outcome?.verdict === 'pass' && validSnapshot
+      ? `crucible verify ${options.change}`
+      : `crucible session implement review-address ${options.change}`,
+  );
+}
+
+/** A human explicitly accepts responsibility for returning reviewer-red work to implementation. */
+export async function implementReviewAddress(options: SessionOptions): Promise<SessionHandoff> {
+  const checkpoint = loadImplementCheckpoint(options.root, options.change);
+  if (checkpoint.stage !== 'review-red') {
+    throw preconditionError(
+      'LOCAL_REVIEW_NOT_RED',
+      `No red local review is awaiting an implementation decision for ${options.change}.`,
+      `Run \`crucible session implement review ${options.change}\` first.`,
+    );
+  }
+  validateImplementationPreconditions(options.root, options.change, checkpoint.input.approval_hash);
+  const next: ImplementCheckpoint = { ...checkpoint, stage: 'implementation' };
+  writeCheckpoint(options.root, next);
+  return implementHandoff(
+    options.root,
+    next,
+    'review-address',
+    `crucible session implement finish ${options.change}`,
+  );
 }
 
 function assertChangeAndIntent(change: string, intent: string): void {
@@ -473,18 +582,42 @@ function implementHandoff(
             'Read the approved bundle and write a non-empty implementation checklist. Do not implement code yet or edit sealed files.',
         },
       ]
-    : [
-        {
-          path: '.',
-          content:
-            'Implement only what the approved bundle and tasks.md require. Do not edit any sealed artifact or bound test file.',
-        },
-      ];
+    : checkpoint.stage === 'review-pending'
+      ? [
+          {
+            path: '.',
+            content:
+              'Commit the intended verified implementation diff, then run the fresh local reviewer. Do not edit sealed artifacts or bound tests.',
+          },
+        ]
+      : checkpoint.stage === 'review-red'
+        ? [
+            {
+              path: '.',
+              content:
+                'Read the fresh reviewer findings with the human, then use review-address before changing only tasks.md and unsealed implementation files.',
+            },
+          ]
+        : checkpoint.stage === 'reviewed'
+          ? []
+          : [
+              {
+                path: '.',
+                content:
+                  'Implement only what the approved bundle and tasks.md require. Do not edit any sealed artifact or bound test file.',
+              },
+            ];
   const next =
     nextOverride ??
     (tasks
       ? `crucible session implement tasks-ready ${checkpoint.change}`
-      : `crucible session implement finish ${checkpoint.change}`);
+      : checkpoint.stage === 'review-pending'
+        ? `crucible session implement review ${checkpoint.change}`
+        : checkpoint.stage === 'review-red'
+          ? `crucible session implement review-address ${checkpoint.change}`
+          : checkpoint.stage === 'reviewed'
+            ? `crucible verify ${checkpoint.change}`
+            : `crucible session implement finish ${checkpoint.change}`);
   return makeHandoff(
     root,
     checkpoint.change,

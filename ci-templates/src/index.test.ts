@@ -6,6 +6,7 @@ import {
   JAVA_JUNIT_CI_TEMPLATE_FILE,
   JAVA_JUNIT_CI_TEMPLATE_PATH,
   ciTemplatePathForAdapter,
+  renderCiTemplateForAdapter,
 } from './index.js';
 
 // The workspace exposes the reusable workflow by name + path; its invariant-#7
@@ -26,5 +27,10 @@ describe('@crucible/ci-templates surface', () => {
     expect(existsSync(JAVA_JUNIT_CI_TEMPLATE_PATH)).toBe(true);
     expect(ciTemplatePathForAdapter('java-junit')).toBe(JAVA_JUNIT_CI_TEMPLATE_PATH);
     expect(ciTemplatePathForAdapter('stub')).toBe(CI_TEMPLATE_PATH);
+  });
+
+  it('selects a route-free JVM workflow when independent human review is advisory', () => {
+    expect(renderCiTemplateForAdapter('java-junit', 'advisory')).not.toContain('\n  route:\n');
+    expect(renderCiTemplateForAdapter('java-junit', 'required')).toContain('\n  route:\n');
   });
 });

@@ -1,15 +1,24 @@
 // Public CLI for the session-native lifecycle. It supplies only live edges
 // (pinned OpenSpec runtime + adapter); all state transitions stay in session/.
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import { relative } from 'node:path';
 import { z } from 'zod';
 import { loadPinnedAdapterClient } from '../adapters/runtime.js';
 import { parseTypeName } from '../changetype/changetype.js';
+import { loadConvenienceConfig, localReviewMode } from '../config/convenience.js';
 import { openspecExecutable } from './openspec-runner.js';
+import { review } from './review.js';
+import { gitHead, mergeBase, reviewModel } from './review.cli.js';
+import { resolveAgentRuntime } from '../substrate/runtime.js';
 import {
   implementFinish,
+  implementReview,
+  implementReviewAddress,
   implementResume,
   implementStart,
   implementTasksReady,
@@ -136,6 +145,21 @@ export function registerSession(program: Command): void {
       }
       write(program, result.handoff);
     });
+  implement
+    .command('review')
+    .argument('<change>')
+    .action(async (change: string) => {
+      write(
+        program,
+        await implementReview({ root: process.cwd(), change }, liveDeps(process.cwd())),
+      );
+    });
+  implement
+    .command('review-address')
+    .argument('<change>')
+    .action(async (change: string) => {
+      write(program, await implementReviewAddress({ root: process.cwd(), change }));
+    });
 }
 
 function write(program: Command, value: SessionHandoff | Record<string, unknown>): void {
@@ -154,7 +178,59 @@ function liveDeps(root: string): SessionDeps {
     instructions: async (change, mode) => openSpecInstructions(root, change, mode),
     resolve: (targets) => adapter.resolve(targets),
     run: (oracles) => adapter.run(oracles),
+    localReviewMode: localReviewMode(loadConvenienceConfig(root)),
+    review: async (change) => {
+      requireCleanCommittedSnapshot(root);
+      const base = mergeBase(root);
+      const head = gitHead(root);
+      const runtime = resolveAgentRuntime(root, 'review');
+      const result = await review(
+        {
+          root,
+          change,
+          model: reviewModel(root),
+          base,
+          head,
+        },
+        { substrate: runtime.substrate, now: () => new Date().toISOString() },
+      );
+      return {
+        verdict: result.check.status === 'pass' ? 'pass' : 'fail',
+        snapshot: {
+          base,
+          head,
+          approval_hash: sha256(join(root, 'openspec', 'changes', change, 'approval.yaml')),
+          rubric_hash: result.rubricHash,
+          verdict_hash: sha256(result.verdictPath),
+        },
+      };
+    },
   };
+}
+
+/** The local reviewer must see a committed snapshot; untracked scratch files are excluded. */
+function requireCleanCommittedSnapshot(root: string): void {
+  try {
+    execFileSync('git', ['diff', '--quiet'], { cwd: root, stdio: 'ignore' });
+    execFileSync('git', ['diff', '--cached', '--quiet'], { cwd: root, stdio: 'ignore' });
+    const status = execFileSync('git', ['status', '--porcelain'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    if (status.split('\n').some((line) => line.length > 0 && !line.startsWith('?? ')))
+      throw new Error();
+  } catch {
+    throw invalidInputError(
+      'LOCAL_REVIEW_SNAPSHOT_DIRTY',
+      'Required local review needs a committed, tracked-clean implementation snapshot.',
+      'Commit or revert tracked changes, then re-run `crucible session implement review <change>`; untracked files are excluded.',
+    );
+  }
+}
+
+function sha256(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
 async function openSpecInstructions(

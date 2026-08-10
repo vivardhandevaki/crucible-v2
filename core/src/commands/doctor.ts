@@ -31,7 +31,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { ciTemplatePathForAdapter } from '@crucible/ci-templates';
+import { renderCiTemplateForAdapter } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES, schemaBundleDir } from '@crucible/schemas';
 import {
   ADAPTER_LOCK_RELPATH,
@@ -41,6 +41,7 @@ import {
 } from '../adapters/lockfile.js';
 import { preconditionError } from '../util/errors.js';
 import { loadEnforcementConfig } from '../config/enforcement.js';
+import { reviewPostureDrift } from './review-posture.js';
 import {
   defaultRubricPath,
   loadDefaultRubric,
@@ -56,7 +57,12 @@ import {
 
 /** Which check produced a finding — the stable category the CLI groups by. */
 export type DoctorCheckId =
-  'schema-bundle' | 'ci-template' | 'openspec-version' | 'adapter-lockfile-hash' | 'rubric-lines';
+  | 'schema-bundle'
+  | 'ci-template'
+  | 'review-posture'
+  | 'openspec-version'
+  | 'adapter-lockfile-hash'
+  | 'rubric-lines';
 
 /**
  * A finding's weight. `drift` = a shipped TCB file diverged from its source and
@@ -130,6 +136,7 @@ export interface DoctorOptions {
 const CHECKS: readonly ((root: string) => DoctorFinding[])[] = [
   checkSchemaBundles,
   checkCiTemplate,
+  checkReviewPosture,
   checkOpenspecVersion,
   checkAdapterLockfileHash,
   checkRubricLines,
@@ -211,10 +218,11 @@ function checkSchemaBundles(root: string): DoctorFinding[] {
  * bytes — any divergence is a stale/modified template, restored on confirm. */
 function checkCiTemplate(root: string): DoctorFinding[] {
   const relpath = join('.github', 'workflows', 'crucible.yml');
-  const adapters = Object.keys(loadEnforcementConfig(root).adapters);
-  const shipped = readFileSync(
-    ciTemplatePathForAdapter(adapters.includes('java-junit') ? 'java-junit' : (adapters[0] ?? '')),
-    'utf8',
+  const config = loadEnforcementConfig(root);
+  const adapters = Object.keys(config.adapters);
+  const shipped = renderCiTemplateForAdapter(
+    adapters.includes('java-junit') ? 'java-junit' : (adapters[0] ?? ''),
+    config.review?.human_mode ?? 'required',
   );
   const abs = join(root, relpath);
   const current = existsSync(abs) ? readFileSync(abs, 'utf8') : null;
@@ -232,6 +240,17 @@ function checkCiTemplate(root: string): DoctorFinding[] {
       fix: { kind: 'rewrite', current, desired: shipped },
     },
   ];
+}
+
+function checkReviewPosture(root: string): DoctorFinding[] {
+  const drift = reviewPostureDrift(root, loadEnforcementConfig(root));
+  return drift.map((relpath) => ({
+    check: 'review-posture' as const,
+    id: `review-posture:${relpath}`,
+    severity: 'advise' as const,
+    summary: `review policy and managed workflow disagree: ${relpath}`,
+    relpath,
+  }));
 }
 
 // --- Check: OpenSpec version-range compliance ----------------------------------
