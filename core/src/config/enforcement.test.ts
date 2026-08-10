@@ -5,6 +5,7 @@ import { isCrucibleError } from '../util/errors.js';
 import {
   ciReviewMode,
   enforcementConfigPath,
+  humanReviewMode,
   loadEnforcementConfig,
   parseEnforcementConfig,
   resolveEnforcementRoot,
@@ -101,6 +102,39 @@ describe('ciReviewMode — P4-15 target-branch reviewer policy', () => {
     'review: { ci_mode: advisory, secret_fallback: true }',
     'review:\n  ci_mode: advisory\n  ci_mode: required',
   ])('rejects malformed or ambiguous review policy: %s', (review) => {
+    expect(exitOf(() => parseEnforcementConfig(`${VALID}\n${review}\n`, 'inline'))).toBe(3);
+  });
+});
+
+describe('humanReviewMode — P4-18 target-branch routing policy', () => {
+  it('defaults an omitted human mode to required independently of CI review', () => {
+    expect(
+      humanReviewMode(
+        parseEnforcementConfig(`${VALID}\nreview: { ci_mode: advisory }\n`, 'inline'),
+      ),
+    ).toBe('required');
+  });
+
+  it('defaults an omitted CI mode to required independently of human review', () => {
+    const cfg = parseEnforcementConfig(`${VALID}\nreview: { human_mode: advisory }\n`, 'inline');
+    expect(ciReviewMode(cfg)).toBe('required');
+    expect(humanReviewMode(cfg)).toBe('advisory');
+  });
+
+  it.each(['advisory', 'required'] as const)('accepts explicit %s mode', (mode) => {
+    const cfg = parseEnforcementConfig(
+      `${VALID}\nreview: { ci_mode: advisory, human_mode: ${mode} }\n`,
+      'inline',
+    );
+    expect(humanReviewMode(cfg)).toBe(mode);
+  });
+
+  it.each([
+    'review: { ci_mode: advisory, human_mode: null }',
+    'review: { ci_mode: advisory, human_mode: true }',
+    'review: { ci_mode: advisory, human_mode: disabled }',
+    'review:\n  human_mode: advisory\n  human_mode: required',
+  ])('fails closed on malformed human policy: %s', (review) => {
     expect(exitOf(() => parseEnforcementConfig(`${VALID}\n${review}\n`, 'inline'))).toBe(3);
   });
 });

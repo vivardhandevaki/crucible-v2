@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { SETTINGS_YAML_PATH } from '@crucible/fixtures';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isCrucibleError } from '../util/errors.js';
-import { loadConvenienceConfig, mergeConvenience, parseConvenienceFile } from './convenience.js';
+import {
+  loadConvenienceConfig,
+  localReviewMode,
+  mergeConvenience,
+  parseConvenienceFile,
+} from './convenience.js';
 
 function exitOf(fn: () => unknown): number {
   try {
@@ -18,6 +23,18 @@ function exitOf(fn: () => unknown): number {
 }
 
 describe('parseConvenienceFile', () => {
+  it.each(['required', 'advisory', 'off'] as const)('accepts local review mode %s', (mode) => {
+    expect(localReviewMode(parseConvenienceFile(`review: { local_mode: ${mode} }`, 'inline'))).toBe(
+      mode,
+    );
+  });
+
+  it('defaults omitted local review mode to advisory and rejects malformed policy', () => {
+    expect(localReviewMode(parseConvenienceFile('', 'inline'))).toBe('advisory');
+    expect(exitOf(() => parseConvenienceFile('review: { local_mode: disabled }', 'inline'))).toBe(
+      3,
+    );
+  });
   it('parses models and notify', () => {
     const cfg = parseConvenienceFile(
       'models: { propose: opus }\nnotify: { slack: "#x" }',
@@ -77,6 +94,11 @@ describe('parseConvenienceFile', () => {
 });
 
 describe('mergeConvenience — local overrides settings', () => {
+  it('permits local review mode to be personally overridden', () => {
+    const settings = parseConvenienceFile('review: { local_mode: required }', 'settings');
+    const local = parseConvenienceFile('review: { local_mode: off }', 'local', 'local');
+    expect(localReviewMode(mergeConvenience(settings, local))).toBe('off');
+  });
   it('local wins per key; settings-only keys survive', () => {
     const settings = parseConvenienceFile(
       'models: { propose: opus, review: opus }\nnotify: { slack: "#team" }',

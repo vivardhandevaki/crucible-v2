@@ -43,6 +43,7 @@ import {
 import { recordSnapshotTier } from '../state/state.js';
 import { createLiveNotifier } from '../notify/live.js';
 import { CheckFailure } from '../util/errors.js';
+import { assertReviewPostureCongruence } from './review-posture.js';
 
 /** Register the real `verify` subcommand on the program. */
 export function registerVerify(program: Command): void {
@@ -68,6 +69,7 @@ export function registerVerify(program: Command): void {
       // loader — verify is an enforcement command; it does not run without config.
       const configRoot = resolveEnforcementRoot(program.opts().configFrom, root);
       const config: EnforcementConfig = loadEnforcementConfig(configRoot);
+      assertReviewPostureCongruence(configRoot, config);
 
       const report = await verify(
         { root, change, config },

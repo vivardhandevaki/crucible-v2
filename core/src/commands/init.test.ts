@@ -116,6 +116,29 @@ describe('init — fresh repo → complete working setup', () => {
   });
 });
 
+describe('init — explicit P4-18/P4-19 review posture', () => {
+  it('writes selected modes, omits disabled PR jobs, and requires no API key input', async () => {
+    await init(
+      {
+        root: scratch,
+        answers: {
+          ...ANSWERS,
+          ciReviewMode: 'advisory',
+          humanReviewMode: 'advisory',
+          localReviewMode: 'required',
+        },
+      },
+      { confirmOverwrite: confirmNever },
+    );
+
+    expect(read('crucible.yaml')).toContain('ci_mode: advisory');
+    expect(read('crucible.yaml')).toContain('human_mode: advisory');
+    expect(read(join('.crucible', 'settings.yaml'))).toContain('local_mode: required');
+    expect(read(join('.github', 'workflows', 'crucible.yml'))).not.toContain('\n  route:\n');
+    expect(existsSync(join(scratch, '.github', 'workflows', 'crucible-review.yml'))).toBe(false);
+  });
+});
+
 describe('init — validation framework pin', () => {
   it('writes a strict repository+commit pin when a validation bootstrap is requested', async () => {
     await init(
@@ -238,6 +261,9 @@ describe('init — adapter detection (CLI edge)', () => {
       runners: ['junit'],
       paths: ['**/*.java'],
       unitCommand: 'mvn test',
+      ciReviewMode: 'required',
+      humanReviewMode: 'required',
+      localReviewMode: 'advisory',
     });
   });
 
