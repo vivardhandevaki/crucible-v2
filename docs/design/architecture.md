@@ -286,7 +286,7 @@ Headless `crucible review` remains the explicit child-`AgentSubstrate` command f
 
 Existing P4-19 checkpoints migrate by revalidation, never by trust. `review-pending` can start the new review lifecycle. A legacy `review-red` checkpoint carries no trustworthy failure detail, so the human must explicitly choose `review-retry` or `review-address`; neither choice creates a pass. An approved consumer branch cannot update its sealed framework lock in place: merge the framework fix, use the isolated target-branch pin rollout, then restart/reapprove the affected product change from the new pin rather than hand-editing its approval.
 
-## 17. Session-native amendment (proposed P4-21, 2026-08-10)
+## 17. Session-native amendment (ratified P4-21, 2026-08-10)
 
 Notes dogfooding exposed both remaining assumptions in the headless-only amendment path. A legitimate post-approval `tasks.md` made the shared bundle judge report “tasks are authored only after approval,” and after that file was moved aside the fresh propose-role Codex subprocess failed under the same nested Bubblewrap restriction that motivated P4-10 and P4-20. The subprocess produced no trusted regeneration, so core correctly left the old seal unchanged. The operator rejects `danger-full-access`; the repair is an explicit session-native amendment transport plus a phase-correct tasks rule, not a sandbox fallback or manual seal edit.
 

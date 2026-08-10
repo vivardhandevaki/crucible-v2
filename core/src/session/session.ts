@@ -10,7 +10,12 @@ import { loadOracles, type Oracle } from '../artifacts/oracles.js';
 import { readRubric, rubricHash } from '../review/rubric.js';
 import { evaluateVerdict } from '../review/verdict.js';
 import { reviewCheck, type CheckResult } from '../verifyx/report.js';
-import { loadApproval, verifyApproval } from '../artifacts/approval.js';
+import {
+  amendApproval,
+  loadApproval,
+  serializeApproval,
+  verifyApproval,
+} from '../artifacts/approval.js';
 import { readEscalationIfPresent } from '../artifacts/escalation.js';
 import { serializeGeneration, stampGeneration } from '../artifacts/generation.js';
 import type { OracleResult } from '../adapters/types.js';
@@ -25,7 +30,12 @@ import { collectArchivedRequirementIds } from '../regression/regression.js';
 import { appendStateEvent } from '../state/state.js';
 import { invalidInputError, preconditionError } from '../util/errors.js';
 import { renderReport, type VerifyReport } from '../verifyx/report.js';
-import { dependencyOrder, gatherTypeFacts, judgeBundle } from '../commands/bundle.js';
+import {
+  computeHashScope,
+  dependencyOrder,
+  gatherTypeFacts,
+  judgeBundle,
+} from '../commands/bundle.js';
 import { verify } from '../commands/verify.js';
 
 const CHANGE_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
@@ -41,7 +51,7 @@ export type SessionInstruction = z.infer<typeof instructionSchema>;
 export const sessionHandoffSchema = z.strictObject({
   version: z.literal(1),
   change: z.string().min(1),
-  role: z.enum(['propose', 'implement', 'review']),
+  role: z.enum(['propose', 'implement', 'review', 'amend']),
   operation: z.string().min(1),
   stage: z.string().min(1),
   change_dir: z.string().min(1),
@@ -100,8 +110,26 @@ const implementCheckpointSchema = z.strictObject({
     .optional(),
 });
 
+const amendCheckpointSchema = z.strictObject({
+  version: z.literal(SESSION_VERSION),
+  change: z.string().min(1),
+  role: z.literal('amend'),
+  stage: z.enum(['artifacts', 'oracle-tests', 'ready']),
+  input: z.strictObject({
+    resolution: z.string().min(1),
+    approval_hash: z.string().regex(/^[0-9a-f]{64}$/),
+    escalation_hash: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+    type: z.enum(['feature', 'bugfix', 'refactor']),
+  }),
+  input_hash: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
 type ProposeCheckpoint = z.infer<typeof proposeCheckpointSchema>;
 type ImplementCheckpoint = z.infer<typeof implementCheckpointSchema>;
+type AmendCheckpoint = z.infer<typeof amendCheckpointSchema>;
 
 export interface SessionDeps {
   now: () => string;
@@ -114,6 +142,7 @@ export interface SessionDeps {
   localReviewMode?: 'required' | 'advisory' | 'off';
   /** CLI-owned snapshot edge; it never invokes an agent. */
   reviewSnapshot?: () => LocalReviewSnapshot;
+  confirmAmend?: () => Promise<boolean>;
 }
 
 export interface LocalReviewSnapshot {
@@ -300,6 +329,244 @@ export async function proposeFinish(
   );
   if (report.verdict === 'pass') removeCheckpoint(options.root, options.change, 'propose');
   return { handoff, report, render: renderReport(report, 'session propose') };
+}
+
+export interface AmendStartOptions extends SessionOptions {
+  resolution: string;
+}
+
+export interface AmendFinishResult {
+  handoff: SessionHandoff;
+  report: VerifyReport;
+  render: string;
+}
+
+export async function amendStart(
+  options: AmendStartOptions,
+  deps: SessionDeps,
+): Promise<SessionHandoff> {
+  void deps;
+  assertChangeAndIntent(options.change, options.resolution);
+  const changeDir = changeDirFor(options.root, options.change);
+  if (!existsSync(changeDir)) {
+    throw preconditionError(
+      'NO_CHANGE',
+      `No change bundle found at ${changeRel(options.change)}.`,
+      `Run \`crucible session propose start ${options.change} "<intent>"\` first.`,
+    );
+  }
+  if (existsSync(checkpointPath(options.root, options.change, 'amend'))) {
+    throw preconditionError(
+      'AMEND_ALREADY_ACTIVE',
+      `An amendment session is already active for ${options.change}.`,
+      `Run \`crucible session amend resume ${options.change}\` or finish the existing amendment.`,
+    );
+  }
+  requireRolePrompt(options.root, 'propose');
+  const approvalHash = validateAmendApproval(options.root, options.change);
+  const escalationPath = join(changeDir, 'escalation.yaml');
+  const escalationHash = existsSync(escalationPath)
+    ? hashBytes(readFileSync(escalationPath))
+    : undefined;
+  readEscalationIfPresent(escalationPath);
+  const type = readChangeType(changeDir);
+  const input = {
+    resolution: options.resolution.trim(),
+    approval_hash: approvalHash,
+    ...(escalationHash === undefined ? {} : { escalation_hash: escalationHash }),
+    type,
+  };
+  const checkpoint: AmendCheckpoint = {
+    version: SESSION_VERSION,
+    change: options.change,
+    role: 'amend',
+    stage: 'artifacts',
+    input,
+    input_hash: hashInput(input),
+  };
+  writeCheckpoint(options.root, checkpoint);
+  return amendHandoff(
+    options.root,
+    checkpoint,
+    'start',
+    [],
+    `crucible session amend next ${options.change}`,
+  );
+}
+
+export async function amendNext(
+  options: SessionOptions,
+  deps: SessionDeps,
+): Promise<SessionHandoff> {
+  const checkpoint = validateAmendCheckpoint(options.root, options.change);
+  const instructions = proposalInstructions(
+    options.root,
+    options.change,
+    await deps.instructions(options.change, 'next'),
+  );
+  if (instructions.length > 0) {
+    const next: AmendCheckpoint = { ...checkpoint, stage: 'artifacts' };
+    writeCheckpoint(options.root, next);
+    return amendHandoff(
+      options.root,
+      next,
+      'next',
+      instructions,
+      `crucible session amend finish ${options.change}`,
+    );
+  }
+  return amendOracleTestHandoff(options.root, checkpoint, deps, 'next');
+}
+
+export async function amendResume(
+  options: SessionOptions,
+  deps: SessionDeps,
+): Promise<SessionHandoff> {
+  return amendNext(options, deps);
+}
+
+export async function amendFinish(
+  options: SessionOptions,
+  deps: SessionDeps,
+): Promise<AmendFinishResult> {
+  const checkpoint = validateAmendCheckpoint(options.root, options.change);
+  const changeDir = changeDirFor(options.root, options.change);
+  const report = await judgeBundle(
+    options.change,
+    changeDir,
+    changeRel(options.change),
+    deps.resolve,
+    collectArchivedRequirementIds(options.root),
+    checkpoint.input.type,
+    { allowPostApprovalTasks: true },
+  );
+  if (report.verdict === 'pass') {
+    const next: AmendCheckpoint = { ...checkpoint, stage: 'ready' };
+    writeCheckpoint(options.root, next);
+    return {
+      handoff: amendHandoff(
+        options.root,
+        next,
+        'finish',
+        [],
+        `crucible session amend seal ${options.change}`,
+      ),
+      report,
+      render: renderReport(report, 'session amend'),
+    };
+  }
+  appendStateEvent(
+    join(changeDir, 'state.yaml'),
+    options.change,
+    {
+      at: deps.now(),
+      cmd: 'amend',
+      summary: 'session-native regeneration judged fail — not re-sealed',
+      execution_mode: 'session-native',
+    },
+    'amend-red',
+  );
+  return {
+    handoff: amendHandoff(
+      options.root,
+      checkpoint,
+      'finish',
+      [],
+      `crucible session amend resume ${options.change}`,
+    ),
+    report,
+    render: renderReport(report, 'session amend'),
+  };
+}
+
+export async function amendSeal(
+  options: SessionOptions,
+  deps: SessionDeps,
+): Promise<SessionHandoff> {
+  const checkpoint = validateAmendCheckpoint(options.root, options.change);
+  if (checkpoint.stage !== 'ready') {
+    throw preconditionError(
+      'AMEND_NOT_READY',
+      `Amendment ${options.change} is not ready for a human seal.`,
+      `Run \`crucible session amend finish ${options.change}\` first.`,
+    );
+  }
+  const changeDir = changeDirFor(options.root, options.change);
+  const report = await judgeBundle(
+    options.change,
+    changeDir,
+    changeRel(options.change),
+    deps.resolve,
+    collectArchivedRequirementIds(options.root),
+    checkpoint.input.type,
+    { allowPostApprovalTasks: true },
+  );
+  if (report.verdict !== 'pass') {
+    return amendHandoff(
+      options.root,
+      checkpoint,
+      'seal',
+      [],
+      `crucible session amend resume ${options.change}`,
+    );
+  }
+  if (deps.confirmAmend === undefined) {
+    throw invalidInputError(
+      'AMEND_CONFIRM_UNAVAILABLE',
+      'The human amendment confirmation edge is unavailable.',
+      'Run the managed amend skill from an interactive terminal.',
+    );
+  }
+  if (!(await deps.confirmAmend())) {
+    return amendHandoff(
+      options.root,
+      checkpoint,
+      'seal',
+      [],
+      `crucible session amend seal ${options.change}`,
+    );
+  }
+  const approvalPath = join(changeDir, 'approval.yaml');
+  const approval = loadApproval(approvalPath);
+  const oracles = loadOracles(join(changeDir, 'oracles.md'));
+  const relpaths = await computeHashScope(
+    options.root,
+    changeRel(options.change),
+    changeDir,
+    oracles,
+    deps.resolve,
+  );
+  const amended = amendApproval(options.root, relpaths, deps.now(), approval);
+  writeFileSync(approvalPath, serializeApproval(amended), 'utf8');
+  writeFileSync(
+    join(changeDir, 'generation.yaml'),
+    serializeGeneration(
+      stampGeneration(changeDir, options.change, dependencyOrder(changeDir), deps.now()),
+    ),
+    'utf8',
+  );
+  if (checkpoint.input.escalation_hash !== undefined)
+    rmSync(join(changeDir, 'escalation.yaml'), { force: true });
+  appendStateEvent(
+    join(changeDir, 'state.yaml'),
+    options.change,
+    {
+      at: deps.now(),
+      cmd: 'amend',
+      summary: `session-native amendment re-sealed ${relpaths.length} file(s)`,
+      execution_mode: 'session-native',
+    },
+    'amended',
+  );
+  removeCheckpoint(options.root, options.change, 'amend');
+  removeCheckpoint(options.root, options.change, 'implement');
+  return amendHandoff(
+    options.root,
+    checkpoint,
+    'seal',
+    [],
+    `crucible session implement start ${options.change}`,
+  );
 }
 
 /** Bind the implementation session to a valid, current approval file. */
@@ -754,6 +1021,138 @@ async function completeScaffold(
   return complete;
 }
 
+function validateAmendApproval(root: string, change: string, expected?: string): string {
+  const changeDir = changeDirFor(root, change);
+  const approvalPath = join(changeDir, 'approval.yaml');
+  if (!existsSync(approvalPath)) {
+    throw preconditionError(
+      'NO_APPROVAL',
+      `Cannot amend ${change}: approval.yaml is missing.`,
+      `Run \`crucible approve ${change}\` first.`,
+    );
+  }
+  const approval = loadApproval(approvalPath);
+  const verification = verifyApproval(root, approval);
+  if (!verification.valid) {
+    throw preconditionError(
+      'APPROVAL_VOID',
+      `Cannot amend ${change}: approval is void (${verification.mismatches.join(', ')}).`,
+      'Restore the sealed bundle before starting a new amendment.',
+    );
+  }
+  const hash = hashBytes(readFileSync(approvalPath));
+  if (expected !== undefined && hash !== expected) {
+    throw preconditionError(
+      'SESSION_INPUT_STALE',
+      `Amendment checkpoint for ${change} is bound to different approval.yaml bytes.`,
+      `Run \`crucible session amend start ${change} "<resolution>"\` again.`,
+    );
+  }
+  return hash;
+}
+
+function validateAmendCheckpoint(root: string, change: string): AmendCheckpoint {
+  const checkpoint = parseCheckpoint(checkpointPath(root, change, 'amend'), amendCheckpointSchema);
+  if (checkpoint.change !== change || checkpoint.input_hash !== hashInput(checkpoint.input)) {
+    throw preconditionError(
+      'SESSION_INPUT_STALE',
+      `Amendment checkpoint for ${change} has stale or forged inputs.`,
+      `Run \`crucible session amend start ${change} "<resolution>"\` again.`,
+    );
+  }
+  requireRolePrompt(root, 'propose');
+  const approvalPath = join(changeDirFor(root, change), 'approval.yaml');
+  const approvalHash = existsSync(approvalPath) ? hashBytes(readFileSync(approvalPath)) : undefined;
+  if (approvalHash !== checkpoint.input.approval_hash) {
+    throw preconditionError(
+      'SESSION_INPUT_STALE',
+      `Amendment checkpoint for ${change} is bound to different approval.yaml bytes.`,
+      `Run \`crucible session amend start ${change} "<resolution>"\` again.`,
+    );
+  }
+  loadApproval(approvalPath);
+  const escalationPath = join(changeDirFor(root, change), 'escalation.yaml');
+  const actual = existsSync(escalationPath) ? hashBytes(readFileSync(escalationPath)) : undefined;
+  if (actual !== checkpoint.input.escalation_hash) {
+    throw preconditionError(
+      'SESSION_INPUT_STALE',
+      `Amendment checkpoint for ${change} is bound to different escalation bytes.`,
+      `Run \`crucible session amend start ${change} "<resolution>"\` again.`,
+    );
+  }
+  readEscalationIfPresent(escalationPath);
+  return checkpoint;
+}
+
+function amendHandoff(
+  root: string,
+  checkpoint: AmendCheckpoint,
+  operation: string,
+  instructions: SessionInstruction[],
+  next: string,
+): SessionHandoff {
+  return makeHandoff(
+    root,
+    checkpoint.change,
+    'amend',
+    operation,
+    checkpoint.stage,
+    instructions,
+    next,
+    checkpoint.input_hash,
+  );
+}
+
+async function amendOracleTestHandoff(
+  root: string,
+  checkpoint: AmendCheckpoint,
+  deps: SessionDeps,
+  operation: string,
+): Promise<SessionHandoff> {
+  const oracles = loadOracles(join(changeDirFor(root, checkpoint.change), 'oracles.md'));
+  const targets = [...new Set(oracles.flatMap((oracle) => oracle.binding.targets))];
+  const results = await deps.resolve(targets);
+  const byTarget = new Map(results.map((result) => [result.target, result] as const));
+  const groups = new Map<string, string[]>();
+  for (const target of targets) {
+    const result = byTarget.get(target);
+    if (result?.status === 'found') continue;
+    if (result?.candidateFile === undefined || !isSafeCandidatePath(root, result.candidateFile)) {
+      throw preconditionError(
+        'SESSION_TARGET_UNLOCATABLE',
+        `Cannot amend ${checkpoint.change}: adapter could not map ${target} to a safe test file.`,
+        `Revise the artifact, then run \`crucible session amend resume ${checkpoint.change}\`.`,
+      );
+    }
+    const group = groups.get(result.candidateFile) ?? [];
+    group.push(target);
+    groups.set(result.candidateFile, group);
+  }
+  if (groups.size === 0) {
+    const ready: AmendCheckpoint = { ...checkpoint, stage: 'ready' };
+    writeCheckpoint(root, ready);
+    return amendHandoff(
+      root,
+      ready,
+      operation,
+      [],
+      `crucible session amend finish ${checkpoint.change}`,
+    );
+  }
+  const next: AmendCheckpoint = { ...checkpoint, stage: 'oracle-tests' };
+  writeCheckpoint(root, next);
+  return amendHandoff(
+    root,
+    next,
+    operation,
+    [...groups.entries()].map(([path, targetsForFile]) => ({
+      path,
+      content: `Write or update this bound oracle test file. It must declare and collect: ${targetsForFile.join(', ')}. Do not write implementation code or tasks.md.`,
+    })),
+    `crucible session amend next ${checkpoint.change}`,
+  );
+}
+
 function validateImplementationPreconditions(
   root: string,
   change: string,
@@ -923,7 +1322,7 @@ function reviewHandoff(
 function makeHandoff(
   _root: string,
   change: string,
-  role: 'propose' | 'implement' | 'review',
+  role: 'propose' | 'implement' | 'review' | 'amend',
   operation: string,
   stage: string,
   instructions: SessionInstruction[],
@@ -937,7 +1336,7 @@ function makeHandoff(
     operation,
     stage,
     change_dir: changeRel(change),
-    role_prompt: join('.crucible', 'context', `${role}.md`),
+    role_prompt: join('.crucible', 'context', `${role === 'amend' ? 'propose' : role}.md`),
     instructions,
     next_command: nextCommand,
     input_hash: inputHash,
@@ -1050,12 +1449,12 @@ function proposalInstructions(
   });
 }
 
-function requireRolePrompt(root: string, role: 'propose' | 'implement' | 'review'): void {
-  const path = join(root, '.crucible', 'context', `${role}.md`);
+function requireRolePrompt(root: string, role: 'propose' | 'implement' | 'review' | 'amend'): void {
+  const path = join(root, '.crucible', 'context', `${role === 'amend' ? 'propose' : role}.md`);
   if (!existsSync(path)) {
     throw preconditionError(
       'MISSING_ROLE_PROMPT',
-      `The ${role} role prompt is missing at ${join('.crucible', 'context', `${role}.md`)}.`,
+      `The ${role} role prompt is missing at ${join('.crucible', 'context', `${role === 'amend' ? 'propose' : role}.md`)}.`,
       'Re-run `crucible init` to restore the managed role prompt.',
     );
   }
@@ -1116,7 +1515,10 @@ function parseCheckpoint<T>(path: string, schema: z.ZodType<T>): T {
   return parsed.data;
 }
 
-function writeCheckpoint(root: string, checkpoint: ProposeCheckpoint | ImplementCheckpoint): void {
+function writeCheckpoint(
+  root: string,
+  checkpoint: ProposeCheckpoint | ImplementCheckpoint | AmendCheckpoint,
+): void {
   const path = checkpointPath(root, checkpoint.change, checkpoint.role);
   mkdirSync(join(root, '.crucible', 'sessions', checkpoint.change), { recursive: true });
   writeFileSync(path, `${JSON.stringify(checkpoint, null, 2)}\n`, 'utf8');
@@ -1125,7 +1527,7 @@ function writeCheckpoint(root: string, checkpoint: ProposeCheckpoint | Implement
 function removeCheckpoint(
   root: string,
   change: string,
-  role: 'propose' | 'implement' | 'review',
+  role: 'propose' | 'implement' | 'review' | 'amend',
 ): void {
   rmSync(checkpointPath(root, change, role), { force: true });
 }
@@ -1133,7 +1535,7 @@ function removeCheckpoint(
 function checkpointPath(
   root: string,
   change: string,
-  role: 'propose' | 'implement' | 'review',
+  role: 'propose' | 'implement' | 'review' | 'amend',
 ): string {
   return join(root, '.crucible', 'sessions', change, `${role}.json`);
 }

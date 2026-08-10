@@ -317,4 +317,14 @@ describe('amend — preconditions (invariant 5)', () => {
     const err = await catchCrucible(() => amend(opts(), deps()));
     expect(err.exit).toBe(3);
   });
+  it('accepts a legitimate post-approval tasks.md during headless regeneration', async () => {
+    await sealToyBundle();
+    writeFileSync(
+      join(scratch, CHANGE_REL, 'tasks.md'),
+      '# Tasks\n\n- [ ] Existing implementation work\n',
+    );
+    const result = await amend(opts(), deps());
+    expect(result.amended).toBe(true);
+    expect(result.report.verdict).toBe('pass');
+  });
 });

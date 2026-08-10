@@ -2,6 +2,7 @@
 // (pinned OpenSpec runtime + adapter); all state transitions stay in session/.
 
 import { execFileSync, spawn } from 'node:child_process';
+import { createInterface } from 'node:readline/promises';
 import type { Command } from 'commander';
 import { relative } from 'node:path';
 import { z } from 'zod';
@@ -11,6 +12,11 @@ import { loadConvenienceConfig, localReviewMode } from '../config/convenience.js
 import { openspecExecutable } from './openspec-runner.js';
 import { gitHead, mergeBase } from './review.cli.js';
 import {
+  amendFinish,
+  amendNext,
+  amendResume,
+  amendSeal,
+  amendStart,
   implementFinish,
   implementReviewRetry,
   implementReviewAddress,
@@ -158,6 +164,49 @@ export function registerSession(program: Command): void {
       write(program, await implementReviewAddress({ root: process.cwd(), change }));
     });
 
+  const amendSession = session
+    .command('amend')
+    .description('Session-native post-approval amendment');
+  amendSession
+    .command('start')
+    .argument('<change>')
+    .argument('<resolution>')
+    .action(async (change: string, resolution: string) => {
+      write(
+        program,
+        await amendStart({ root: process.cwd(), change, resolution }, liveDeps(process.cwd())),
+      );
+    });
+  amendSession
+    .command('next')
+    .argument('<change>')
+    .action(async (change: string) => {
+      write(program, await amendNext({ root: process.cwd(), change }, liveDeps(process.cwd())));
+    });
+  amendSession
+    .command('resume')
+    .argument('<change>')
+    .action(async (change: string) => {
+      write(program, await amendResume({ root: process.cwd(), change }, liveDeps(process.cwd())));
+    });
+  amendSession
+    .command('finish')
+    .argument('<change>')
+    .action(async (change: string) => {
+      const result = await amendFinish({ root: process.cwd(), change }, liveDeps(process.cwd()));
+      if (result.report.verdict === 'fail') {
+        write(program, result.report);
+        throw new CheckFailure();
+      }
+      write(program, result.handoff);
+    });
+  amendSession
+    .command('seal')
+    .argument('<change>')
+    .action(async (change: string) => {
+      write(program, await amendSeal({ root: process.cwd(), change }, liveDeps(process.cwd())));
+    });
+
   const reviewSession = session.command('review').description('Fresh session-native local review');
   reviewSession
     .command('start')
@@ -193,6 +242,7 @@ function liveDeps(root: string): SessionDeps {
     run: (oracles) => adapter.run(oracles),
     localReviewMode: localReviewMode(loadConvenienceConfig(root)),
     reviewSnapshot: () => localReviewSnapshot(root),
+    confirmAmend: promptAmendSeal,
   };
 }
 
@@ -335,4 +385,14 @@ function runOpenSpec(root: string, args: string[]): Promise<string> {
         );
     });
   });
+}
+
+async function promptAmendSeal(): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question('Seal this amendment? [y/N] ');
+    return /^y(es)?$/i.test(answer.trim());
+  } finally {
+    rl.close();
+  }
 }

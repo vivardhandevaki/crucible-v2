@@ -58,6 +58,7 @@ export async function judgeBundle(
   resolve: ResolveFn,
   archivedRequirementIds: ReadonlySet<string> = new Set(),
   type: ChangeType = 'feature',
+  options: { allowPostApprovalTasks?: boolean } = {},
 ): Promise<VerifyReport> {
   const findings: VerifyFinding[] = [];
   const judged = <T>(artifactRel: string, load: () => T): T | undefined => {
@@ -114,7 +115,7 @@ export async function judgeBundle(
     loadOracles(join(changeDir, 'oracles.md')),
   );
 
-  if (existsSync(join(changeDir, 'tasks.md'))) {
+  if (!options.allowPostApprovalTasks && existsSync(join(changeDir, 'tasks.md'))) {
     findings.push({
       check: 'bundle',
       id: 'tasks.md',

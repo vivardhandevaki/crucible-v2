@@ -49,10 +49,16 @@ export function renderManagedSkill(name: ManagedSkillName): string {
                   ' --json session review start <change>, read the returned work order, and write only its caller-minted verdict file.',
                 'Run the returned session review finish command and stop on red. Never invoke a Codex child process, another child agent, or a headless review command.',
               ]
-            : [
-                'Run ' + launcher + ' ' + name + ' <change> and stop on its exit status.',
-                'This guided wrapper cannot bypass preconditions, validation, approval hashes, or target-branch CI.',
-              ];
+            : name === 'amend'
+              ? [
+                  'Run ' + launcher + ' --json session amend start <change> "<resolution>".',
+                  'Write only returned artifact or bound-test paths, then run the returned next command until finish is green.',
+                  'Stop for the human-only session amend seal command. Never invoke a child agent, a headless amend command, or a sandbox fallback.',
+                ]
+              : [
+                  'Run ' + launcher + ' ' + name + ' <change> and stop on its exit status.',
+                  'This guided wrapper cannot bypass preconditions, validation, approval hashes, or target-branch CI.',
+                ];
   return [
     '---',
     `name: ${name}`,

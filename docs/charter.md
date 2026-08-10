@@ -737,7 +737,7 @@ P4-20 amends P4-19 only where it requires the local reviewer to be launched as a
 
 Pinned core remains the authority. It binds the committed base/HEAD, approval, rubric, and caller-minted verdict path before review; after authoring, it reads and judges the strict verdict artifact and revalidates every binding before advancing. Missing, malformed, stale, or rubric-invalid output is red and surfaces its exact finding. Fresh-session separation is an explicit local ceremony rather than a merge-control identity claim: local review remains convenience evidence and cannot affect CI. Headless `crucible review` and the detached CI reviewer remain unchanged.
 
-## P4-21 Amendment — Session-Native Post-Approval Amendment (proposed 2026-08-10)
+## P4-21 Amendment — Session-Native Post-Approval Amendment (ratified 2026-08-10)
 
 P4-21 extends session-native authoring to the one post-approval path that changes sealed goalposts. An already-active interactive session may regenerate an approved bundle only after pinned core validates the existing seal and emits a change-scoped amendment handoff. The handoff binds the original approval bytes, the explicit human resolution, and any escalation bytes; conversation history, checkpoint state, and agent self-report remain non-evidence. This authoring role does not require a fresh conversation because the human must inspect and explicitly re-seal the resulting artifact diff before implementation may resume.
 

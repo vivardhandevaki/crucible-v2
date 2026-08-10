@@ -9,6 +9,10 @@ import type { OracleResult } from '../adapters/types.js';
 import type { ResolveFn, TargetResolution } from '../lint/traceability.js';
 import { isCrucibleError, type CrucibleError } from '../util/errors.js';
 import {
+  amendFinish,
+  amendNext,
+  amendSeal,
+  amendStart,
   implementFinish,
   implementReviewRetry,
   implementStart,
@@ -320,5 +324,57 @@ describe('session-native implement — approval-bound lifecycle', () => {
     const reviewed = await reviewFinish({ root: scratch, change: CHANGE }, reviewDeps);
     expect(reviewed.handoff.stage).toBe('reviewed');
     expect(reviewed.review.status).toBe('pass');
+  });
+  describe('session-native amend — P4-21 post-approval lifecycle', () => {
+    beforeEach(() => {
+      cpSync(join(TOY_REPO_ROOT, CHANGE_REL), join(scratch, CHANGE_REL), { recursive: true });
+    });
+
+    it('accepts downstream tasks only after a valid approval and requires a separate human seal', async () => {
+      sealApproval();
+      writeFileSync(join(scratch, CHANGE_REL, 'tasks.md'), '# Tasks\n\n- [ ] Existing work\n');
+
+      const start = await amendStart(
+        { root: scratch, change: CHANGE, resolution: 'Clarify the design wording.' },
+        deps(),
+      );
+      expect(start.role).toBe('amend');
+      expect(start.instructions).toEqual([]);
+
+      const next = await amendNext(
+        { root: scratch, change: CHANGE },
+        deps({ instructions: async () => [] }),
+      );
+      expect(next.stage).toBe('ready');
+      expect(next.next_command).toBe(`crucible session amend finish ${CHANGE}`);
+
+      const finished = await amendFinish({ root: scratch, change: CHANGE }, deps());
+      expect(finished.report.verdict).toBe('pass');
+      expect(finished.handoff.next_command).toBe(`crucible session amend seal ${CHANGE}`);
+
+      const before = readFileSync(join(scratch, CHANGE_REL, 'approval.yaml'), 'utf8');
+      const declined = await amendSeal(
+        { root: scratch, change: CHANGE },
+        deps({ confirmAmend: () => Promise.resolve(false) }),
+      );
+      expect(declined.stage).toBe('ready');
+      expect(readFileSync(join(scratch, CHANGE_REL, 'approval.yaml'), 'utf8')).toBe(before);
+
+      const sealed = await amendSeal(
+        { root: scratch, change: CHANGE },
+        deps({ confirmAmend: () => Promise.resolve(true) }),
+      );
+      expect(sealed.next_command).toBe(`crucible session implement start ${CHANGE}`);
+      expect(existsSync(join(scratch, '.crucible', 'sessions', CHANGE, 'amend.json'))).toBe(false);
+    });
+
+    it('fails closed when amendment starts from a void seal', async () => {
+      sealApproval();
+      writeFileSync(join(scratch, CHANGE_REL, 'design.md'), '# Changed directly\n');
+      const error = await capture(() =>
+        amendStart({ root: scratch, change: CHANGE, resolution: 'Clarify design.' }, deps()),
+      );
+      expect(error.code).toBe('APPROVAL_VOID');
+    });
   });
 });
