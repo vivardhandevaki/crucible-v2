@@ -165,6 +165,12 @@ describe('init — managed interactive skills (P4-08/P4-10)', () => {
         expect(skill).toContain('node .crucible/bin/crucible.mjs');
         expect(skill).not.toContain('codex exec');
         expect(skill).not.toContain('claude -p');
+        expect(read(join('.agents', 'skills', 'review', 'SKILL.md'))).toContain(
+          'fresh Codex conversation',
+        );
+        expect(read(join('.agents', 'skills', 'review', 'SKILL.md'))).toContain(
+          'session review start',
+        );
       }
     }
     const launcher = read(join('.crucible', 'bin', 'crucible.mjs'));

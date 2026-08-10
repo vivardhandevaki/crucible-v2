@@ -41,10 +41,18 @@ export function renderManagedSkill(name: ManagedSkillName): string {
               `Run \`${launcher} --json session implement start <change>\`.`,
               'Write tasks first, run tasks-ready, then implement only from the returned handoff. Never edit sealed files.',
             ]
-          : [
-              `Run \`${launcher} ${name} <change>\` and stop on its exit status.`,
-              'This guided wrapper cannot bypass preconditions, validation, approval hashes, or target-branch CI.',
-            ];
+          : name === 'review'
+            ? [
+                'Use this skill only from a fresh Codex conversation that did not author the implementation.',
+                'Run ' +
+                  launcher +
+                  ' --json session review start <change>, read the returned work order, and write only its caller-minted verdict file.',
+                'Run the returned session review finish command and stop on red. Never invoke a Codex child process, another child agent, or a headless review command.',
+              ]
+            : [
+                'Run ' + launcher + ' ' + name + ' <change> and stop on its exit status.',
+                'This guided wrapper cannot bypass preconditions, validation, approval hashes, or target-branch CI.',
+              ];
   return [
     '---',
     `name: ${name}`,

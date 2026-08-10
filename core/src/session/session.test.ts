@@ -1,5 +1,4 @@
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TOY_REPO_ROOT } from '@crucible/fixtures';
@@ -11,13 +10,14 @@ import type { ResolveFn, TargetResolution } from '../lint/traceability.js';
 import { isCrucibleError, type CrucibleError } from '../util/errors.js';
 import {
   implementFinish,
-  implementReview,
-  implementReviewAddress,
+  implementReviewRetry,
   implementStart,
   implementTasksReady,
   proposeFinish,
   proposeNext,
   proposeStart,
+  reviewFinish,
+  reviewStart,
   type SessionDeps,
 } from './session.js';
 
@@ -226,76 +226,99 @@ describe('session-native implement — approval-bound lifecycle', () => {
     );
   });
 
-  it('holds required local review for a fresh verdict and only a human command returns red work to implementation', async () => {
+  it('uses a CLI-minted review handoff instead of a child reviewer', async () => {
     sealApproval();
     await implementStart({ root: scratch, change: CHANGE });
     writeFileSync(join(scratch, CHANGE_REL, 'tasks.md'), '# Tasks\n');
     await implementTasksReady({ root: scratch, change: CHANGE });
 
-    const pending = await implementFinish(
-      { root: scratch, change: CHANGE },
-      deps({ localReviewMode: 'required' }),
-    );
-    expect(pending.handoff.stage).toBe('review-pending');
-    expect(pending.handoff.next_command).toBe(`crucible session implement review ${CHANGE}`);
-
-    const red = await implementReview(
-      { root: scratch, change: CHANGE },
-      deps({
-        localReviewMode: 'required',
-        review: async () => ({ verdict: 'fail', snapshot: {} as never }),
+    const reviewDeps = deps({
+      localReviewMode: 'required',
+      reviewSnapshot: () => ({
+        base: 'a'.repeat(40),
+        head: 'b'.repeat(40),
+        untracked: ['scratch.txt'],
       }),
-    );
-    expect(red.stage).toBe('review-red');
-    expect(red.next_command).toBe(`crucible session implement review-address ${CHANGE}`);
+    });
+    const pending = await implementFinish({ root: scratch, change: CHANGE }, reviewDeps);
+    expect(pending.handoff.stage).toBe('review-pending');
+    expect(pending.handoff.next_command).toBe('crucible session review start ' + CHANGE);
 
-    const returned = await implementReviewAddress({ root: scratch, change: CHANGE });
-    expect(returned.stage).toBe('implementation');
-    expect(returned.next_command).toBe(`crucible session implement finish ${CHANGE}`);
+    const authoring = await reviewStart({ root: scratch, change: CHANGE }, reviewDeps);
+    expect(authoring.role).toBe('review');
+    expect(authoring.stage).toBe('review-authoring');
+    expect(authoring.next_command).toBe('crucible session review finish ' + CHANGE);
+    expect(authoring.instructions[0]?.path).toMatch(
+      new RegExp('^\\.crucible/verdicts/' + CHANGE + '/review-'),
+    );
+    expect(authoring.instructions[0]?.content).toContain('scratch.txt');
   });
 
-  it('binds a passing fresh review to the exact approval and rejects malformed output as red', async () => {
+  it('fails closed for a missing or unsafe verdict and allows only explicit unchanged-snapshot retry', async () => {
     sealApproval();
     await implementStart({ root: scratch, change: CHANGE });
     writeFileSync(join(scratch, CHANGE_REL, 'tasks.md'), '# Tasks\n');
     await implementTasksReady({ root: scratch, change: CHANGE });
-    await implementFinish({ root: scratch, change: CHANGE }, deps({ localReviewMode: 'required' }));
+    const reviewDeps = deps({
+      localReviewMode: 'required',
+      reviewSnapshot: () => ({ base: 'a'.repeat(40), head: 'b'.repeat(40), untracked: [] }),
+    });
+    await implementFinish({ root: scratch, change: CHANGE }, reviewDeps);
+    await reviewStart({ root: scratch, change: CHANGE }, reviewDeps);
 
-    const approvalHash = createHash('sha256')
-      .update(readFileSync(join(scratch, CHANGE_REL, 'approval.yaml')))
-      .digest('hex');
-    const malformed = await implementReview(
-      { root: scratch, change: CHANGE },
-      deps({
-        localReviewMode: 'required',
-        review: async () => ({ verdict: 'pass', snapshot: {} as never }),
+    const missing = await reviewFinish({ root: scratch, change: CHANGE }, reviewDeps);
+    expect(missing.handoff.stage).toBe('review-red');
+    expect(missing.review.findings[0]?.id).toBe('NO_VERDICT');
+    expect(missing.handoff.next_command).toBe('crucible session implement review-retry ' + CHANGE);
+
+    const retry = await implementReviewRetry({ root: scratch, change: CHANGE }, reviewDeps);
+    expect(retry.stage).toBe('review-pending');
+    expect(retry.next_command).toBe('crucible session review start ' + CHANGE);
+
+    await reviewStart({ root: scratch, change: CHANGE }, reviewDeps);
+    const checkpointPath = join(scratch, '.crucible', 'sessions', CHANGE, 'implement.json');
+    const checkpoint = JSON.parse(readFileSync(checkpointPath, 'utf8')) as {
+      review_work_order?: { verdict_path?: string };
+    };
+    checkpoint.review_work_order = {
+      ...checkpoint.review_work_order!,
+      verdict_path: '../outside.json',
+    };
+    writeFileSync(checkpointPath, JSON.stringify(checkpoint));
+    const unsafe = await reviewFinish({ root: scratch, change: CHANGE }, reviewDeps);
+    expect(unsafe.handoff.stage).toBe('review-red');
+    expect(unsafe.review.findings[0]?.id).toBe('VERDICT_PATH_INVALID');
+  });
+
+  it('accepts only a verdict bound to the current snapshot and rubric', async () => {
+    sealApproval();
+    await implementStart({ root: scratch, change: CHANGE });
+    writeFileSync(join(scratch, CHANGE_REL, 'tasks.md'), '# Tasks\n');
+    await implementTasksReady({ root: scratch, change: CHANGE });
+    const reviewDeps = deps({
+      localReviewMode: 'required',
+      reviewSnapshot: () => ({ base: 'a'.repeat(40), head: 'b'.repeat(40), untracked: [] }),
+    });
+    await implementFinish({ root: scratch, change: CHANGE }, reviewDeps);
+    const authoring = await reviewStart({ root: scratch, change: CHANGE }, reviewDeps);
+    const checkpoint = JSON.parse(
+      readFileSync(join(scratch, '.crucible', 'sessions', CHANGE, 'implement.json'), 'utf8'),
+    ) as { review_work_order: { rubric_hash: string } };
+    writeFileSync(
+      join(scratch, authoring.instructions[0]!.path),
+      JSON.stringify({
+        change: CHANGE,
+        reviewed_sha: 'b'.repeat(40),
+        rubric_hash: checkpoint.review_work_order.rubric_hash,
+        model: 'codex',
+        verdict: 'pass',
+        findings: [],
+        observations: [],
       }),
     );
-    expect(malformed.stage).toBe('review-red');
-    await implementReviewAddress({ root: scratch, change: CHANGE });
-    await implementFinish({ root: scratch, change: CHANGE }, deps({ localReviewMode: 'required' }));
 
-    const reviewed = await implementReview(
-      { root: scratch, change: CHANGE },
-      deps({
-        localReviewMode: 'required',
-        review: async () => ({
-          verdict: 'pass',
-          snapshot: {
-            base: 'a'.repeat(40),
-            head: 'b'.repeat(40),
-            approval_hash: approvalHash,
-            rubric_hash: 'c'.repeat(64),
-            verdict_hash: 'd'.repeat(64),
-          },
-        }),
-      }),
-    );
-    expect(reviewed.stage).toBe('reviewed');
-    const checkpoint = readFileSync(
-      join(scratch, '.crucible', 'sessions', CHANGE, 'implement.json'),
-      'utf8',
-    );
-    expect(checkpoint).toContain(approvalHash);
+    const reviewed = await reviewFinish({ root: scratch, change: CHANGE }, reviewDeps);
+    expect(reviewed.handoff.stage).toBe('reviewed');
+    expect(reviewed.review.status).toBe('pass');
   });
 });
