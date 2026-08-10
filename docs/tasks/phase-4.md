@@ -213,3 +213,40 @@ Acceptance (write these tests red before production changes):
 - critical approval validation rejects missing, duplicate, and unknown acknowledgments and accepts the exact current-oracle set; a final diff that newly becomes critical under a standard/noncritical approval is red rather than merely rerouted;
 - target-branch-rule/worked-flow coverage proves a PR editing `crucible.yaml` is judged by base config, keeps all oracle/regression/seal/traceability checks, and cannot use its approval floor to force down or evade human routing;
 - root typecheck, lint, build, full tests, and deterministic package suites pass. Only after merge and a separate Notes framework-pin rollout may the preserved advisory-policy proposal be approved with `--tier critical` and implemented.
+
+**P4-18 · Explicit PR review posture** · Tier: Fable / Sol (governance and transition design) + Opus / Terra (implementation) · Trigger: Notes has one maintainer, deliberately disabled paid PR-agent review, and its correctly critical policy PR cannot satisfy the remaining non-author `route` gate.
+
+Reads: charter §The Workflow, §Two Venues, §Tier Definitions, §Configuration & Reviewer Law, P4-15/P4-17 amendments; architecture.md §§11–15; design/phase-2.md §§2, 5, and 7; design/phase-4-runbook.md §Advisory CI-review rollout and §Review posture; AGENTS.md invariants 1–5, 7–12; issue ledger P4-017.
+
+Delivers: independent target-branch `review.ci_mode` and `review.human_mode` controls, explicit init selection, exact generated-workflow variants, and a fail-closed config/workflow congruence check. Deterministic/oracle enforcement is invariant. Secret inference, synthetic passing/skipped checks, automatic GitHub-settings mutation, weakening tier computation, permitting solo overrides, and changing product code are out of scope.
+
+**Decision ratified 2026-08-10:** both fields are strict `advisory|required` and default to required. `verify` is installed in every posture; the detached judge and `route` exist only when their respective modes are required. Critical risk remains visible and retains P4-17 ceremony even when human enforcement is advisory. Override remains unavailable without independent human review. Implement P4-18 and P4-19 as one rollout cluster before recommending solo mode to a product.
+
+Acceptance (write these tests red before production changes):
+
+- enforcement-config tests accept all four mode pairs, default both omissions to required, and reject null, boolean, unknown, duplicate, and unknown-field forms; environment secrets and convenience config cannot change either result;
+- init CLI/core tests prompt independently, never ask for or inspect an API key, preserve required/required under `--yes`, render selected modes, and print the exact external required-check set;
+- template tests prove the four exact job matrices, with omitted jobs truly absent and no fake verdict/check; oracle, regression, seal, traceability, diff-cap, and tier steps remain byte-equivalent;
+- target-branch tests prove a PR cannot activate advisory mode for itself and pinned core rejects target config/managed-workflow incongruence before green; doctor reports the same drift and init repairs only through diff-and-confirm;
+- verify/report tests retain `routing: human` for critical changes, disclose advisory human enforcement, retain exact critical acknowledgments, and reject override whenever independent human enforcement is unavailable;
+- rollout tests/documentation cover external branch-protection ordering, required↔advisory transitions, and the current Notes recovery without merging PR #13 or editing `create-note`;
+- focused tests plus root format, typecheck, lint, build, full tests, template/package determinism, and worked target-branch flows pass.
+
+**P4-19 · Fresh local adversarial-review loop** · Tier: Fable / Sol (role independence and lifecycle design) + Opus / Terra (implementation) · Trigger: a solo maintainer wants an independent post-implementation reviewer inside the local Crucible workflow without claiming that local output is CI authority.
+
+Reads: charter §The Workflow, §Two Venues, §Adversarial Reviewer, §How Verify Executes, P4-19 amendment; architecture.md §§6, 10–12, and 15; design/phase-2.md §§5 and 8; design/phase-4-runbook.md §Session-native local workflow and §Review posture; P4-10 and P4-18 above; AGENTS.md invariants 1–5 and 9–12; issue ledger P4-017.
+
+Delivers: strict convenience `review.local_mode`, implementation checkpoint stages for fresh review, commit-snapshot binding, and an explicit human-mediated red-to-implementation transition. It does not make local verdicts enforcement artifacts, let the active implementer self-review, auto-edit on red, reuse verdicts across changes, change the CI reviewer transport, or authorize sealed-file edits.
+
+**Decision ratified 2026-08-10:** required local review follows green mechanical verify and a committed, tracked-clean implementation snapshot. A fresh `AgentSubstrate` reviewer judges the base/HEAD diff and its existing strict verdict is bound in the local checkpoint to base, head, approval, rubric, and verdict hashes. Red stops for human inspection; only an explicit review-address transition returns to implementation. Any changed snapshot requires verify plus a new reviewer. Advisory/off remain convenience choices and never affect CI.
+
+Acceptance (write these tests red before production changes):
+
+- convenience-config tests accept only `required|advisory|off`, preserve omission compatibility, allow a personal override, reject malformed/unknown fields, and prove enforcement imports cannot reach it;
+- session tests cover `implementation → review-pending → reviewed` and `review-red → implementation`, require a green mechanical verify first, and never remove the checkpoint early in required mode;
+- snapshot tests reject staged or tracked dirty bytes and uncomputable bases, report excluded untracked files, bind base/HEAD/approval/rubric/verdict hashes, and invalidate pass or red outcomes after any bound input changes;
+- reviewer tests prove a fresh review-role substrate is invoked with the pinned role prompt and configured reviewer model, while the implementing interactive session cannot supply or self-report the verdict;
+- malformed, missing, stale, unknown-rubric, inconsistent, timeout, and unavailable-substrate outcomes are red and cannot advance; a valid pass exposes final verify only;
+- review-address tests require explicit human invocation, surface exact findings, authorize only tasks/unsealed implementation work, and require ordinary amend/reapproval for sealed bytes; no automatic retry or agent-to-agent loop exists;
+- advisory mode offers an explicit audited skip, off preserves the current handoff, and neither local result appears in CI verification inputs or the committed approval bundle;
+- init skills/prompts, status/why recovery, headless review regression, session migration, typecheck/lint/build/full tests, and a worked solo Notes flow pass before the product selects advisory human mode.
