@@ -2,9 +2,6 @@
 // (pinned OpenSpec runtime + adapter); all state transitions stay in session/.
 
 import { execFileSync, spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { Command } from 'commander';
 import { relative } from 'node:path';
 import { z } from 'zod';
@@ -12,13 +9,13 @@ import { loadPinnedAdapterClient } from '../adapters/runtime.js';
 import { parseTypeName } from '../changetype/changetype.js';
 import { loadConvenienceConfig, localReviewMode } from '../config/convenience.js';
 import { openspecExecutable } from './openspec-runner.js';
-import { review } from './review.js';
-import { gitHead, mergeBase, reviewModel } from './review.cli.js';
-import { resolveAgentRuntime } from '../substrate/runtime.js';
+import { gitHead, mergeBase } from './review.cli.js';
 import {
   implementFinish,
-  implementReview,
+  implementReviewRetry,
   implementReviewAddress,
+  reviewFinish,
+  reviewStart,
   implementResume,
   implementStart,
   implementTasksReady,
@@ -146,12 +143,12 @@ export function registerSession(program: Command): void {
       write(program, result.handoff);
     });
   implement
-    .command('review')
+    .command('review-retry')
     .argument('<change>')
     .action(async (change: string) => {
       write(
         program,
-        await implementReview({ root: process.cwd(), change }, liveDeps(process.cwd())),
+        await implementReviewRetry({ root: process.cwd(), change }, liveDeps(process.cwd())),
       );
     });
   implement
@@ -159,6 +156,22 @@ export function registerSession(program: Command): void {
     .argument('<change>')
     .action(async (change: string) => {
       write(program, await implementReviewAddress({ root: process.cwd(), change }));
+    });
+
+  const reviewSession = session.command('review').description('Fresh session-native local review');
+  reviewSession
+    .command('start')
+    .argument('<change>')
+    .action(async (change: string) => {
+      write(program, await reviewStart({ root: process.cwd(), change }, liveDeps(process.cwd())));
+    });
+  reviewSession
+    .command('finish')
+    .argument('<change>')
+    .action(async (change: string) => {
+      const result = await reviewFinish({ root: process.cwd(), change }, liveDeps(process.cwd()));
+      write(program, { ...result.handoff, review: result.review });
+      if (result.review.status === 'fail') throw new CheckFailure();
     });
 }
 
@@ -179,32 +192,7 @@ function liveDeps(root: string): SessionDeps {
     resolve: (targets) => adapter.resolve(targets),
     run: (oracles) => adapter.run(oracles),
     localReviewMode: localReviewMode(loadConvenienceConfig(root)),
-    review: async (change) => {
-      requireCleanCommittedSnapshot(root);
-      const base = mergeBase(root);
-      const head = gitHead(root);
-      const runtime = resolveAgentRuntime(root, 'review');
-      const result = await review(
-        {
-          root,
-          change,
-          model: reviewModel(root),
-          base,
-          head,
-        },
-        { substrate: runtime.substrate, now: () => new Date().toISOString() },
-      );
-      return {
-        verdict: result.check.status === 'pass' ? 'pass' : 'fail',
-        snapshot: {
-          base,
-          head,
-          approval_hash: sha256(join(root, 'openspec', 'changes', change, 'approval.yaml')),
-          rubric_hash: result.rubricHash,
-          verdict_hash: sha256(result.verdictPath),
-        },
-      };
-    },
+    reviewSnapshot: () => localReviewSnapshot(root),
   };
 }
 
@@ -229,10 +217,19 @@ function requireCleanCommittedSnapshot(root: string): void {
   }
 }
 
-function sha256(path: string): string {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
+function localReviewSnapshot(root: string): { base: string; head: string; untracked: string[] } {
+  requireCleanCommittedSnapshot(root);
+  const status = execFileSync('git', ['status', '--porcelain'], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  const untracked = status
+    .split('\n')
+    .filter((line) => line.startsWith('?? '))
+    .map((line) => line.slice(3));
+  return { base: mergeBase(root), head: gitHead(root), untracked };
 }
-
 async function openSpecInstructions(
   root: string,
   change: string,

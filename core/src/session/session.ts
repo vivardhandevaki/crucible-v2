@@ -7,6 +7,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import { loadOracles, type Oracle } from '../artifacts/oracles.js';
+import { readRubric, rubricHash } from '../review/rubric.js';
+import { evaluateVerdict } from '../review/verdict.js';
+import { reviewCheck, type CheckResult } from '../verifyx/report.js';
 import { loadApproval, verifyApproval } from '../artifacts/approval.js';
 import { readEscalationIfPresent } from '../artifacts/escalation.js';
 import { serializeGeneration, stampGeneration } from '../artifacts/generation.js';
@@ -38,7 +41,7 @@ export type SessionInstruction = z.infer<typeof instructionSchema>;
 export const sessionHandoffSchema = z.strictObject({
   version: z.literal(1),
   change: z.string().min(1),
-  role: z.enum(['propose', 'implement']),
+  role: z.enum(['propose', 'implement', 'review']),
   operation: z.string().min(1),
   stage: z.string().min(1),
   change_dir: z.string().min(1),
@@ -66,9 +69,26 @@ const implementCheckpointSchema = z.strictObject({
   version: z.literal(SESSION_VERSION),
   change: z.string().min(1),
   role: z.literal('implement'),
-  stage: z.enum(['tasks', 'implementation', 'review-pending', 'review-red', 'reviewed']),
+  stage: z.enum([
+    'tasks',
+    'implementation',
+    'review-pending',
+    'review-authoring',
+    'review-red',
+    'reviewed',
+  ]),
   input: z.strictObject({ approval_hash: z.string().regex(/^[0-9a-f]{64}$/) }),
   input_hash: z.string().regex(/^[0-9a-f]{64}$/),
+  review_work_order: z
+    .strictObject({
+      base: z.string().regex(/^[0-9a-f]{40,64}$/),
+      head: z.string().regex(/^[0-9a-f]{40,64}$/),
+      approval_hash: z.string().regex(/^[0-9a-f]{64}$/),
+      rubric_hash: z.string().regex(/^[0-9a-f]{64}$/),
+      verdict_path: z.string().min(1),
+    })
+    .optional(),
+  review_failure: z.strictObject({ code: z.string().min(1), retryable: z.boolean() }).optional(),
   review_snapshot: z
     .strictObject({
       base: z.string().regex(/^[0-9a-f]{40,64}$/),
@@ -78,14 +98,6 @@ const implementCheckpointSchema = z.strictObject({
       verdict_hash: z.string().regex(/^[0-9a-f]{64}$/),
     })
     .optional(),
-});
-
-const localReviewSnapshotSchema = z.strictObject({
-  base: z.string().regex(/^[0-9a-f]{40,64}$/),
-  head: z.string().regex(/^[0-9a-f]{40,64}$/),
-  approval_hash: z.string().regex(/^[0-9a-f]{64}$/),
-  rubric_hash: z.string().regex(/^[0-9a-f]{64}$/),
-  verdict_hash: z.string().regex(/^[0-9a-f]{64}$/),
 });
 
 type ProposeCheckpoint = z.infer<typeof proposeCheckpointSchema>;
@@ -100,20 +112,14 @@ export interface SessionDeps {
   run: (oracles: readonly Oracle[]) => Promise<OracleResult[]>;
   /** Convenience-only local-review posture, resolved by the CLI. */
   localReviewMode?: 'required' | 'advisory' | 'off';
-  /** Fresh reviewer edge. The active implementation session never supplies it. */
-  review?: (change: string) => Promise<LocalReviewResult>;
+  /** CLI-owned snapshot edge; it never invokes an agent. */
+  reviewSnapshot?: () => LocalReviewSnapshot;
 }
 
-/** Fresh-review output is evidence only after every snapshot binding validates. */
-export interface LocalReviewResult {
-  verdict: 'pass' | 'fail';
-  snapshot: {
-    base: string;
-    head: string;
-    approval_hash: string;
-    rubric_hash: string;
-    verdict_hash: string;
-  };
+export interface LocalReviewSnapshot {
+  base: string;
+  head: string;
+  untracked: string[];
 }
 
 export interface SessionOptions {
@@ -376,7 +382,13 @@ export async function implementFinish(
   );
   const requiresReview = deps.localReviewMode === 'required' && report.verdict === 'pass';
   const nextCheckpoint: ImplementCheckpoint = requiresReview
-    ? { ...checkpoint, stage: 'review-pending' }
+    ? {
+        ...checkpoint,
+        stage: 'review-pending',
+        review_work_order: undefined,
+        review_failure: undefined,
+        review_snapshot: undefined,
+      }
     : checkpoint;
   if (requiresReview) writeCheckpoint(options.root, nextCheckpoint);
   const handoff = implementHandoff(
@@ -384,7 +396,7 @@ export async function implementFinish(
     nextCheckpoint,
     'finish',
     requiresReview
-      ? `crucible session implement review ${options.change}`
+      ? 'crucible session review start ' + options.change
       : report.verdict === 'pass'
         ? `crucible verify ${options.change}`
         : `crucible session implement resume ${options.change}`,
@@ -394,8 +406,12 @@ export async function implementFinish(
   return { handoff, report, render: renderReport(report, 'session implement') };
 }
 
-/** Run the separately supplied fresh reviewer only after green required-mode verify. */
-export async function implementReview(
+export interface SessionReviewResult {
+  handoff: SessionHandoff;
+  review: CheckResult;
+}
+
+export async function reviewStart(
   options: SessionOptions,
   deps: SessionDeps,
 ): Promise<SessionHandoff> {
@@ -403,42 +419,277 @@ export async function implementReview(
   if (checkpoint.stage !== 'review-pending' || deps.localReviewMode !== 'required') {
     throw preconditionError(
       'LOCAL_REVIEW_NOT_PENDING',
-      `A required local review is not pending for ${options.change}.`,
-      `Run \`crucible session implement finish ${options.change}\` after implementation verifies green.`,
+      'A required local review is not pending for ' + options.change + '.',
+      'Run crucible session implement finish ' +
+        options.change +
+        ' after implementation verifies green.',
+    );
+  }
+  const approvalHash = validateImplementationPreconditions(
+    options.root,
+    options.change,
+    checkpoint.input.approval_hash,
+  );
+  requireRolePrompt(options.root, 'review');
+  const snapshot = requireReviewSnapshot(options, deps);
+  const rubricPath = join(options.root, '.crucible', 'rubric.yaml');
+  readRubric(rubricPath);
+  const rubricHashValue = rubricHash(rubricPath);
+  const verdictPath = reviewVerdictPath(options.root, options.change, deps.now());
+  const verdictRel = relative(options.root, verdictPath);
+  if (
+    !isSafeReviewVerdictPath(options.root, options.change, verdictRel) ||
+    existsSync(verdictPath)
+  ) {
+    throw invalidInputError(
+      'LOCAL_REVIEW_VERDICT_PATH',
+      'Could not mint a new contained verdict path for ' + options.change + '.',
+      'Wait for the active review to finish, then run crucible session review start ' +
+        options.change +
+        '.',
+    );
+  }
+  mkdirSync(join(options.root, '.crucible', 'verdicts', options.change), { recursive: true });
+  const next: ImplementCheckpoint = {
+    ...checkpoint,
+    stage: 'review-authoring',
+    review_failure: undefined,
+    review_work_order: {
+      base: snapshot.base,
+      head: snapshot.head,
+      approval_hash: approvalHash,
+      rubric_hash: rubricHashValue,
+      verdict_path: verdictRel,
+    },
+  };
+  writeCheckpoint(options.root, next);
+  return reviewHandoff(options.root, next, snapshot.untracked);
+}
+
+export async function reviewFinish(
+  options: SessionOptions,
+  deps: SessionDeps,
+): Promise<SessionReviewResult> {
+  const checkpoint = loadImplementCheckpoint(options.root, options.change);
+  if (checkpoint.stage !== 'review-authoring' || deps.localReviewMode !== 'required') {
+    throw preconditionError(
+      'LOCAL_REVIEW_NOT_AUTHORING',
+      'No fresh local review is awaiting verdict finalization for ' + options.change + '.',
+      'Run crucible session review start ' + options.change + ' first.',
+    );
+  }
+  const order = checkpoint.review_work_order;
+  if (
+    order === undefined ||
+    !isSafeReviewVerdictPath(options.root, options.change, order.verdict_path)
+  ) {
+    return reviewRed(
+      options.root,
+      options.change,
+      checkpoint,
+      'VERDICT_PATH_INVALID',
+      'review work order has an unsafe verdict path',
+      false,
+    );
+  }
+  const approvalHash = validateImplementationPreconditions(
+    options.root,
+    options.change,
+    checkpoint.input.approval_hash,
+  );
+  const snapshot = requireReviewSnapshot(options, deps);
+  const rubricPath = join(options.root, '.crucible', 'rubric.yaml');
+  const rubric = readRubric(rubricPath);
+  const currentRubricHash = rubricHash(rubricPath);
+  if (
+    snapshot.base !== order.base ||
+    snapshot.head !== order.head ||
+    approvalHash !== order.approval_hash ||
+    currentRubricHash !== order.rubric_hash
+  ) {
+    return reviewRed(
+      options.root,
+      options.change,
+      checkpoint,
+      'REVIEW_SNAPSHOT_STALE',
+      'review base, HEAD, approval, or rubric changed after the work order was minted',
+      false,
+    );
+  }
+  const verdictPath = join(options.root, order.verdict_path);
+  let text: string | undefined;
+  try {
+    text = existsSync(verdictPath) ? readFileSync(verdictPath, 'utf8') : undefined;
+  } catch {
+    text = undefined;
+  }
+  const outcome = evaluateVerdict({ text, rubric, expectedRubricHash: order.rubric_hash });
+  const check = reviewCheck(outcome);
+  if (outcome.status !== 'pass') {
+    return reviewRed(
+      options.root,
+      options.change,
+      checkpoint,
+      check.findings[0]!.id,
+      check.findings[0]!.message,
+      outcome.code === 'NO_VERDICT',
+    );
+  }
+  if (outcome.verdict.change !== options.change || outcome.verdict.reviewed_sha !== order.head) {
+    return reviewRed(
+      options.root,
+      options.change,
+      checkpoint,
+      'VERDICT_SNAPSHOT_MISMATCH',
+      'verdict change or reviewed_sha does not match the minted work order',
+      false,
+    );
+  }
+  const next: ImplementCheckpoint = {
+    ...checkpoint,
+    review_work_order: undefined,
+    review_failure: undefined,
+    stage: 'reviewed',
+    review_snapshot: {
+      base: order.base,
+      head: order.head,
+      approval_hash: order.approval_hash,
+      rubric_hash: order.rubric_hash,
+      verdict_hash: hashBytes(readFileSync(verdictPath)),
+    },
+  };
+  writeCheckpoint(options.root, next);
+  return {
+    handoff: implementHandoff(options.root, next, 'finish', 'crucible verify ' + options.change),
+    review: check,
+  };
+}
+
+export async function implementReviewRetry(
+  options: SessionOptions,
+  deps: SessionDeps,
+): Promise<SessionHandoff> {
+  const checkpoint = loadImplementCheckpoint(options.root, options.change);
+  if (checkpoint.stage !== 'review-red' || deps.localReviewMode !== 'required') {
+    throw preconditionError(
+      'LOCAL_REVIEW_NOT_RED',
+      'No red local review is awaiting retry for ' + options.change + '.',
+      'Run crucible session review finish ' + options.change + ' first.',
+    );
+  }
+  if (checkpoint.review_failure?.retryable === false) {
+    throw preconditionError(
+      'LOCAL_REVIEW_RETRY_FORBIDDEN',
+      'This local review red requires review-address before implementation changes.',
+      'Read the findings, then run crucible session implement review-address ' +
+        options.change +
+        '.',
+    );
+  }
+  const order = checkpoint.review_work_order;
+  const snapshot = requireReviewSnapshot(options, deps);
+  if (order !== undefined && (snapshot.base !== order.base || snapshot.head !== order.head)) {
+    throw preconditionError(
+      'REVIEW_SNAPSHOT_STALE',
+      'The committed snapshot changed after the red local review.',
+      'Run crucible session implement review-address ' +
+        options.change +
+        ', then re-verify and start a fresh review.',
     );
   }
   validateImplementationPreconditions(options.root, options.change, checkpoint.input.approval_hash);
-  if (deps.review === undefined) {
-    throw invalidInputError(
-      'LOCAL_REVIEW_UNAVAILABLE',
-      'The fresh local reviewer could not be configured.',
-      'Restore the managed review skill with `crucible init` and retry.',
-    );
-  }
-  let outcome: LocalReviewResult | undefined;
-  try {
-    outcome = await deps.review(options.change);
-  } catch {
-    // A reviewer transport failure is a red local-review result, never a pass
-    // inferred from the previous green mechanical verification.
-  }
-  const snapshot = localReviewSnapshotSchema.safeParse(outcome?.snapshot);
-  const validSnapshot =
-    snapshot.success && snapshot.data.approval_hash === checkpoint.input.approval_hash;
   const next: ImplementCheckpoint = {
-    ...checkpoint,
-    stage: outcome?.verdict === 'pass' && validSnapshot ? 'reviewed' : 'review-red',
-    ...(validSnapshot ? { review_snapshot: snapshot.data } : {}),
+    version: checkpoint.version,
+    change: checkpoint.change,
+    role: checkpoint.role,
+    stage: 'review-pending',
+    input: checkpoint.input,
+    input_hash: checkpoint.input_hash,
   };
   writeCheckpoint(options.root, next);
   return implementHandoff(
     options.root,
     next,
-    'review',
-    outcome?.verdict === 'pass' && validSnapshot
-      ? `crucible verify ${options.change}`
-      : `crucible session implement review-address ${options.change}`,
+    'review-retry',
+    'crucible session review start ' + options.change,
   );
+}
+
+function reviewRed(
+  root: string,
+  change: string,
+  checkpoint: ImplementCheckpoint,
+  id: string,
+  message: string,
+  retryable: boolean,
+): SessionReviewResult {
+  const next: ImplementCheckpoint = {
+    ...checkpoint,
+    stage: 'review-red',
+    review_failure: { code: id, retryable },
+  };
+  writeCheckpoint(root, next);
+  const review: CheckResult = {
+    name: 'review',
+    status: 'fail',
+    findings: [{ check: 'review', id, message }],
+  };
+  return {
+    handoff: implementHandoff(
+      root,
+      next,
+      'finish',
+      retryable
+        ? 'crucible session implement review-retry ' + change
+        : 'crucible session implement review-address ' + change,
+    ),
+    review,
+  };
+}
+
+function requireReviewSnapshot(options: SessionOptions, deps: SessionDeps): LocalReviewSnapshot {
+  if (deps.reviewSnapshot === undefined) {
+    throw invalidInputError(
+      'LOCAL_REVIEW_UNAVAILABLE',
+      'The local review snapshot could not be computed.',
+      'Restore the managed review skill with crucible init and retry.',
+    );
+  }
+  const parsed = z
+    .strictObject({
+      base: z.string().regex(/^[0-9a-f]{40,64}$/),
+      head: z.string().regex(/^[0-9a-f]{40,64}$/),
+      untracked: z.array(z.string().min(1)),
+    })
+    .safeParse(deps.reviewSnapshot());
+  if (!parsed.success) {
+    throw invalidInputError(
+      'LOCAL_REVIEW_SNAPSHOT_INVALID',
+      'The local review snapshot is malformed.',
+      'Commit or revert tracked changes, then run crucible session review start ' +
+        options.change +
+        '.',
+    );
+  }
+  return parsed.data;
+}
+
+function reviewVerdictPath(root: string, change: string, now: string): string {
+  return join(
+    root,
+    '.crucible',
+    'verdicts',
+    change,
+    'review-' + now.replace(/[:.]/g, '-') + '.json',
+  );
+}
+
+function isSafeReviewVerdictPath(root: string, change: string, verdictPath: string): boolean {
+  const expected = join('.crucible', 'verdicts', change);
+  if (verdictPath.length === 0 || verdictPath.includes('\0')) return false;
+  const absolute = resolve(root, verdictPath);
+  const rel = relative(root, absolute);
+  return rel.startsWith(expected + '/') && !isAbsolute(rel) && !rel.startsWith('../');
 }
 
 /** A human explicitly accepts responsibility for returning reviewer-red work to implementation. */
@@ -452,7 +703,13 @@ export async function implementReviewAddress(options: SessionOptions): Promise<S
     );
   }
   validateImplementationPreconditions(options.root, options.change, checkpoint.input.approval_hash);
-  const next: ImplementCheckpoint = { ...checkpoint, stage: 'implementation' };
+  const next: ImplementCheckpoint = {
+    ...checkpoint,
+    stage: 'implementation',
+    review_work_order: undefined,
+    review_failure: undefined,
+    review_snapshot: undefined,
+  };
   writeCheckpoint(options.root, next);
   return implementHandoff(
     options.root,
@@ -612,7 +869,7 @@ function implementHandoff(
     (tasks
       ? `crucible session implement tasks-ready ${checkpoint.change}`
       : checkpoint.stage === 'review-pending'
-        ? `crucible session implement review ${checkpoint.change}`
+        ? 'crucible session review start ' + checkpoint.change
         : checkpoint.stage === 'review-red'
           ? `crucible session implement review-address ${checkpoint.change}`
           : checkpoint.stage === 'reviewed'
@@ -630,10 +887,43 @@ function implementHandoff(
   );
 }
 
+function reviewHandoff(
+  root: string,
+  checkpoint: ImplementCheckpoint,
+  untracked: string[],
+): SessionHandoff {
+  const order = checkpoint.review_work_order;
+  if (order === undefined) throw new Error('missing review work order');
+  const excluded =
+    untracked.length === 0
+      ? 'No untracked files are excluded.'
+      : 'Excluded untracked files: ' + untracked.join(', ') + '.';
+  return makeHandoff(
+    root,
+    checkpoint.change,
+    'review',
+    'start',
+    checkpoint.stage,
+    [
+      {
+        path: order.verdict_path,
+        content:
+          'Open a fresh Codex conversation before reviewing. Read .crucible/context/review.md, the approved bundle, .crucible/rubric.yaml, and git diff ' +
+          order.base +
+          ' ' +
+          order.head +
+          '. Write exactly one strict verdict JSON to this caller-minted path. ' +
+          excluded,
+      },
+    ],
+    'crucible session review finish ' + checkpoint.change,
+    checkpoint.input_hash,
+  );
+}
 function makeHandoff(
   _root: string,
   change: string,
-  role: 'propose' | 'implement',
+  role: 'propose' | 'implement' | 'review',
   operation: string,
   stage: string,
   instructions: SessionInstruction[],
@@ -760,7 +1050,7 @@ function proposalInstructions(
   });
 }
 
-function requireRolePrompt(root: string, role: 'propose' | 'implement'): void {
+function requireRolePrompt(root: string, role: 'propose' | 'implement' | 'review'): void {
   const path = join(root, '.crucible', 'context', `${role}.md`);
   if (!existsSync(path)) {
     throw preconditionError(
@@ -832,11 +1122,19 @@ function writeCheckpoint(root: string, checkpoint: ProposeCheckpoint | Implement
   writeFileSync(path, `${JSON.stringify(checkpoint, null, 2)}\n`, 'utf8');
 }
 
-function removeCheckpoint(root: string, change: string, role: 'propose' | 'implement'): void {
+function removeCheckpoint(
+  root: string,
+  change: string,
+  role: 'propose' | 'implement' | 'review',
+): void {
   rmSync(checkpointPath(root, change, role), { force: true });
 }
 
-function checkpointPath(root: string, change: string, role: 'propose' | 'implement'): string {
+function checkpointPath(
+  root: string,
+  change: string,
+  role: 'propose' | 'implement' | 'review',
+): string {
   return join(root, '.crucible', 'sessions', change, `${role}.json`);
 }
 
