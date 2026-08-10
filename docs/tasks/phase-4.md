@@ -250,3 +250,22 @@ Acceptance (write these tests red before production changes):
 - review-address tests require explicit human invocation, surface exact findings, authorize only tasks/unsealed implementation work, and require ordinary amend/reapproval for sealed bytes; no automatic retry or agent-to-agent loop exists;
 - advisory mode offers an explicit audited skip, off preserves the current handoff, and neither local result appears in CI verification inputs or the committed approval bundle;
 - init skills/prompts, status/why recovery, headless review regression, session migration, typecheck/lint/build/full tests, and a worked solo Notes flow pass before the product selects advisory human mode.
+
+**P4-20 · Session-native fresh Codex reviewer** · Tier: Fable / Sol (review trust-boundary amendment) + Opus / Terra (implementation) · Trigger: the first required Notes local review reached a clean committed snapshot, but the child Codex reviewer could not write its caller-minted verdict because nested Bubblewrap failed with `RTM_NEWADDR`; strict core returned `NO_VERDICT`.
+
+Reads: charter §Explicit Context per Role, §Adversarial Reviewer, P4-19/P4-20 amendments; architecture.md §§6, 10, 15–16; design/phase-4-runbook.md §Session-native local workflow and §Review posture; P4-08–P4-10 and P4-19 above; AGENTS.md invariants 1–5 and 9–12; issue ledger P4-018.
+
+Delivers: a CLI-minted session-native review work order, a low-freedom init-managed review skill for a separately opened Codex conversation, strict verdict finalization, structured red findings, and explicit infrastructure retry. It does not weaken snapshot binding, accept self-report, make local output CI evidence, enable broader Codex permissions, select Claude, change headless/CI review, or update an approved consumer's sealed framework pin.
+
+**Decision ratified 2026-08-10:** session-native implementation uses a fresh interactive review role rather than a nested `AgentSubstrate`. Pinned core mints and revalidates all snapshot/verdict bindings and remains the only judge. The human supplies the fresh-conversation boundary; this is local ceremony, never merge authority. Headless review remains an explicit child-process command with no fallback.
+
+Acceptance (write these tests red before production changes):
+
+- session tests cover `implementation → review-pending → review-authoring → reviewed`, and prove no `AgentSubstrate`/review callback is invoked by the session-native path;
+- review-start tests require green mechanical verify, a committed tracked-clean snapshot, valid approval/rubric, computable base/HEAD, report excluded untracked files, mint one contained verdict path, and reject duplicate/concurrent/stale checkpoints;
+- review-finish tests bind base, HEAD, approval, rubric, and verdict hashes; accept one strict valid verdict; and turn missing, malformed, stale, unknown-rubric, changed-snapshot, path-traversal, and inconsistent verdicts into structured red findings;
+- managed-skill tests install the Codex review skill, instruct the human to use a fresh interactive conversation, call only the pinned `session review` commands, never invoke `codex exec` or another child agent, and never claim completion before CLI judgment;
+- review-red tests surface exact findings; block findings require `review-address`, while an explicit `review-retry` is permitted only for infrastructure/missing-verdict red on an unchanged snapshot and always mints a new verdict path;
+- existing headless `crucible review`, `verify --review`, detached CI review, verdict evaluator, P4-10 authoring, approval seals, and target-branch enforcement tests remain unchanged and green;
+- migration tests cover P4-19 `review-pending` and legacy detail-free `review-red` checkpoints without trusting them; an approved consumer pin mismatch remains fail-closed and the runbook requires pin-then-reapprove recovery;
+- focused tests plus root format, typecheck, lint, build, full suite, deterministic packages, and a worked Notes review pass from a fresh Codex conversation are green before resuming the product policy rollout.
