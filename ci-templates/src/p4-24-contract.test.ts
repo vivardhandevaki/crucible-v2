@@ -1,6 +1,9 @@
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { CI_TEMPLATE_PATH, JAVA_JUNIT_CI_TEMPLATE_PATH } from './index.js';
 
 interface Step {
@@ -29,6 +32,14 @@ function step(job: Job | undefined, id: string): Step {
   const found = job?.steps?.find((candidate) => candidate.id === id);
   if (!found) throw new Error(`missing step ${id}`);
   return found;
+}
+
+function git(root: string, args: string[]): string {
+  return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+}
+
+function outputs(text: string): Record<string, string> {
+  return Object.fromEntries(text.trim().split('\n').map((line) => line.split('=')));
 }
 
 describe('P4-24 managed CI contract', () => {
@@ -81,6 +92,67 @@ describe('P4-24 managed CI contract', () => {
       expect(run).toContain('REVIEW_WORKFLOW=".github/workflows/crucible-review.yml"');
       expect(run).toContain('git show "$BASE_SHA:$REVIEW_WORKFLOW"');
       expect(run).toContain('snapshot=${process.env.SNAPSHOT}');
+    });
+  }
+});
+
+describe('P4-24 bootstrap — exact script against real Git', () => {
+  let root: string;
+
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  for (const [label, path] of [
+    ['generic', CI_TEMPLATE_PATH],
+    ['java-junit', JAVA_JUNIT_CI_TEMPLATE_PATH],
+  ] as const) {
+    it(`${label}: hostile candidate enforcement bytes are inert`, () => {
+      root = mkdtempSync(join(tmpdir(), 'crucible-p4-24-git-'));
+      git(root, ['init', '-q', '-b', 'main']);
+      git(root, ['config', 'user.email', 'test@example.com']);
+      git(root, ['config', 'user.name', 'Test']);
+      mkdirSync(join(root, '.crucible'), { recursive: true });
+      mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+      writeFileSync(join(root, 'crucible.yaml'), 'base-config\n');
+      writeFileSync(
+        join(root, '.crucible', 'framework.lock.json'),
+        '{"version":1,"repository":"owner/framework","commit":"0123456789abcdef0123456789abcdef01234567"}\n',
+      );
+      writeFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'base-workflow\n');
+      writeFileSync(join(root, '.github', 'workflows', 'crucible-review.yml'), 'base-review\n');
+      git(root, ['add', '.']);
+      git(root, ['commit', '-qm', 'base']);
+      const base = git(root, ['rev-parse', 'HEAD']);
+      const origin = join(root, 'origin.git');
+      execFileSync('git', ['clone', '--bare', root, origin], { stdio: 'ignore' });
+      git(root, ['remote', 'add', 'origin', origin]);
+      git(root, ['checkout', '-qb', 'candidate']);
+      writeFileSync(join(root, 'crucible.yaml'), 'hostile-config\n');
+      writeFileSync(join(root, '.crucible', 'framework.lock.json'), '{"version":999}\n');
+      writeFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'hostile-workflow\n');
+      git(root, ['add', '.']);
+      git(root, ['commit', '-qm', 'candidate']);
+      const head = git(root, ['rev-parse', 'HEAD']);
+      const output = join(root, 'github-output');
+      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find(
+        (candidate) => candidate.id === 'target',
+      )?.run;
+      if (!run) throw new Error('missing target bootstrap');
+      const script = run
+        .replaceAll('${{ github.event.pull_request.base.sha }}', base)
+        .replaceAll('${{ github.event.pull_request.head.sha }}', head);
+      execFileSync('bash', ['-c', script], {
+        cwd: root,
+        env: { ...process.env, RUNNER_TEMP: join(root, 'tmp'), GITHUB_OUTPUT: output },
+        stdio: 'pipe',
+      });
+      const minted = outputs(readFileSync(output, 'utf8'));
+      const snapshot = minted.snapshot;
+      if (snapshot === undefined) throw new Error('bootstrap did not emit snapshot');
+      expect(readFileSync(join(snapshot, 'crucible.yaml'), 'utf8')).toBe('base-config\n');
+      expect(readFileSync(join(snapshot, '.crucible', 'framework.lock.json'), 'utf8')).toContain('"version":1');
+      expect(readFileSync(join(snapshot, '.github', 'workflows', 'crucible.yml'), 'utf8')).toBe('base-workflow\n');
+      expect(readFileSync(join(snapshot, '.github', 'workflows', 'crucible-review.yml'), 'utf8')).toBe('base-review\n');
+      expect(minted).toMatchObject({ base_sha: base, head_sha: head, repository: 'owner/framework' });
     });
   }
 });
