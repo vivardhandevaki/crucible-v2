@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import type { Command } from 'commander';
 import { loadEnforcementConfig, resolveEnforcementRoot } from '../config/enforcement.js';
 import { invalidInputError } from '../util/errors.js';
 import { classifyCiAuthority } from './ci-authority.js';
+import { serializeCiAuthorityManifest } from './ci-authority-manifest.js';
 
 /** Register CI-only authority classification. It is intentionally separate from
  * local verify/route so CI cannot inherit their pre-approval convenience path. */
@@ -14,19 +15,40 @@ export function registerCi(program: Command): void {
       '--changed-paths <file>',
       'NUL-delimited changed paths produced by the workflow',
     )
-    .action((opts: { changedPaths: string }) => {
-      const headRoot = process.cwd();
-      const baseRoot = resolveEnforcementRoot(program.opts().configFrom, headRoot);
-      const result = classifyCiAuthority({
-        baseRoot,
-        headRoot,
-        config: loadEnforcementConfig(baseRoot),
-        changedPaths: readChangedPaths(opts.changedPaths),
-      });
-      process.stdout.write(
-        program.opts().json === true ? JSON.stringify(result) + '\n' : result.lane + '\n',
-      );
-    });
+    .requiredOption('--base-sha <sha>', 'exact event base commit SHA')
+    .requiredOption('--head-sha <sha>', 'exact event head commit SHA')
+    .requiredOption('--snapshot-hash <sha256>', 'sha256 of the target snapshot bytes')
+    .requiredOption('--manifest-out <file>', 'caller-minted authority manifest output path')
+    .action(
+      (opts: {
+        changedPaths: string;
+        baseSha: string;
+        headSha: string;
+        snapshotHash: string;
+        manifestOut: string;
+      }) => {
+        const headRoot = process.cwd();
+        const baseRoot = resolveEnforcementRoot(program.opts().configFrom, headRoot);
+        const result = classifyCiAuthority({
+          baseRoot,
+          headRoot,
+          config: loadEnforcementConfig(baseRoot),
+          changedPaths: readChangedPaths(opts.changedPaths),
+        });
+        const manifest = {
+          version: 1 as const,
+          lane: result.lane,
+          changes: result.changes,
+          base_sha: opts.baseSha,
+          head_sha: opts.headSha,
+          snapshot_hash: opts.snapshotHash,
+        };
+        writeFileSync(opts.manifestOut, serializeCiAuthorityManifest(manifest), 'utf8');
+        process.stdout.write(
+          program.opts().json === true ? JSON.stringify(manifest) + '\n' : manifest.lane + '\n',
+        );
+      },
+    );
 }
 
 /** Strict NUL-only transport: newline splitting silently corrupts legal Git paths. */
