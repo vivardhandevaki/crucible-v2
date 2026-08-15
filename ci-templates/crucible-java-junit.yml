@@ -119,19 +119,35 @@ jobs:
         id: verify
         run: >-
           set -euo pipefail
-                    HANDOFF="$RUNNER_TEMP/crucible-authority"
-                    MANIFEST="$HANDOFF/authority.json"
-                    SNAPSHOT="$HANDOFF/snapshot"
-                    lane="$(jq -r .lane "$MANIFEST")"
-                    if [ "$lane" != "governed" ]; then
-                      echo "Authority lane $lane has no candidate oracle execution."
-                      exit 0
-                    fi
-                    jq -r '.changes[]' "$MANIFEST" | while IFS= read -r change; do
-                      echo "::group::crucible ci verify $change"
-                      node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$SNAPSHOT" ci verify "$change" --manifest "$MANIFEST"
-                      echo "::endgroup::"
-                    done
+
+          HANDOFF="$RUNNER_TEMP/crucible-authority"
+
+          MANIFEST="$HANDOFF/authority.json"
+
+          SNAPSHOT="$HANDOFF/snapshot"
+
+          lane="$(jq -r .lane "$MANIFEST")"
+
+          case "$lane" in
+
+          governed)
+            jq -r '.changes[]' "$MANIFEST" | while IFS= read -r change; do
+              echo "::group::crucible ci verify $change"
+              node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$SNAPSHOT" ci verify "$change" --manifest "$MANIFEST"
+              echo "::endgroup::"
+            done
+            ;;
+          archive)
+            node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$SNAPSHOT" ci verify --manifest "$MANIFEST"
+            ;;
+          framework-bootstrap|authority-finalization)
+            echo "Authority lane $lane has no candidate oracle execution."
+            ;;
+          *)
+            echo "Unknown authority lane: $lane" >&2
+            exit 1
+            ;;
+          esac
     needs: authority
 
   # Credential-separated authority: this job reads candidate bytes as data and

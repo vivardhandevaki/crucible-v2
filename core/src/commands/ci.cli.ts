@@ -11,6 +11,7 @@ import { aggregateRoute, routeDecision } from './route-decision.js';
 import { loadEnforcementConfig, resolveEnforcementRoot } from '../config/enforcement.js';
 import { invalidInputError } from '../util/errors.js';
 import { classifyCiAuthority } from './ci-authority.js';
+import { verifyCiArchiveRegression } from './ci-archive-regression.js';
 
 /** Register CI-only authority classification. It is intentionally separate from
  * local verify/route so CI cannot inherit their pre-approval convenience path. */
@@ -59,18 +60,38 @@ export function registerCi(program: Command): void {
 
   ci.command('verify')
     .description('Verify a manifest-authorized governed change in CI')
-    .argument('<change>', 'manifest-authorized change name')
+    .argument('[change]', 'manifest-authorized governed change name')
     .requiredOption('--manifest <file>', 'strict authority manifest minted by ci authority')
-    .action(async (change: string, opts: { manifest: string }) => {
+    .action(async (change: string | undefined, opts: { manifest: string }) => {
       const root = process.cwd();
       const configRoot = resolveEnforcementRoot(program.opts().configFrom, root);
       const manifest = parseCiAuthorityManifest(readFileSync(opts.manifest, 'utf8'), opts.manifest);
-      assertCiVerificationAuthority(root, manifest, change);
-      const report = await verify(
-        { root, change, config: loadEnforcementConfig(configRoot) },
-        liveDeps(root, manifest.base_sha, { change, withReview: false }),
-      );
-      assertCiVerificationAuthority(root, manifest, change);
+      const deps = liveDeps(root, manifest.base_sha, {
+        change: change ?? 'archive',
+        withReview: false,
+      });
+      let report;
+      if (manifest.lane === 'archive') {
+        if (change !== undefined) {
+          throw invalidInputError(
+            'CI_ARCHIVE_CHANGE_FORBIDDEN',
+            'Archive CI verification runs the registered regression suite and takes no active change name.',
+            'Invoke ci verify with only the authority manifest for an archive lane.',
+          );
+        }
+        report = await verifyCiArchiveRegression(root, deps);
+      } else {
+        if (change === undefined) {
+          throw invalidInputError(
+            'CI_CHANGE_REQUIRED',
+            'A governed CI authority manifest requires a named change.',
+            'Pass the exact manifest-authorized change name.',
+          );
+        }
+        assertCiVerificationAuthority(root, manifest, change);
+        report = await verify({ root, change, config: loadEnforcementConfig(configRoot) }, deps);
+        assertCiVerificationAuthority(root, manifest, change);
+      }
       process.stdout.write(
         program.opts().json === true ? JSON.stringify(report) + '\n' : renderReport(report) + '\n',
       );
