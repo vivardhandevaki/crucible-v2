@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TOY_REPO_ROOT } from '@crucible/fixtures';
@@ -51,6 +51,24 @@ describe('frameworkUpgrade — restricted pin transaction (P4-25)', () => {
       }),
     ).toThrow(/tracked-clean/i);
     expect(readFileSync(join(root, '.crucible', 'framework.lock.json'), 'utf8')).toContain(OLD);
+  });
+
+  it('refuses an unchanged pin before it rewrites managed workflow bytes', () => {
+    mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+    writeFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'old workflow\n');
+    const beforeWorkflow = readFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'utf8');
+
+    expect(() =>
+      frameworkUpgrade({
+        root,
+        pin: { version: 1, repository: 'owner/crucible', commit: OLD },
+        trackedDirty: false,
+      }),
+    ).toThrow(/new immutable framework pin/i);
+
+    expect(readFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'utf8')).toBe(
+      beforeWorkflow,
+    );
   });
 
   it('refuses when an active approval seals the current framework lock', () => {
