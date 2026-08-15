@@ -53,7 +53,9 @@ export function renderCiTemplateForAdapter(
     /\n {2}# Re-run when a review is submitted\/dismissed so `route` re-checks approval and\n {2}# the required check flips green the moment a non-author approves\.\n {2}pull_request_review:\n/,
     '\n',
   );
-  const routeStart = withoutReviewTrigger.indexOf('\n  # The second required check.');
+  // P4-24 deliberately replaced the old route-job prose with a
+  // credential-separation comment. The YAML key is the stable managed boundary.
+  const routeStart = withoutReviewTrigger.indexOf('\n  route:');
   if (routeStart < 0) {
     throw new Error('Shipped Crucible workflow is missing its required route job.');
   }
