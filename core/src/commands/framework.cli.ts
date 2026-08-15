@@ -13,7 +13,11 @@ export function registerFramework(program: Command): void {
     .command('upgrade')
     .description('Refresh only the framework pin and managed workflows')
     .requiredOption('--source <owner/repository@sha>', 'candidate immutable framework source')
-    .action((opts: { source: string }) => {
+    .option(
+      '--acknowledge-legacy-bootstrap',
+      'acknowledge the one non-authoritative legacy bridge and its manual merge procedure',
+    )
+    .action((opts: { source: string; acknowledgeLegacyBootstrap?: boolean }) => {
       const root = process.cwd();
       const pin = parseFrameworkSource(opts.source);
       assertFrameworkSourceReachable(pin, liveLsRemote);
@@ -21,6 +25,7 @@ export function registerFramework(program: Command): void {
         root,
         pin,
         trackedDirty: trackedDirty(root),
+        ...(opts.acknowledgeLegacyBootstrap === true ? { acknowledgeLegacyBootstrap: true } : {}),
       });
       if (program.opts().json === true) {
         process.stdout.write(JSON.stringify(report) + '\n');
@@ -28,6 +33,8 @@ export function registerFramework(program: Command): void {
       }
       for (const action of report.actions)
         process.stdout.write(action.kind + '  ' + action.relpath + '\n');
+      for (const instruction of report.operatorInstructions ?? [])
+        process.stdout.write('! ' + instruction + '\n');
       process.stdout.write(
         'Framework upgrade is staged. Review the exact allowlisted diff before opening a PR.\n',
       );

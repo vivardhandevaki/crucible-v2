@@ -63,14 +63,55 @@ export function renderCiTemplateForAdapter(
 }
 
 /** Render the one-time P4-25 bridge for a legacy pull_request-only target.
- * The final workflow remains target-owned only after this bridge has merged. */
+ * The pull_request half is deliberately non-authoritative: the target cannot
+ * yet execute P4-25 authority. Target-owned authority starts only after this
+ * exact bridge is merged and finalization is judged by pull_request_target. */
 export function renderAuthorityTransitionTemplateForAdapter(
   adapter: string,
   humanReviewMode: 'advisory' | 'required',
 ): string {
   const finalWorkflow = renderCiTemplateForAdapter(adapter, humanReviewMode);
-  const marker = 'on:\n  pull_request_target:';
+  const n = String.fromCharCode(10);
+  const marker = 'on:' + n + '  pull_request_target:';
   if (!finalWorkflow.includes(marker))
     throw new Error('Final managed workflow lacks pull_request_target.');
-  return finalWorkflow.replace(marker, 'on:\n  pull_request:\n  pull_request_target:');
+  const targetEvent = "${{ github.event_name != 'pull_request' }}";
+  const legacyEvent = "${{ github.event_name == 'pull_request' }}";
+  let bridge = finalWorkflow.replace(
+    marker,
+    'on:' + n + '  pull_request:' + n + '  pull_request_target:',
+  );
+  for (const job of ['authority', 'verify', 'route']) {
+    const jobMarker = n + '  ' + job + ':' + n;
+    if (!bridge.includes(jobMarker))
+      throw new Error('Final managed workflow is missing required job: ' + job + '.');
+    bridge = bridge.replace(jobMarker, n + '  ' + job + ':' + n + '    if: ' + targetEvent + n);
+  }
+  return (
+    bridge +
+    n +
+    '  legacy-bootstrap:' +
+    n +
+    '    if: ' +
+    legacyEvent +
+    n +
+    '    runs-on: ubuntu-latest' +
+    n +
+    '    permissions:' +
+    n +
+    '      contents: read' +
+    n +
+    '    steps:' +
+    n +
+    '      - name: Manual legacy bootstrap acknowledgement' +
+    n +
+    '        run: |' +
+    n +
+    '          set -euo pipefail' +
+    n +
+    '          echo Legacy bootstrap requires manual bootstrap acknowledgement.' +
+    n +
+    '          echo This candidate-owned job is not a Crucible enforcement gate.' +
+    n
+  );
 }

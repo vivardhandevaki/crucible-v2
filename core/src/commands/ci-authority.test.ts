@@ -1,7 +1,11 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CI_REVIEW_TEMPLATE_PATH, renderCiTemplateForAdapter } from '@crucible/ci-templates';
+import {
+  CI_REVIEW_TEMPLATE_PATH,
+  renderAuthorityTransitionTemplateForAdapter,
+  renderCiTemplateForAdapter,
+} from '@crucible/ci-templates';
 import { TOY_REPO_ROOT } from '@crucible/fixtures';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { sealBundle, serializeApproval } from '../artifacts/approval.js';
@@ -64,10 +68,18 @@ describe('classifyCiAuthority — fail-closed PR authority lanes (P4-25)', () =>
     const workflow = join('.github', 'workflows', 'crucible.yml');
     mkdirSync(join(base, '.github', 'workflows'), { recursive: true });
     mkdirSync(join(head, '.github', 'workflows'), { recursive: true });
-    writeFileSync(join(base, workflow), 'on:\n  pull_request:\n  pull_request_target:\n');
+    writeFileSync(
+      join(base, workflow),
+      renderAuthorityTransitionTemplateForAdapter('stub', 'required'),
+    );
     writeFileSync(join(head, workflow), renderCiTemplateForAdapter('stub', 'required'));
 
     expect(classify([workflow])).toEqual({ lane: 'authority-finalization', changes: [] });
+    writeFileSync(
+      join(base, workflow),
+      renderAuthorityTransitionTemplateForAdapter('stub', 'required') + '# drift\n',
+    );
+    expect(() => classify([workflow])).toThrow(/exact dual-trigger/i);
     writeFileSync(join(base, workflow), 'on:\n  pull_request:\n');
     expect(() => classify([workflow])).toThrow(/transition/i);
   });

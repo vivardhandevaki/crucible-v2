@@ -56,7 +56,15 @@
         },
         {
           "file": "core/src/commands/framework-upgrade.test.ts",
-          "title": "finalizes a previously staged authority transition with the exact final workflow"
+          "title": "finalizes only an exact merged bootstrap bridge at the same pin"
+        },
+        {
+          "file": "core/src/commands/framework-upgrade.test.ts",
+          "title": "stages the exact acknowledged legacy bootstrap bridge"
+        },
+        {
+          "file": "core/src/commands/framework-upgrade.test.ts",
+          "title": "refuses to repin an unmerged legacy bootstrap bridge"
         }
       ]
     },
