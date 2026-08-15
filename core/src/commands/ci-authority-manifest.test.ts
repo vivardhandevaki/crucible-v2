@@ -18,10 +18,7 @@ describe('CI authority manifest — strict handoff', () => {
       parseCiAuthorityManifest(text.replace('}', ',"extra":true}'), 'manifest.json'),
     ).toThrow(/invalid/i);
     expect(() =>
-      parseCiAuthorityManifest(
-        text.replace('\"base_sha\":\"111', '\"base_sha\":\"XYZ'),
-        'manifest.json',
-      ),
+      parseCiAuthorityManifest(text.replace('"base_sha":"111', '"base_sha":"XYZ'), 'manifest.json'),
     ).toThrow(/invalid/i);
   });
 
