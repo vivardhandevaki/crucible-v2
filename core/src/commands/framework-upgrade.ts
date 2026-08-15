@@ -16,6 +16,8 @@ export interface FrameworkUpgradeOptions {
   pin: FrameworkPin;
   /** Injected Git edge: callers must reject tracked dirt before this transaction. */
   trackedDirty: boolean;
+  /** Test seam for a mid-transaction filesystem failure. */
+  writeFile?: (path: string, content: string) => void;
 }
 
 export interface FrameworkUpgradeAction {
@@ -85,17 +87,36 @@ export function frameworkUpgrade(options: FrameworkUpgradeOptions): FrameworkUpg
     actions.push({ relpath: '.github/workflows/crucible-review.yml', kind: 'removed' });
   }
 
-  // Compute every desired action before mutating the worktree. The only writes
-  // below are the explicit allowlist established above.
-  for (const [relpath, content] of desired) {
+  // Snapshot every allowlisted byte before mutation. If any write/removal fails,
+  // restore the complete pre-transaction state rather than leaving a new pin with
+  // an old workflow (or vice versa).
+  const originals = new Map<string, string | undefined>();
+  for (const relpath of new Set([...desired.keys(), '.github/workflows/crucible-review.yml'])) {
     const path = join(options.root, relpath);
-    mkdirSync(join(options.root, relpath, '..'), { recursive: true });
-    writeFileSync(path, content, 'utf8');
+    originals.set(relpath, existsSync(path) ? readFileSync(path, 'utf8') : undefined);
   }
-  if (ciReviewMode(config) === 'advisory' && existsSync(reviewPath)) {
-    // The only removal in the transaction: the managed optional reviewer workflow.
-    // It is intentionally deferred until all writes were prepared.
-    rmSync(reviewPath);
+  try {
+    for (const [relpath, content] of desired) {
+      const path = join(options.root, relpath);
+      mkdirSync(join(options.root, relpath, '..'), { recursive: true });
+      writeUpgradeFile(options, path, content);
+    }
+    if (ciReviewMode(config) === 'advisory' && existsSync(reviewPath)) rmSync(reviewPath);
+  } catch (cause) {
+    for (const [relpath, original] of originals) {
+      const path = join(options.root, relpath);
+      if (original === undefined) {
+        if (existsSync(path)) rmSync(path, { force: true });
+      } else {
+        mkdirSync(join(options.root, relpath, '..'), { recursive: true });
+        writeFileSync(path, original, 'utf8');
+      }
+    }
+    throw preconditionError(
+      'FRAMEWORK_UPGRADE_TRANSACTION_FAILED',
+      'Framework upgrade could not write its complete allowlisted transaction and was rolled back.',
+      'Repair the managed workflow path and retry from a tracked-clean worktree.',
+    );
   }
 
   return { actions };
@@ -116,4 +137,12 @@ function refuseActiveLockSeal(root: string): void {
       );
     }
   }
+}
+
+function writeUpgradeFile(options: FrameworkUpgradeOptions, path: string, content: string): void {
+  if (options.writeFile) {
+    options.writeFile(path, content);
+    return;
+  }
+  writeFileSync(path, content, 'utf8');
 }

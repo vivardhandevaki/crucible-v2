@@ -53,6 +53,24 @@ describe('frameworkUpgrade — restricted pin transaction (P4-25)', () => {
     expect(readFileSync(join(root, '.crucible', 'framework.lock.json'), 'utf8')).toContain(OLD);
   });
 
+  it('rolls back an earlier pin write when a later managed workflow write fails', () => {
+    let writes = 0;
+    expect(() =>
+      frameworkUpgrade({
+        root,
+        pin: { version: 1, repository: 'owner/crucible', commit: NEXT },
+        trackedDirty: false,
+        writeFile: (path, content) => {
+          writes += 1;
+          if (writes === 2) throw new Error('simulated write failure');
+          writeFileSync(path, content, 'utf8');
+        },
+      }),
+    ).toThrow(/rolled back/i);
+
+    expect(readFileSync(join(root, '.crucible', 'framework.lock.json'), 'utf8')).toContain(OLD);
+  });
+
   it('refuses an unchanged pin before it rewrites managed workflow bytes', () => {
     mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
     writeFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'old workflow\n');
