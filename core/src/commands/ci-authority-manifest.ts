@@ -7,7 +7,7 @@ const hash = z.string().regex(/^[0-9a-f]{64}$/);
 const schema = z
   .strictObject({
     version: z.literal(1),
-    lane: z.enum(['governed', 'framework-bootstrap']),
+    lane: z.enum(['governed', 'framework-bootstrap', 'authority-finalization', 'archive']),
     changes: z.array(z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)),
     base_sha: sha,
     head_sha: sha,
@@ -29,10 +29,20 @@ const schema = z
         path: ['changes'],
       });
     }
-    if (value.lane === 'framework-bootstrap' && value.changes.length !== 0) {
+    if (
+      (value.lane === 'framework-bootstrap' || value.lane === 'authority-finalization') &&
+      value.changes.length !== 0
+    ) {
       ctx.addIssue({
         code: 'custom',
-        message: 'framework bootstrap cannot name governed changes',
+        message: 'non-governed bootstrap/finalization lanes cannot name changes',
+        path: ['changes'],
+      });
+    }
+    if (value.lane === 'archive' && value.changes.length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'archive lane requires exactly one change',
         path: ['changes'],
       });
     }

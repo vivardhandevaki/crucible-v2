@@ -60,6 +60,28 @@ describe('classifyCiAuthority — fail-closed PR authority lanes (P4-25)', () =>
     expect(() => classify([FRAMEWORK_PIN_RELPATH])).toThrow(/workflow/i);
   });
 
+  it('accepts only a canonical archive registration backed by the base approval seal', () => {
+    writeApproval(base);
+    const entry = '2026-08-15-' + CHANGE;
+    const archived = join(head, 'openspec', 'changes', 'archive', entry);
+    mkdirSync(join(head, 'openspec', 'changes', 'archive'), { recursive: true });
+    cpSync(join(base, CHANGE_REL), archived, { recursive: true });
+    rmSync(join(head, CHANGE_REL), { recursive: true, force: true });
+    mkdirSync(join(head, 'openspec', 'specs', 'greeting'), { recursive: true });
+    writeFileSync(join(head, 'openspec', 'specs', 'greeting', 'spec.md'), '# merged\n');
+
+    expect(
+      classify([
+        join(CHANGE_REL, 'approval.yaml'),
+        join('openspec', 'changes', 'archive', entry, 'approval.yaml'),
+        join('openspec', 'specs', 'greeting', 'spec.md'),
+      ]),
+    ).toEqual({ lane: 'archive', changes: [CHANGE] });
+    expect(() =>
+      classify([join('openspec', 'changes', 'archive', entry, 'approval.yaml')]),
+    ).toThrow(/archive/i);
+  });
+
   it('rejects direct product edits and mixed bootstrap/governed changes', () => {
     writeApproval(head);
 

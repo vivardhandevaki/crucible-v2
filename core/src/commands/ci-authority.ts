@@ -13,7 +13,8 @@ const FRAMEWORK_PATHS = new Set([
   '.github/workflows/crucible-review.yml',
 ]);
 
-export type CiAuthorityLane = 'governed' | 'framework-bootstrap';
+export type CiAuthorityLane =
+  'governed' | 'framework-bootstrap' | 'authority-finalization' | 'archive';
 
 export interface CiAuthority {
   lane: CiAuthorityLane;
@@ -39,7 +40,23 @@ export interface ClassifyCiAuthorityOptions {
  */
 export function classifyCiAuthority(options: ClassifyCiAuthorityOptions): CiAuthority {
   const paths = canonicalChangedPaths(options.changedPaths);
+  const archives = archivedChanges(paths);
   const changes = activeChanges(paths);
+
+  if (archives.length === 1 && changes.every((change) => change === archives[0]?.change)) {
+    const archive = archives[0];
+    if (archive === undefined) throw new Error('unreachable archive classification');
+    assertArchiveRegistration(options, archive.entry, archive.change, paths);
+    return { lane: 'archive', changes: [archive.change] };
+  }
+
+  if (changes.length > 0 && archives.length > 0) {
+    throw invalidInputError(
+      'MIXED_CI_LANES',
+      'A pull request mixes an active governed bundle with an archive registration.',
+      'Archive the approved change separately from any active governed change.',
+    );
+  }
 
   if (changes.length > 0) {
     if (paths.some((path) => FRAMEWORK_PATHS.has(path))) {
@@ -51,6 +68,14 @@ export function classifyCiAuthority(options: ClassifyCiAuthorityOptions): CiAuth
     }
     for (const change of changes) assertApprovedBundle(options.headRoot, change);
     return { lane: 'governed', changes };
+  }
+
+  if (archives.length > 0) {
+    throw invalidInputError(
+      'MIXED_CI_LANES',
+      'An archive registration must contain exactly one matching active change removal.',
+      'Archive one approved change at a time without unrelated archive entries.',
+    );
   }
 
   if (paths.every((path) => FRAMEWORK_PATHS.has(path)) && paths.includes(FRAMEWORK_PIN_RELPATH)) {
@@ -102,7 +127,7 @@ function canonicalChangedPaths(paths: readonly string[]): string[] {
 function activeChanges(paths: readonly string[]): string[] {
   const changes = new Set<string>();
   for (const path of paths) {
-    if (!path.startsWith(CHANGE_PREFIX)) continue;
+    if (!path.startsWith(CHANGE_PREFIX) || path.startsWith(CHANGE_PREFIX + 'archive/')) continue;
     const remainder = path.slice(CHANGE_PREFIX.length);
     const slash = remainder.indexOf('/');
     const change = slash < 1 ? '' : remainder.slice(0, slash);
@@ -162,6 +187,76 @@ function assertFrameworkBootstrap(options: ClassifyCiAuthorityOptions): void {
       'CI_BOOTSTRAP_WORKFLOW_DRIFT',
       'A framework bootstrap has incongruent managed workflow files: ' + drift.join(', ') + '.',
       'Run init from the candidate pinned framework checkout and commit its managed workflow output.',
+    );
+  }
+}
+
+interface ArchivedChange {
+  entry: string;
+  change: string;
+}
+
+function archivedChanges(paths: readonly string[]): ArchivedChange[] {
+  const found = new Map<string, ArchivedChange>();
+  for (const path of paths) {
+    const match =
+      /^openspec\/changes\/archive\/(\d{4}-\d{2}-\d{2}-([a-z0-9]+(?:-[a-z0-9]+)*))\//.exec(path);
+    if (!match) continue;
+    const entry = match[1];
+    const change = match[2];
+    if (entry === undefined || change === undefined) continue;
+    found.set(entry, { entry, change });
+  }
+  return [...found.values()].sort((a, b) => a.entry.localeCompare(b.entry));
+}
+
+function assertArchiveRegistration(
+  options: ClassifyCiAuthorityOptions,
+  entry: string,
+  change: string,
+  paths: readonly string[],
+): void {
+  const activePrefix = CHANGE_PREFIX + change + '/';
+  const archivePrefix = CHANGE_PREFIX + 'archive/' + entry + '/';
+  if (
+    !paths.some((path) => path.startsWith(activePrefix)) ||
+    !paths.some((path) => path.startsWith(archivePrefix))
+  ) {
+    throw invalidInputError(
+      'CI_ARCHIVE_INCOMPLETE',
+      'An archive registration must remove the active bundle and add its canonical archive entry.',
+      'Run the archive command and commit its complete output.',
+    );
+  }
+  if (
+    paths.some(
+      (path) =>
+        !path.startsWith(activePrefix) &&
+        !path.startsWith(archivePrefix) &&
+        !path.startsWith('openspec/specs/'),
+    )
+  ) {
+    throw invalidInputError(
+      'MIXED_CI_LANES',
+      'An archive registration contains paths outside its active bundle, archive entry, and merged specs.',
+      'Split unrelated changes from the archive registration.',
+    );
+  }
+  const baseApproval = join(options.baseRoot, 'openspec', 'changes', change, 'approval.yaml');
+  const archivedDir = join(options.headRoot, 'openspec', 'changes', 'archive', entry);
+  if (!existsSync(baseApproval) || !existsSync(archivedDir)) {
+    throw preconditionError(
+      'CI_ARCHIVE_APPROVAL_REQUIRED',
+      'An archive registration requires the base active bundle and its canonical archive entry.',
+      'Archive a previously approved change without hand-moving files.',
+    );
+  }
+  const approval = loadApproval(baseApproval);
+  if (approval.change !== change || !verifyApproval(options.baseRoot, approval).valid) {
+    throw preconditionError(
+      'CI_ARCHIVE_APPROVAL_INVALID',
+      'The archived change does not have a valid base approval seal.',
+      'Restore the approved base bundle and archive it through Crucible.',
     );
   }
 }
