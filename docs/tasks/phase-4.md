@@ -307,3 +307,21 @@ Acceptance (write these tests red before production changes):
 - regression tests prove proposal/spec/design/oracle/approval/generation/tasks/bound tests, product code, config, workflows, locks, nested/lookalike state files, and archived non-state files remain fully counted;
 - P4-21 amendment/reseal/reimplementation/fresh-review tests prove audit events remain committed and visible while final diff-cap enforcement ignores only their exact state rows;
 - focused tests plus format, typecheck, lint, build, full suite, deterministic packages, and a worked Notes policy flow pass before resuming the consumer rollout.
+
+**P4-23 · Complete target enforcement snapshot** · Tier: Fable / Sol (target-authority transport design) + Opus / Terra (implementation) · Trigger: Notes PR #18 passed its sealed oracle, fresh local review, and P4-22 local verify, but CI failed `REVIEW_POSTURE_DRIFT` for both managed workflows because `--config-from` contained only target `crucible.yaml` and the framework lock. The target workflow blobs themselves exactly matched the P4-22 templates.
+
+Reads: charter §The Target-Branch Rule, §Configuration & Reviewer Law, P4-16/P4-18/P4-23 amendments; architecture.md §§13, 15, and 19; design/phase-0-1.md §Target-branch rule; design/phase-4-runbook.md §Review posture and local reviewer rollout and §Target enforcement snapshot recovery; P4-16/P4-18 above; AGENTS.md invariants 1–3, 5–8, 11–12; issue ledger P4-021.
+
+Delivers: a complete same-target-commit `--config-from` snapshot containing config, framework lock, required main managed workflow, and exact optional detached-review workflow presence/bytes. It does not read PR workflow bytes, relax congruence, infer policy in shell, synthesize absent checks, authorize a policy PR to repair genuine target drift, alter tier/oracle/seal behavior, or change detached-review execution.
+
+**Decision proposed 2026-08-15; awaiting human ratification:** widen the CI transport contract, not the policy judge. Both shipped verify templates materialize the fixed target snapshot outside the PR tree from one fetched target commit. Required-path, tree-entry, extraction, and Git failures abort before verification; optional review-workflow absence is represented exactly and judged by pinned core.
+
+Acceptance (write these tests red before production changes):
+
+- generic and Java template tests prove the target extraction step materializes `crucible.yaml`, `.crucible/framework.lock.json`, and `.github/workflows/crucible.yml`, plus `.github/workflows/crucible-review.yml` only when that exact target-tree entry exists; every source is the same `origin/$BASE` and every destination is below `RUNNER_TEMP/crucible-target`;
+- structural tests reject any fallback/copy from the PR checkout, policy parsing in shell, synthesized empty workflow, ignored `git show`/tree-query failure, or `continue-on-error`; the required main workflow and framework/config inputs cannot be absent;
+- focused congruence tests cover all four review-mode pairs against complete snapshot roots, byte drift, missing required workflow, unexpected optional workflow, non-regular/malformed entries, and config-only legacy snapshots; every mismatch remains `REVIEW_POSTURE_DRIFT` or an attributable exit-3 extraction error with no partial success;
+- a real-git target-branch test materializes the snapshot from the base commit, proves a PR's config/workflow edits cannot affect it, and shows ordinary verification reaches traceability/oracle checks when target bytes are congruent;
+- a worked consumer regression reproduces the Notes failure with the legacy config-only snapshot, then passes posture preconditions with the complete P4-23 snapshot while retaining target-owned tier/risk/cap computation;
+- init output remains byte-identical for each posture, detached reviewer and route matrices remain exact, doctor/local congruence behavior is unchanged, and P4-16 bootstrap tests prove pin/workflow-only rollout contains no product/config/change-bundle bytes;
+- focused tests plus format, typecheck, lint, build, full suite, template/package determinism, and the isolated Notes pin/workflow rollout pass before restarting the product posture change.
