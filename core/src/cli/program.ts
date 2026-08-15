@@ -20,6 +20,7 @@ import { registerInit } from '../commands/init.cli.js';
 import { registerOverride } from '../commands/override.cli.js';
 import { registerPropose } from '../commands/propose.cli.js';
 import { registerReview } from '../commands/review.cli.js';
+import { registerRoute } from '../commands/route.cli.js';
 import { registerStatus } from '../commands/status.cli.js';
 import { registerSession } from '../commands/session.cli.js';
 import { registerVerify } from '../commands/verify.cli.js';
@@ -90,6 +91,7 @@ export function buildProgram(): Command {
   registerOverride(program);
   registerPropose(program);
   registerReview(program);
+  registerRoute(program);
   registerSession(program);
   registerStatus(program);
   registerVerify(program);
