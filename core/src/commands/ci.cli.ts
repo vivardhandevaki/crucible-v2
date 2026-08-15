@@ -1,9 +1,14 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { Command } from 'commander';
+import { CheckFailure } from '../util/errors.js';
+import { renderReport } from '../verifyx/report.js';
+import { parseCiAuthorityManifest, serializeCiAuthorityManifest } from './ci-authority-manifest.js';
+import { assertCiVerificationAuthority } from './ci-enforcement.js';
+import { liveDeps } from './verify.cli.js';
+import { verify } from './verify.js';
 import { loadEnforcementConfig, resolveEnforcementRoot } from '../config/enforcement.js';
 import { invalidInputError } from '../util/errors.js';
 import { classifyCiAuthority } from './ci-authority.js';
-import { serializeCiAuthorityManifest } from './ci-authority-manifest.js';
 
 /** Register CI-only authority classification. It is intentionally separate from
  * local verify/route so CI cannot inherit their pre-approval convenience path. */
@@ -49,6 +54,26 @@ export function registerCi(program: Command): void {
         );
       },
     );
+
+  ci.command('verify')
+    .description('Verify a manifest-authorized governed change in CI')
+    .argument('<change>', 'manifest-authorized change name')
+    .requiredOption('--manifest <file>', 'strict authority manifest minted by ci authority')
+    .action(async (change: string, opts: { manifest: string }) => {
+      const root = process.cwd();
+      const configRoot = resolveEnforcementRoot(program.opts().configFrom, root);
+      const manifest = parseCiAuthorityManifest(readFileSync(opts.manifest, 'utf8'), opts.manifest);
+      assertCiVerificationAuthority(root, manifest, change);
+      const report = await verify(
+        { root, change, config: loadEnforcementConfig(configRoot) },
+        liveDeps(root, manifest.base_sha, { change, withReview: false }),
+      );
+      assertCiVerificationAuthority(root, manifest, change);
+      process.stdout.write(
+        program.opts().json === true ? JSON.stringify(report) + '\n' : renderReport(report) + '\n',
+      );
+      if (report.verdict === 'fail') throw new CheckFailure();
+    });
 }
 
 /** Strict NUL-only transport: newline splitting silently corrupts legal Git paths. */

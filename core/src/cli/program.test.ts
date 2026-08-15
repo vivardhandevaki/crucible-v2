@@ -41,6 +41,16 @@ describe('buildProgram', () => {
     expect(STUB_VERBS).toEqual([]);
   });
 
+
+  it('CI verify requires an authority manifest at its command boundary', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['ci', 'verify', 'add-greeting'], cap.io);
+
+    expect(code).toBe(2);
+    expect(cap.err()).toContain('--manifest');
+  });
+
+
   it.each(REAL_VERBS)(
     'real verb `%s`: no <change> arg → usage error (exit 2), not stub exit 4',
     async (verb) => {
