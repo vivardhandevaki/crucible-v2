@@ -24,9 +24,13 @@ export function registerRoute(program: Command): void {
       assertReviewPostureCongruence(configRoot, config);
       const facts = computeDiffFacts(root, opts.diffBase);
       const changes = changedBundles(root, opts.diffBase);
-      const routing = aggregateRoute(changes.map((change) => routeDecision(root, change, config, facts)));
+      const routing = aggregateRoute(
+        changes.map((change) => routeDecision(root, change, config, facts)),
+      );
       const result = { changes, routing };
-      process.stdout.write(program.opts().json === true ? JSON.stringify(result) + '\n' : `${routing.decision}\n`);
+      process.stdout.write(
+        program.opts().json === true ? JSON.stringify(result) + '\n' : `${routing.decision}\n`,
+      );
     });
 }
 
@@ -54,11 +58,13 @@ function changedBundles(root: string, base: string): string[] {
       'Ensure git produced complete diff data and retry.',
     );
   }
-  return [...new Set(
-    raw
-      .slice(0, -1)
-      .split('\0')
-      .map((path) => /^openspec\/changes\/([^/]+)\//.exec(path)?.[1])
-      .filter((change): change is string => change !== undefined),
-  )].sort();
+  return [
+    ...new Set(
+      raw
+        .slice(0, -1)
+        .split('\0')
+        .map((path) => /^openspec\/changes\/([^/]+)\//.exec(path)?.[1])
+        .filter((change): change is string => change !== undefined),
+    ),
+  ].sort();
 }

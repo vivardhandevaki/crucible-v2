@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
@@ -39,7 +47,12 @@ function git(root: string, args: string[]): string {
 }
 
 function outputs(text: string): Record<string, string> {
-  return Object.fromEntries(text.trim().split('\n').map((line) => line.split('=')));
+  return Object.fromEntries(
+    text
+      .trim()
+      .split('\n')
+      .map((line) => line.split('=')),
+  );
 }
 
 describe('P4-24 managed CI contract', () => {
@@ -149,10 +162,20 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       const snapshot = minted.snapshot;
       if (snapshot === undefined) throw new Error('bootstrap did not emit snapshot');
       expect(readFileSync(join(snapshot, 'crucible.yaml'), 'utf8')).toBe('base-config\n');
-      expect(readFileSync(join(snapshot, '.crucible', 'framework.lock.json'), 'utf8')).toContain('"version":1');
-      expect(readFileSync(join(snapshot, '.github', 'workflows', 'crucible.yml'), 'utf8')).toBe('base-workflow\n');
-      expect(readFileSync(join(snapshot, '.github', 'workflows', 'crucible-review.yml'), 'utf8')).toBe('base-review\n');
-      expect(minted).toMatchObject({ base_sha: base, head_sha: head, repository: 'owner/framework' });
+      expect(readFileSync(join(snapshot, '.crucible', 'framework.lock.json'), 'utf8')).toContain(
+        '"version":1',
+      );
+      expect(readFileSync(join(snapshot, '.github', 'workflows', 'crucible.yml'), 'utf8')).toBe(
+        'base-workflow\n',
+      );
+      expect(
+        readFileSync(join(snapshot, '.github', 'workflows', 'crucible-review.yml'), 'utf8'),
+      ).toBe('base-review\n');
+      expect(minted).toMatchObject({
+        base_sha: base,
+        head_sha: head,
+        repository: 'owner/framework',
+      });
     });
 
     it(`${label}: malformed target pin aborts before it emits a handoff`, () => {
@@ -198,7 +221,10 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
       writeFileSync(join(root, 'actual-config.yaml'), 'base-config\n');
       symlinkSync('actual-config.yaml', join(root, 'crucible.yaml'));
-      writeFileSync(join(root, '.crucible', 'framework.lock.json'), '{"version":1,"repository":"owner/framework","commit":"0123456789abcdef0123456789abcdef01234567"}\n');
+      writeFileSync(
+        join(root, '.crucible', 'framework.lock.json'),
+        '{"version":1,"repository":"owner/framework","commit":"0123456789abcdef0123456789abcdef01234567"}\n',
+      );
       writeFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'base-workflow\n');
       git(root, ['add', '.']);
       git(root, ['commit', '-qm', 'symlink base config']);
@@ -207,10 +233,20 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       execFileSync('git', ['clone', '--bare', root, origin], { stdio: 'ignore' });
       git(root, ['remote', 'add', 'origin', origin]);
       const output = join(root, 'github-output');
-      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find((candidate) => candidate.id === 'target')?.run;
+      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find(
+        (candidate) => candidate.id === 'target',
+      )?.run;
       if (!run) throw new Error('missing target bootstrap');
-      const script = run.replaceAll('${{ github.event.pull_request.base.sha }}', base).replaceAll('${{ github.event.pull_request.head.sha }}', base);
-      expect(() => execFileSync('bash', ['-c', script], { cwd: root, env: { ...process.env, RUNNER_TEMP: join(root, 'tmp'), GITHUB_OUTPUT: output }, stdio: 'pipe' })).toThrow();
+      const script = run
+        .replaceAll('${{ github.event.pull_request.base.sha }}', base)
+        .replaceAll('${{ github.event.pull_request.head.sha }}', base);
+      expect(() =>
+        execFileSync('bash', ['-c', script], {
+          cwd: root,
+          env: { ...process.env, RUNNER_TEMP: join(root, 'tmp'), GITHUB_OUTPUT: output },
+          stdio: 'pipe',
+        }),
+      ).toThrow();
       expect(existsSync(output)).toBe(false);
     });
 
@@ -221,7 +257,10 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       git(root, ['config', 'user.name', 'Test']);
       mkdirSync(join(root, '.crucible'), { recursive: true });
       writeFileSync(join(root, 'crucible.yaml'), 'base-config\n');
-      writeFileSync(join(root, '.crucible', 'framework.lock.json'), '{"version":1,"repository":"owner/framework","commit":"0123456789abcdef0123456789abcdef01234567"}\n');
+      writeFileSync(
+        join(root, '.crucible', 'framework.lock.json'),
+        '{"version":1,"repository":"owner/framework","commit":"0123456789abcdef0123456789abcdef01234567"}\n',
+      );
       git(root, ['add', '.']);
       git(root, ['commit', '-qm', 'missing main workflow']);
       const base = git(root, ['rev-parse', 'HEAD']);
@@ -230,10 +269,20 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       git(root, ['remote', 'add', 'origin', origin]);
       const output = join(root, 'github-output');
       writeFileSync(output, 'snapshot=/stale\nrepository=stale/repo\n');
-      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find((candidate) => candidate.id === 'target')?.run;
+      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find(
+        (candidate) => candidate.id === 'target',
+      )?.run;
       if (!run) throw new Error('missing target bootstrap');
-      const script = run.replaceAll('${{ github.event.pull_request.base.sha }}', base).replaceAll('${{ github.event.pull_request.head.sha }}', base);
-      expect(() => execFileSync('bash', ['-c', script], { cwd: root, env: { ...process.env, RUNNER_TEMP: join(root, 'tmp'), GITHUB_OUTPUT: output }, stdio: 'pipe' })).toThrow();
+      const script = run
+        .replaceAll('${{ github.event.pull_request.base.sha }}', base)
+        .replaceAll('${{ github.event.pull_request.head.sha }}', base);
+      expect(() =>
+        execFileSync('bash', ['-c', script], {
+          cwd: root,
+          env: { ...process.env, RUNNER_TEMP: join(root, 'tmp'), GITHUB_OUTPUT: output },
+          stdio: 'pipe',
+        }),
+      ).toThrow();
       expect(readFileSync(output, 'utf8')).toBe('snapshot=/stale\nrepository=stale/repo\n');
     });
   }

@@ -33,15 +33,20 @@ export function routeDecision(
   assertTypeConformance(type, gatherTypeFacts(changeDir, oracles));
   const approvalPath = join(changeDir, 'approval.yaml');
   const approval = existsSync(approvalPath) ? loadApproval(approvalPath) : undefined;
-  const tier = computeTier({
-    specDelta: requirements.length > 0,
-    touchedPaths: facts.touchedPaths,
-    diffLines: facts.diffLines,
-    ...(approval?.minimum_tier === undefined ? {} : { forced: approval.minimum_tier }),
-  }, config);
+  const tier = computeTier(
+    {
+      specDelta: requirements.length > 0,
+      touchedPaths: facts.touchedPaths,
+      diffLines: facts.diffLines,
+      ...(approval?.minimum_tier === undefined ? {} : { forced: approval.minimum_tier }),
+    },
+    config,
+  );
   if (approval !== undefined) {
     const checked = verifyApproval(root, approval, {
-      ...(tier.tier === 'critical' ? { criticalOracleIds: oracles.map((oracle) => oracle.id) } : {}),
+      ...(tier.tier === 'critical'
+        ? { criticalOracleIds: oracles.map((oracle) => oracle.id) }
+        : {}),
     });
     if (!checked.valid) {
       throw preconditionError(
@@ -63,8 +68,10 @@ export function routeDecision(
 
 /** Aggregate a PR: one human-routed change makes the entire PR human-routed. */
 export function aggregateRoute(decisions: readonly RoutingDecision[]): RoutingDecision {
-  return decisions.find((decision) => decision.decision === 'human') ?? {
-    decision: 'auto',
-    reasons: ['all governed changes are trivial or standard'],
-  };
+  return (
+    decisions.find((decision) => decision.decision === 'human') ?? {
+      decision: 'auto',
+      reasons: ['all governed changes are trivial or standard'],
+    }
+  );
 }
