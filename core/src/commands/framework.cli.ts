@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import type { Command } from 'commander';
-import { parseFrameworkSource } from '../framework/pin.js';
+import { parseFrameworkSource, type FrameworkPin } from '../framework/pin.js';
 import { frameworkUpgrade } from './framework-upgrade.js';
 import { invalidInputError } from '../util/errors.js';
 
@@ -15,9 +15,11 @@ export function registerFramework(program: Command): void {
     .requiredOption('--source <owner/repository@sha>', 'candidate immutable framework source')
     .action((opts: { source: string }) => {
       const root = process.cwd();
+      const pin = parseFrameworkSource(opts.source);
+      assertFrameworkSourceReachable(pin, liveLsRemote);
       const report = frameworkUpgrade({
         root,
-        pin: parseFrameworkSource(opts.source),
+        pin,
         trackedDirty: trackedDirty(root),
       });
       if (program.opts().json === true) {
@@ -52,4 +54,35 @@ function trackedDirty(root: string): boolean {
 
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+export function assertFrameworkSourceReachable(
+  pin: FrameworkPin,
+  lsRemote: (repository: string) => string,
+): void {
+  let output: string;
+  try {
+    output = lsRemote(pin.repository);
+  } catch (cause) {
+    throw invalidInputError(
+      'FRAMEWORK_SOURCE_UNREACHABLE',
+      'Could not reach the requested framework source: ' + messageOf(cause),
+      'Verify the repository and immutable commit are reachable, then retry.',
+    );
+  }
+  const found = output.split(/\r?\n/).some((line) => line.split('\t')[0] === pin.commit);
+  if (!found) {
+    throw invalidInputError(
+      'FRAMEWORK_SOURCE_COMMIT_UNREACHABLE',
+      'The requested framework commit is not advertised by ' + pin.repository + '.',
+      'Use a reachable immutable commit from the requested framework repository.',
+    );
+  }
+}
+
+function liveLsRemote(repository: string): string {
+  return execFileSync('git', ['ls-remote', 'https://github.com/' + repository + '.git'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 }
