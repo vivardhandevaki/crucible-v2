@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { TOY_REPO_ROOT } from '@crucible/fixtures';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isCrucibleError } from '../util/errors.js';
+import { buildOverride, serializeOverride } from '../artifacts/override.js';
 import { loadEnforcementConfig } from '../config/enforcement.js';
 import { aggregateRoute, routeDecision } from './route-decision.js';
 
@@ -49,6 +50,33 @@ describe('routeDecision — deterministic, non-executing routing', () => {
         diffLines: 10,
       }),
     ).toThrow(/override\.yaml invalid/);
+  });
+  it('rejects an override when target-branch human review is advisory', () => {
+    writeFileSync(
+      join(root, 'crucible.yaml'),
+      'risk:\n  critical: []\n  exempt: []\ntiers:\n  trivial: { diff_cap: 150 }\n  standard: { diff_cap: 400 }\n  critical: { diff_cap: 400, mutation: blocking }\ntrajectory:\n  require_local_verify: true\n  iteration_budget: 12\naudit:\n  sample_rate: 0.1\nreview:\n  ci_mode: advisory\n  human_mode: advisory\n',
+      'utf8',
+    );
+    writeFileSync(
+      join(root, 'openspec', 'changes', CHANGE, 'override.yaml'),
+      serializeOverride(
+        buildOverride({
+          version: 1,
+          change: CHANGE,
+          reason: 'emergency',
+          created_by: 'ada@example.com',
+          created_at: '2026-08-15T00:00:00Z',
+        }),
+      ),
+      'utf8',
+    );
+
+    expect(() =>
+      routeDecision(root, CHANGE, loadEnforcementConfig(root), {
+        touchedPaths: ['src/greeting.ts'],
+        diffLines: 10,
+      }),
+    ).toThrow(/independent human review.*required/i);
   });
 
   it('aggregates human when any governed change needs it', () => {
