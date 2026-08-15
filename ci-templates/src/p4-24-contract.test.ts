@@ -213,5 +213,28 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       expect(() => execFileSync('bash', ['-c', script], { cwd: root, env: { ...process.env, RUNNER_TEMP: join(root, 'tmp'), GITHUB_OUTPUT: output }, stdio: 'pipe' })).toThrow();
       expect(existsSync(output)).toBe(false);
     });
+
+    it(`${label}: missing required target workflow cannot reuse stale handoff output`, () => {
+      root = mkdtempSync(join(tmpdir(), 'crucible-p4-24-missing-'));
+      git(root, ['init', '-q', '-b', 'main']);
+      git(root, ['config', 'user.email', 'test@example.com']);
+      git(root, ['config', 'user.name', 'Test']);
+      mkdirSync(join(root, '.crucible'), { recursive: true });
+      writeFileSync(join(root, 'crucible.yaml'), 'base-config\n');
+      writeFileSync(join(root, '.crucible', 'framework.lock.json'), '{"version":1,"repository":"owner/framework","commit":"0123456789abcdef0123456789abcdef01234567"}\n');
+      git(root, ['add', '.']);
+      git(root, ['commit', '-qm', 'missing main workflow']);
+      const base = git(root, ['rev-parse', 'HEAD']);
+      const origin = join(root, 'origin.git');
+      execFileSync('git', ['clone', '--bare', root, origin], { stdio: 'ignore' });
+      git(root, ['remote', 'add', 'origin', origin]);
+      const output = join(root, 'github-output');
+      writeFileSync(output, 'snapshot=/stale\nrepository=stale/repo\n');
+      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find((candidate) => candidate.id === 'target')?.run;
+      if (!run) throw new Error('missing target bootstrap');
+      const script = run.replaceAll('${{ github.event.pull_request.base.sha }}', base).replaceAll('${{ github.event.pull_request.head.sha }}', base);
+      expect(() => execFileSync('bash', ['-c', script], { cwd: root, env: { ...process.env, RUNNER_TEMP: join(root, 'tmp'), GITHUB_OUTPUT: output }, stdio: 'pipe' })).toThrow();
+      expect(readFileSync(output, 'utf8')).toBe('snapshot=/stale\nrepository=stale/repo\n');
+    });
   }
 });
