@@ -1,6 +1,10 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CI_REVIEW_TEMPLATE_PATH, renderCiTemplateForAdapter } from '@crucible/ci-templates';
+import {
+  CI_REVIEW_TEMPLATE_PATH,
+  renderAuthorityTransitionTemplateForAdapter,
+  renderCiTemplateForAdapter,
+} from '@crucible/ci-templates';
 import { loadApproval } from '../artifacts/approval.js';
 import { ciReviewMode, humanReviewMode, loadEnforcementConfig } from '../config/enforcement.js';
 import {
@@ -27,6 +31,7 @@ export interface FrameworkUpgradeAction {
 
 export interface FrameworkUpgradeReport {
   actions: FrameworkUpgradeAction[];
+  phase: 'ordinary' | 'authority-transition' | 'authority-finalization';
 }
 
 /**
@@ -60,11 +65,28 @@ export function frameworkUpgrade(options: FrameworkUpgradeOptions): FrameworkUpg
     );
   }
 
+  const mainWorkflowPath = join(options.root, '.github/workflows/crucible.yml');
+  const currentWorkflow = existsSync(mainWorkflowPath)
+    ? readFileSync(mainWorkflowPath, 'utf8')
+    : '';
+  const legacyPullRequestOnly =
+    currentWorkflow.includes('  pull_request:') &&
+    !currentWorkflow.includes('  pull_request_target:');
+  const transitionWorkflow =
+    currentWorkflow.includes('  pull_request:') &&
+    currentWorkflow.includes('  pull_request_target:');
+  const phase = legacyPullRequestOnly
+    ? 'authority-transition'
+    : transitionWorkflow
+      ? 'authority-finalization'
+      : 'ordinary';
   const desired = new Map<string, string>([
     [FRAMEWORK_PIN_RELPATH, serializeFrameworkPin(options.pin)],
     [
       '.github/workflows/crucible.yml',
-      renderCiTemplateForAdapter(adapter, humanReviewMode(config)),
+      legacyPullRequestOnly
+        ? renderAuthorityTransitionTemplateForAdapter(adapter, humanReviewMode(config))
+        : renderCiTemplateForAdapter(adapter, humanReviewMode(config)),
     ],
   ]);
   if (ciReviewMode(config) === 'required') {
@@ -119,7 +141,7 @@ export function frameworkUpgrade(options: FrameworkUpgradeOptions): FrameworkUpg
     );
   }
 
-  return { actions };
+  return { actions, phase };
 }
 
 function refuseActiveLockSeal(root: string): void {

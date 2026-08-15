@@ -42,6 +42,21 @@ describe('frameworkUpgrade — restricted pin transaction (P4-25)', () => {
     expect(readFileSync(join(root, '.crucible', 'framework.lock.json'), 'utf8')).toContain(NEXT);
   });
 
+  it('emits the dual-trigger authority transition before finalization for a legacy target', () => {
+    mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+    writeFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'on:\n  pull_request:\n');
+
+    const transition = frameworkUpgrade({
+      root,
+      pin: { version: 1, repository: 'owner/crucible', commit: NEXT },
+      trackedDirty: false,
+    });
+    expect(transition.phase).toBe('authority-transition');
+    expect(readFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'utf8')).toContain(
+      '  pull_request:\n  pull_request_target:',
+    );
+  });
+
   it('refuses tracked dirt before it writes anything', () => {
     expect(() =>
       frameworkUpgrade({

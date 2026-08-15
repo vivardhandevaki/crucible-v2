@@ -61,3 +61,16 @@ export function renderCiTemplateForAdapter(
   }
   return withoutReviewTrigger.slice(0, routeStart).replace(/\s*$/, '\n');
 }
+
+/** Render the one-time P4-25 bridge for a legacy pull_request-only target.
+ * The final workflow remains target-owned only after this bridge has merged. */
+export function renderAuthorityTransitionTemplateForAdapter(
+  adapter: string,
+  humanReviewMode: 'advisory' | 'required',
+): string {
+  const finalWorkflow = renderCiTemplateForAdapter(adapter, humanReviewMode);
+  const marker = 'on:\n  pull_request_target:';
+  if (!finalWorkflow.includes(marker))
+    throw new Error('Final managed workflow lacks pull_request_target.');
+  return finalWorkflow.replace(marker, 'on:\n  pull_request:\n  pull_request_target:');
+}
