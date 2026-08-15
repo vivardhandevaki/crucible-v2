@@ -6,7 +6,7 @@ import { CI_TEMPLATE_PATH, JAVA_JUNIT_CI_TEMPLATE_PATH } from './index.js';
 interface Job {
   needs?: string | string[];
   permissions?: Record<string, string>;
-  steps?: Array<{ name?: string; run?: string }>;
+  steps?: Array<{ name?: string; run?: string; with?: Record<string, unknown> }>;
 }
 interface Workflow {
   jobs?: Record<string, Job>;
@@ -33,6 +33,14 @@ describe('P4-25 authority workflow contract', () => {
       expect(authorityRun).toContain('ci authority');
       expect(authorityRun).toContain('git cat-file -e');
       expect(authorityRun).not.toContain('origin "$BASE_SHA" "$HEAD_SHA"');
+      const frameworkCheckout = (authority?.steps ?? []).find(
+        (step) => step.name === 'Checkout pinned Crucible framework',
+      );
+      expect(frameworkCheckout?.with).toMatchObject({
+        repository: '${{ steps.target.outputs.repository }}',
+        ref: '${{ steps.target.outputs.commit }}',
+      });
+      expect(JSON.stringify(frameworkCheckout?.with)).not.toContain('needs.authority.outputs');
       expect(
         (authority?.steps ?? []).some((step) => step.name === 'Upload authority handoff'),
       ).toBe(true);

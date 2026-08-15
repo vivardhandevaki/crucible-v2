@@ -303,8 +303,8 @@ jobs:
       - name: Checkout pinned Crucible framework
         uses: actions/checkout@v4
         with:
-          repository: ${{ needs.authority.outputs.repository }}
-          ref: ${{ needs.authority.outputs.commit }}
+          repository: ${{ steps.target.outputs.repository }}
+          ref: ${{ steps.target.outputs.commit }}
           path: crucible-framework
           persist-credentials: false
       - name: Build pinned Crucible framework
