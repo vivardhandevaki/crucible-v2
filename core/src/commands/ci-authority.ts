@@ -1,10 +1,12 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadApproval, verifyApproval } from '../artifacts/approval.js';
 import type { EnforcementConfig } from '../config/enforcement.js';
 import { FRAMEWORK_PIN_RELPATH, loadFrameworkPin } from '../framework/pin.js';
 import { invalidInputError, preconditionError } from '../util/errors.js';
 import { reviewPostureDrift } from './review-posture.js';
+import { renderCiTemplateForAdapter } from '@crucible/ci-templates';
+import { humanReviewMode } from '../config/enforcement.js';
 
 const CHANGE_PREFIX = 'openspec/changes/';
 const FRAMEWORK_PATHS = new Set([
@@ -76,6 +78,11 @@ export function classifyCiAuthority(options: ClassifyCiAuthorityOptions): CiAuth
       'An archive registration must contain exactly one matching active change removal.',
       'Archive one approved change at a time without unrelated archive entries.',
     );
+  }
+
+  if (paths.length === 1 && paths[0] === '.github/workflows/crucible.yml') {
+    assertAuthorityFinalization(options);
+    return { lane: 'authority-finalization', changes: [] };
   }
 
   if (paths.every((path) => FRAMEWORK_PATHS.has(path)) && paths.includes(FRAMEWORK_PIN_RELPATH)) {
@@ -257,6 +264,42 @@ function assertArchiveRegistration(
       'CI_ARCHIVE_APPROVAL_INVALID',
       'The archived change does not have a valid base approval seal.',
       'Restore the approved base bundle and archive it through Crucible.',
+    );
+  }
+}
+
+function assertAuthorityFinalization(options: ClassifyCiAuthorityOptions): void {
+  const relpath = '.github/workflows/crucible.yml';
+  const basePath = join(options.baseRoot, relpath);
+  const headPath = join(options.headRoot, relpath);
+  if (!existsSync(basePath) || !existsSync(headPath)) {
+    throw preconditionError(
+      'CI_FINALIZATION_MISSING_WORKFLOW',
+      'Authority finalization requires regular base and candidate managed workflows.',
+      'Use the dedicated framework upgrade transition plan.',
+    );
+  }
+  const base = readFileSync(basePath, 'utf8');
+  if (!base.includes('pull_request:') || !base.includes('pull_request_target:')) {
+    throw invalidInputError(
+      'CI_FINALIZATION_LEGACY_MISMATCH',
+      'Authority finalization requires the exact dual-trigger transition workflow on the target branch.',
+      'Complete the legacy transition phase before finalizing authority.',
+    );
+  }
+  const adapter = Object.keys(options.config.adapters)[0];
+  if (adapter === undefined)
+    throw preconditionError(
+      'CI_FINALIZATION_NO_ADAPTER',
+      'Authority finalization requires a configured target adapter.',
+      'Repair the initialized target enforcement configuration.',
+    );
+  const expected = renderCiTemplateForAdapter(adapter, humanReviewMode(options.config));
+  if (readFileSync(headPath, 'utf8') !== expected) {
+    throw invalidInputError(
+      'CI_FINALIZATION_WORKFLOW_MISMATCH',
+      'Authority finalization must install the exact pinned final managed workflow.',
+      'Run framework upgrade and commit only its final managed workflow output.',
     );
   }
 }

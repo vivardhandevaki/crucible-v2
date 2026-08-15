@@ -60,6 +60,18 @@ describe('classifyCiAuthority — fail-closed PR authority lanes (P4-25)', () =>
     expect(() => classify([FRAMEWORK_PIN_RELPATH])).toThrow(/workflow/i);
   });
 
+  it('accepts only the exact dual-trigger legacy authority finalization', () => {
+    const workflow = join('.github', 'workflows', 'crucible.yml');
+    mkdirSync(join(base, '.github', 'workflows'), { recursive: true });
+    mkdirSync(join(head, '.github', 'workflows'), { recursive: true });
+    writeFileSync(join(base, workflow), 'on:\n  pull_request:\n  pull_request_target:\n');
+    writeFileSync(join(head, workflow), renderCiTemplateForAdapter('stub', 'required'));
+
+    expect(classify([workflow])).toEqual({ lane: 'authority-finalization', changes: [] });
+    writeFileSync(join(base, workflow), 'on:\n  pull_request:\n');
+    expect(() => classify([workflow])).toThrow(/transition/i);
+  });
+
   it('accepts only a canonical archive registration backed by the base approval seal', () => {
     writeApproval(base);
     const entry = '2026-08-15-' + CHANGE;
