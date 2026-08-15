@@ -102,7 +102,7 @@ export function frameworkUpgrade(options: FrameworkUpgradeOptions): FrameworkUpg
       writeUpgradeFile(options, path, content);
     }
     if (ciReviewMode(config) === 'advisory' && existsSync(reviewPath)) rmSync(reviewPath);
-  } catch (cause) {
+  } catch {
     for (const [relpath, original] of originals) {
       const path = join(options.root, relpath);
       if (original === undefined) {
