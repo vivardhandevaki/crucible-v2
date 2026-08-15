@@ -314,7 +314,7 @@ Reads: charter §The Target-Branch Rule, §Configuration & Reviewer Law, P4-16/P
 
 Delivers: a complete same-target-commit `--config-from` snapshot containing config, framework lock, required main managed workflow, and exact optional detached-review workflow presence/bytes. It does not read PR workflow bytes, relax congruence, infer policy in shell, synthesize absent checks, authorize a policy PR to repair genuine target drift, alter tier/oracle/seal behavior, or change detached-review execution.
 
-**Decision proposed 2026-08-15; awaiting human ratification:** widen the CI transport contract, not the policy judge. Both shipped verify templates materialize the fixed target snapshot outside the PR tree from one fetched target commit. Required-path, tree-entry, extraction, and Git failures abort before verification; optional review-workflow absence is represented exactly and judged by pinned core.
+**Decision ratified 2026-08-15:** widen the CI transport contract, not the policy judge. Both shipped verify templates materialize the fixed target snapshot outside the PR tree from one fetched target commit. Required-path, tree-entry, extraction, and Git failures abort before verification; optional review-workflow absence is represented exactly and judged by pinned core.
 
 Acceptance (write these tests red before production changes):
 

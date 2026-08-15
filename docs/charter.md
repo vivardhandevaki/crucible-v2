@@ -753,7 +753,7 @@ The exclusion is narrow and structural. Proposal, spec, design, oracle, approval
 
 The shared approve/verify/CI diff-facts edge owns this rule. It must parse git output deterministically, fail closed on missing history, tool failure, or malformed non-binary rows, and apply the same filtering in every venue. No command may infer success from `state.yaml`, and no state event or checkpoint becomes approval, verification, or routing evidence.
 
-## P4-23 Amendment — Complete Target Enforcement Snapshot (proposed 2026-08-15)
+## P4-23 Amendment — Complete Target Enforcement Snapshot (ratified 2026-08-15)
 
 When CI invokes an enforcement command with `--config-from`, that directory is the complete target-branch enforcement snapshot, not merely a directory containing `crucible.yaml`. It contains the target commit's `crucible.yaml`, `.crucible/framework.lock.json`, required `.github/workflows/crucible.yml`, and the exact presence or absence and bytes of optional `.github/workflows/crucible-review.yml`. Every item is materialized from the same fetched target commit outside the PR working tree. No enforcement check may fill a missing snapshot input from the PR checkout or ambient filesystem.
 

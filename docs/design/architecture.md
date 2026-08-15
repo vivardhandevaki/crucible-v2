@@ -321,7 +321,7 @@ The filter does not rewrite or ignore files in git, approval hashing, amendment 
 
 This is a correction to invariant 1, not a weaker cap. The state parser, append-style event behavior, command-supplied deterministic timestamps, and fail-closed artifact checks remain unchanged. P4-21 seal and fresh-review lifecycle also remains unchanged; repeated audit events simply cease feeding back into its enforcement budget.
 
-## 19. Complete target enforcement snapshot (proposed P4-23, 2026-08-15)
+## 19. Complete target enforcement snapshot (ratified P4-23, 2026-08-15)
 
 P4-18 made review-policy/workflow congruence an enforcement precondition, but the shipped CI transport continued to extract only `crucible.yaml` and the framework lock into the `--config-from` directory. Local verification saw the repository workflows and passed; CI saw an incomplete directory, classified both managed workflows as missing, and returned `REVIEW_POSTURE_DRIFT` even when the target branch's workflow blobs were byte-identical to the pinned templates. Notes PR #18 is the first consumer proof of that transport mismatch.
 
