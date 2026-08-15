@@ -110,7 +110,7 @@ export function registerCi(program: Command): void {
           program.opts().json === true
             ? JSON.stringify({
                 changes: [],
-                routing: { decision: 'auto', reasons: ['framework bootstrap'] },
+                routing: { decision: 'auto', reasons: [manifest.lane] },
               }) + '\n'
             : 'auto\n',
         );
