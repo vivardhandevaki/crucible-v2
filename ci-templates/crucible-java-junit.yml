@@ -88,20 +88,52 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract target-branch enforcement config and framework pin
-        # The Target-Branch Rule made concrete. crucible.yaml is taken from
-        # origin/<base_ref> — the branch being merged INTO — and written OUTSIDE
-        # the working tree (under RUNNER_TEMP) so the PR's own copy can never
-        # shadow it. Fail-closed: if the target branch has no crucible.yaml,
-        # `git show` errors and the step (and the check) goes red rather than
-        # silently falling back to the PR's config.
+      - name: Extract complete target-branch enforcement snapshot
+        # The Target-Branch Rule made concrete. Every enforcement input comes
+        # from one target commit and is written OUTSIDE the PR checkout, so PR
+        # config/workflow bytes can never satisfy their own gate. The main
+        # managed workflow is required; the detached reviewer is exact-target
+        # presence/absence, then pinned core judges posture congruence.
         run: |
           set -euo pipefail
           BASE="${{ github.base_ref }}"
+          TARGET="origin/$BASE"
+          SNAPSHOT="$RUNNER_TEMP/crucible-target"
+          REVIEW_WORKFLOW=".github/workflows/crucible-review.yml"
           git fetch --no-tags --depth=1 origin "$BASE"
-          mkdir -p "$RUNNER_TEMP/crucible-target"
-          git show "origin/$BASE:crucible.yaml" > "$RUNNER_TEMP/crucible-target/crucible.yaml"
-          git show "origin/$BASE:.crucible/framework.lock.json" > "$RUNNER_TEMP/crucible-target/framework.lock.json"
+          mkdir -p "$SNAPSHOT/.crucible" "$SNAPSHOT/.github/workflows"
+
+          require_regular_target_file() {
+            local path="$1"
+            local entry
+            entry="$(git ls-tree "$TARGET" -- "$path")"
+            case "$entry" in
+              $'100644 blob '*$'\t'"$path") ;;
+              *)
+                echo "Target enforcement snapshot requires regular file: $path" >&2
+                exit 1
+                ;;
+            esac
+          }
+
+          require_regular_target_file "crucible.yaml"
+          require_regular_target_file ".crucible/framework.lock.json"
+          require_regular_target_file ".github/workflows/crucible.yml"
+          git show "$TARGET:crucible.yaml" > "$SNAPSHOT/crucible.yaml"
+          git show "$TARGET:.crucible/framework.lock.json" > "$SNAPSHOT/.crucible/framework.lock.json"
+          git show "$TARGET:.github/workflows/crucible.yml" > "$SNAPSHOT/.github/workflows/crucible.yml"
+
+          review_entry="$(git ls-tree "$TARGET" -- "$REVIEW_WORKFLOW")"
+          if [ -n "$review_entry" ]; then
+            case "$review_entry" in
+              $'100644 blob '*$'\t'"$REVIEW_WORKFLOW") ;;
+              *)
+                echo "Target enforcement snapshot has invalid optional workflow: $REVIEW_WORKFLOW" >&2
+                exit 1
+                ;;
+            esac
+            git show "$TARGET:.github/workflows/crucible-review.yml" > "$SNAPSHOT/.github/workflows/crucible-review.yml"
+          fi
 
       - uses: actions/setup-node@v4
         with:

@@ -50,6 +50,13 @@ const workflow = parseYaml(readFileSync(CI_TEMPLATE_PATH, 'utf8')) as Workflow;
 const steps = workflow.jobs?.verify?.steps ?? [];
 const javaWorkflow = parseYaml(readFileSync(JAVA_JUNIT_CI_TEMPLATE_PATH, 'utf8')) as Workflow;
 
+/** Both enforcement variants must materialize the same target-owned snapshot. */
+function targetExtractionRuns(): string[] {
+  return [workflow, javaWorkflow].map(
+    (candidate) => stepOf(candidate.jobs?.verify, 'target-branch enforcement').run ?? '',
+  );
+}
+
 /** The first step of `job` whose name contains `fragment` (case-insensitive). */
 function stepOf(job: Job | undefined, fragment: string): Step {
   const found = (job?.steps ?? []).find((s) =>
@@ -96,17 +103,20 @@ describe('crucible-java-junit.yml — JDK + Testcontainers variant (P3-07)', () 
   });
 
   it('retains target-branch enforcement in the JVM variant', () => {
-    const extract = stepOf(javaWorkflow.jobs?.verify, 'target-branch enforcement config').run ?? '';
+    const extract = stepOf(javaWorkflow.jobs?.verify, 'target-branch enforcement').run ?? '';
     const verifyRun = stepOf(javaWorkflow.jobs?.verify, 'verify').run ?? '';
     expect(extract).toContain('git show');
-    expect(extract).toContain('origin/$BASE:crucible.yaml');
+    expect(extract).toContain('TARGET="origin/$BASE"');
+    expect(extract).toContain('git show "$TARGET:crucible.yaml"');
+    expect(extract).toContain('.github/workflows/crucible.yml');
+    expect(extract).toContain('.github/workflows/crucible-review.yml');
     expect(verifyRun).toContain('--config-from "$RUNNER_TEMP/crucible-target"');
   });
 });
 
 describe('crucible.yml — the Target-Branch Rule (invariant #7)', () => {
   it('extracts enforcement config from the target branch, outside the PR tree', () => {
-    const run = stepNamed('target-branch enforcement config').run ?? '';
+    const run = stepNamed('target-branch enforcement').run ?? '';
     // Sourced from origin/<base_ref> — the branch being merged INTO.
     expect(run).toContain('github.base_ref');
     expect(run).toContain('git show');
@@ -114,6 +124,27 @@ describe('crucible.yml — the Target-Branch Rule (invariant #7)', () => {
     // Written under RUNNER_TEMP (outside the working tree) so the PR's own copy
     // can never shadow the target-branch config.
     expect(run).toContain('RUNNER_TEMP/crucible-target');
+  });
+
+  it('materializes a complete target-owned enforcement snapshot in both variants', () => {
+    for (const run of targetExtractionRuns()) {
+      expect(run).toContain('TARGET="origin/$BASE"');
+      expect(run).toContain('SNAPSHOT="$RUNNER_TEMP/crucible-target"');
+      expect(run).toContain('mkdir -p "$SNAPSHOT/.crucible" "$SNAPSHOT/.github/workflows"');
+      expect(run).toContain('git show "$TARGET:crucible.yaml" > "$SNAPSHOT/crucible.yaml"');
+      expect(run).toContain(
+        'git show "$TARGET:.crucible/framework.lock.json" > "$SNAPSHOT/.crucible/framework.lock.json"',
+      );
+      expect(run).toContain(
+        'git show "$TARGET:.github/workflows/crucible.yml" > "$SNAPSHOT/.github/workflows/crucible.yml"',
+      );
+      expect(run).toContain('git ls-tree "$TARGET" -- "$REVIEW_WORKFLOW"');
+      expect(run).toContain(
+        'git show "$TARGET:.github/workflows/crucible-review.yml" > "$SNAPSHOT/.github/workflows/crucible-review.yml"',
+      );
+      expect(run).not.toContain('|| true');
+      expect(run).not.toContain('GITHUB_WORKSPACE/.github/workflows');
+    }
   });
 
   it('passes the target-branch config to verify via --config-from (CLI-parseable order)', () => {
@@ -144,7 +175,7 @@ describe('crucible.yml — the Target-Branch Rule (invariant #7)', () => {
 
 describe('crucible.yml — validation-only framework bootstrap', () => {
   it('loads a strict framework pin from the target branch and builds that exact checkout', () => {
-    const extract = stepNamed('target-branch enforcement config').run ?? '';
+    const extract = stepNamed('target-branch enforcement').run ?? '';
     const pin = stepNamed('pinned Crucible framework');
     const checkout = stepNamed('checkout pinned Crucible framework');
     const build = stepNamed('build pinned Crucible framework');
@@ -187,7 +218,7 @@ describe('crucible.yml — fail-closed gate (verify red → check red, invariant
   it('runs the config-extraction and verify steps under a fail-closed shell', () => {
     // `set -euo pipefail`: a failed git-show (no target config) or a non-zero
     // verify aborts the step rather than continuing past the error.
-    expect(stepNamed('target-branch enforcement config').run ?? '').toContain('set -euo pipefail');
+    expect(stepNamed('target-branch enforcement').run ?? '').toContain('set -euo pipefail');
     expect(stepNamed('verify').run ?? '').toContain('set -euo pipefail');
   });
 });
