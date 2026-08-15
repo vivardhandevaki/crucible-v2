@@ -320,3 +320,22 @@ P4-22 corrects only the shared `computeDiffFacts` boundary used by approve, veri
 The filter does not rewrite or ignore files in git, approval hashing, amendment write-boundary checks, status reconciliation, raw review diffs, or archival history. It creates no configurable exemption and accepts no agent-supplied path list. All non-state change artifacts and product/harness bytes remain counted. A state-only diff therefore has zero enforcement paths and zero lines, while a mixed diff is judged exactly as if its derived state rows were absent.
 
 This is a correction to invariant 1, not a weaker cap. The state parser, append-style event behavior, command-supplied deterministic timestamps, and fail-closed artifact checks remain unchanged. P4-21 seal and fresh-review lifecycle also remains unchanged; repeated audit events simply cease feeding back into its enforcement budget.
+
+## 19. Complete target enforcement snapshot (proposed P4-23, 2026-08-15)
+
+P4-18 made review-policy/workflow congruence an enforcement precondition, but the shipped CI transport continued to extract only `crucible.yaml` and the framework lock into the `--config-from` directory. Local verification saw the repository workflows and passed; CI saw an incomplete directory, classified both managed workflows as missing, and returned `REVIEW_POSTURE_DRIFT` even when the target branch's workflow blobs were byte-identical to the pinned templates. Notes PR #18 is the first consumer proof of that transport mismatch.
+
+`--config-from` therefore denotes a target-owned enforcement snapshot with this fixed layout:
+
+```text
+<snapshot>/crucible.yaml
+<snapshot>/.crucible/framework.lock.json
+<snapshot>/.github/workflows/crucible.yml
+<snapshot>/.github/workflows/crucible-review.yml   # only when present on target
+```
+
+The CI template fetches one explicit `origin/<base_ref>` commit and materializes every entry from that same commit beneath `RUNNER_TEMP`. The main workflow is required. The review workflow uses an exact tree-membership query so target absence is represented by absence in the snapshot; if present, its bytes must be extracted successfully. The extraction never copies from the checked-out PR, never follows worktree symlinks, never synthesizes an empty or passing workflow, and never parses policy in shell to decide the expected shape. Pinned core remains the sole congruence judge after loading target config.
+
+The strict judge API remains a deterministic root-plus-config comparison. Local commands pass the repository root; CI passes the complete snapshot root. Missing mandatory inputs, unexpected optional presence, byte differences, invalid Git entries, incomplete history, and tool failures are errors rather than drift suppression. This preserves invariant 7 across both the policy bytes and the managed enforcement mechanism that realizes them.
+
+Rollout remains two-stage. First merge a P4-16-isolated framework-pin plus generated managed-workflow refresh under the old target harness; a bootstrap PR contains no product/config/change-bundle bytes. Then restart and critically approve the ordinary posture change from the new target pin. An existing approval that seals the old framework lock is evidence only and cannot be updated in place.
