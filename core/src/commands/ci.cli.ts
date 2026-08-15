@@ -6,6 +6,8 @@ import { parseCiAuthorityManifest, serializeCiAuthorityManifest } from './ci-aut
 import { assertCiVerificationAuthority } from './ci-enforcement.js';
 import { liveDeps } from './verify.cli.js';
 import { verify } from './verify.js';
+import { computeDiffFacts } from './diff-facts.js';
+import { aggregateRoute, routeDecision } from './route-decision.js';
 import { loadEnforcementConfig, resolveEnforcementRoot } from '../config/enforcement.js';
 import { invalidInputError } from '../util/errors.js';
 import { classifyCiAuthority } from './ci-authority.js';
@@ -73,6 +75,38 @@ export function registerCi(program: Command): void {
         program.opts().json === true ? JSON.stringify(report) + '\n' : renderReport(report) + '\n',
       );
       if (report.verdict === 'fail') throw new CheckFailure();
+    });
+
+  ci.command('route')
+    .description('Recompute routing from a strict CI authority manifest')
+    .requiredOption('--manifest <file>', 'strict authority manifest minted by ci authority')
+    .action((opts: { manifest: string }) => {
+      const root = process.cwd();
+      const configRoot = resolveEnforcementRoot(program.opts().configFrom, root);
+      const manifest = parseCiAuthorityManifest(readFileSync(opts.manifest, 'utf8'), opts.manifest);
+      if (manifest.lane !== 'governed') {
+        process.stdout.write(
+          program.opts().json === true
+            ? JSON.stringify({
+                changes: [],
+                routing: { decision: 'auto', reasons: ['framework bootstrap'] },
+              }) + '\n'
+            : 'auto\n',
+        );
+        return;
+      }
+      const config = loadEnforcementConfig(configRoot);
+      const facts = computeDiffFacts(root, manifest.base_sha);
+      const decisions = manifest.changes.map((change) => {
+        assertCiVerificationAuthority(root, manifest, change);
+        return routeDecision(root, change, config, facts);
+      });
+      const result = { changes: manifest.changes, routing: aggregateRoute(decisions) };
+      process.stdout.write(
+        program.opts().json === true
+          ? JSON.stringify(result) + '\n'
+          : result.routing.decision + '\n',
+      );
     });
 }
 
