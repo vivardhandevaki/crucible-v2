@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
@@ -153,6 +153,40 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       expect(readFileSync(join(snapshot, '.github', 'workflows', 'crucible.yml'), 'utf8')).toBe('base-workflow\n');
       expect(readFileSync(join(snapshot, '.github', 'workflows', 'crucible-review.yml'), 'utf8')).toBe('base-review\n');
       expect(minted).toMatchObject({ base_sha: base, head_sha: head, repository: 'owner/framework' });
+    });
+
+    it(`${label}: malformed target pin aborts before it emits a handoff`, () => {
+      root = mkdtempSync(join(tmpdir(), 'crucible-p4-24-invalid-pin-'));
+      git(root, ['init', '-q', '-b', 'main']);
+      git(root, ['config', 'user.email', 'test@example.com']);
+      git(root, ['config', 'user.name', 'Test']);
+      mkdirSync(join(root, '.crucible'), { recursive: true });
+      mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+      writeFileSync(join(root, 'crucible.yaml'), 'base-config\n');
+      writeFileSync(join(root, '.crucible', 'framework.lock.json'), '{"version":999}\n');
+      writeFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'base-workflow\n');
+      git(root, ['add', '.']);
+      git(root, ['commit', '-qm', 'invalid base pin']);
+      const base = git(root, ['rev-parse', 'HEAD']);
+      const origin = join(root, 'origin.git');
+      execFileSync('git', ['clone', '--bare', root, origin], { stdio: 'ignore' });
+      git(root, ['remote', 'add', 'origin', origin]);
+      const output = join(root, 'github-output');
+      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find(
+        (candidate) => candidate.id === 'target',
+      )?.run;
+      if (!run) throw new Error('missing target bootstrap');
+      const script = run
+        .replaceAll('${{ github.event.pull_request.base.sha }}', base)
+        .replaceAll('${{ github.event.pull_request.head.sha }}', base);
+      expect(() =>
+        execFileSync('bash', ['-c', script], {
+          cwd: root,
+          env: { ...process.env, RUNNER_TEMP: join(root, 'tmp'), GITHUB_OUTPUT: output },
+          stdio: 'pipe',
+        }),
+      ).toThrow();
+      expect(existsSync(output)).toBe(false);
     });
   }
 });
