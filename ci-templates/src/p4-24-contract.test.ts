@@ -76,8 +76,8 @@ describe('P4-24 managed CI contract', () => {
     });
 
     it(`${label}: one bootstrap step mints every snapshot/pin consumer input`, () => {
-      const verify = workflow.jobs?.verify;
-      const bootstrap = step(verify, 'target');
+      const authority = workflow.jobs?.authority;
+      const bootstrap = step(authority, 'target');
       const run = bootstrap.run ?? '';
       expect(run).toContain('mktemp -d');
       expect(run).toContain('snapshot=${process.env.SNAPSHOT}');
@@ -86,25 +86,29 @@ describe('P4-24 managed CI contract', () => {
       expect(run).toContain('.crucible/framework.lock.json');
       expect(run).not.toContain('origin/$BASE');
 
-      const staleResolver = verify?.steps?.find((candidate) =>
+      const staleResolver = authority?.steps?.find((candidate) =>
         (candidate.name ?? '').includes('Resolve pinned Crucible framework'),
       );
       expect(staleResolver).toBeUndefined();
 
-      const verifyRun = step(verify, 'verify').run ?? '';
-      expect(verifyRun).toContain('steps.target.outputs.snapshot');
-      expect(verifyRun).toContain('steps.target.outputs.base_sha');
-      expect(verifyRun).not.toContain('origin/$BASE');
-      expect(verifyRun).not.toContain('RUNNER_TEMP/crucible-target');
+      const authorityRun = step(authority, 'authority').run ?? '';
+      expect(authorityRun).toContain('steps.target.outputs.snapshot');
+      expect(authorityRun).toContain('steps.target.outputs.base_sha');
+      expect(authorityRun).not.toContain('origin/$BASE');
+      expect(authorityRun).not.toContain('RUNNER_TEMP/crucible-target');
     });
 
-    it(`${label}: independent route bootstrap carries the optional target review workflow`, () => {
+    it(`${label}: route consumes only the authority artifact`, () => {
       const route = workflow.jobs?.route;
-      const bootstrap = step(route, 'target');
-      const run = bootstrap.run ?? '';
-      expect(run).toContain('REVIEW_WORKFLOW=".github/workflows/crucible-review.yml"');
-      expect(run).toContain('git show "$BASE_SHA:$REVIEW_WORKFLOW"');
-      expect(run).toContain('snapshot=${process.env.SNAPSHOT}');
+      expect(
+        route?.steps?.some((candidate) => candidate.name === 'Download authority handoff'),
+      ).toBe(true);
+      expect(route?.steps?.some((candidate) => candidate.id === 'target')).toBe(false);
+      expect(
+        route?.steps?.find(
+          (candidate) => candidate.name === 'Checkout candidate data (exact event SHA)',
+        )?.with,
+      ).toMatchObject({ 'persist-credentials': false });
     });
   }
 });
@@ -146,7 +150,7 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       git(root, ['commit', '-qm', 'candidate']);
       const head = git(root, ['rev-parse', 'HEAD']);
       const output = join(root, 'github-output');
-      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find(
+      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.authority?.steps?.find(
         (candidate) => candidate.id === 'target',
       )?.run;
       if (!run) throw new Error('missing target bootstrap');
@@ -195,7 +199,7 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       execFileSync('git', ['clone', '--bare', root, origin], { stdio: 'ignore' });
       git(root, ['remote', 'add', 'origin', origin]);
       const output = join(root, 'github-output');
-      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find(
+      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.authority?.steps?.find(
         (candidate) => candidate.id === 'target',
       )?.run;
       if (!run) throw new Error('missing target bootstrap');
@@ -233,7 +237,7 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       execFileSync('git', ['clone', '--bare', root, origin], { stdio: 'ignore' });
       git(root, ['remote', 'add', 'origin', origin]);
       const output = join(root, 'github-output');
-      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find(
+      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.authority?.steps?.find(
         (candidate) => candidate.id === 'target',
       )?.run;
       if (!run) throw new Error('missing target bootstrap');
@@ -269,7 +273,7 @@ describe('P4-24 bootstrap — exact script against real Git', () => {
       git(root, ['remote', 'add', 'origin', origin]);
       const output = join(root, 'github-output');
       writeFileSync(output, 'snapshot=/stale\nrepository=stale/repo\n');
-      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.verify?.steps?.find(
+      const run = (parseYaml(readFileSync(path, 'utf8')) as Workflow).jobs?.authority?.steps?.find(
         (candidate) => candidate.id === 'target',
       )?.run;
       if (!run) throw new Error('missing target bootstrap');

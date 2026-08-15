@@ -7,6 +7,7 @@ import {
   JAVA_JUNIT_CI_TEMPLATE_PATH,
   ciTemplatePathForAdapter,
   renderCiTemplateForAdapter,
+  renderAuthorityTransitionTemplateForAdapter,
 } from './index.js';
 
 // The workspace exposes the reusable workflow by name + path; its invariant-#7
@@ -27,6 +28,13 @@ describe('@crucible/ci-templates surface', () => {
     expect(existsSync(JAVA_JUNIT_CI_TEMPLATE_PATH)).toBe(true);
     expect(ciTemplatePathForAdapter('java-junit')).toBe(JAVA_JUNIT_CI_TEMPLATE_PATH);
     expect(ciTemplatePathForAdapter('stub')).toBe(CI_TEMPLATE_PATH);
+  });
+
+  it('renders an explicit dual-trigger authority bridge before the final target-owned workflow', () => {
+    const transition = renderAuthorityTransitionTemplateForAdapter('stub', 'required');
+    expect(transition).toContain('  pull_request:\n  pull_request_target:');
+    expect(transition).toContain('  verify:');
+    expect(renderCiTemplateForAdapter('stub', 'required')).not.toContain('  pull_request:\n');
   });
 
   it('selects a route-free JVM workflow when independent human review is advisory', () => {

@@ -55,15 +55,15 @@
 name: Crucible
 
 on:
-  pull_request_target:
-  # Re-run when a review is submitted/dismissed so `route` re-checks approval and
+  pull_request_target: # Re-run when a review is submitted/dismissed so `route` re-checks approval and
+
   # the required check flips green the moment a non-author approves.
   pull_request_review:
 
-# `route` reads the PR's reviews via the ambient GITHUB_TOKEN (workflow-level
-# perms). `verify` escalates its own job-level perms: `issues: write` to file an
-# override ratchet issue, `pull-requests: write` to post the reviewer's
-# observations comment (P2-10). Least privilege (invariant: harness is TCB).
+    # `route` reads the PR's reviews via the ambient GITHUB_TOKEN (workflow-level
+    # perms). `verify` escalates its own job-level perms: `issues: write` to file an
+    # override ratchet issue, `pull-requests: write` to post the reviewer's
+    # observations comment (P2-10). Least privilege (invariant: harness is TCB).
 permissions:
   contents: read
   pull-requests: read
@@ -85,18 +85,167 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Set up Java for JUnit oracles
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Confirm Docker service for Testcontainers
+        run: |
+          set -euo pipefail
+          docker info
+      - name: Download authority handoff
+        uses: actions/download-artifact@v4
+        with:
+          name: crucible-authority
+          path: ${{ runner.temp }}/crucible-authority
+      - name: Checkout pinned Crucible framework
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.authority.outputs.repository }}
+          ref: ${{ needs.authority.outputs.commit }}
+          path: crucible-framework
+          persist-credentials: false
+      - name: Build pinned Crucible framework
+        working-directory: crucible-framework
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+      - name: Verify authority-authorized candidate
+        id: verify
+        run: >-
+          set -euo pipefail
 
+          HANDOFF="$RUNNER_TEMP/crucible-authority"
+
+          MANIFEST="$HANDOFF/authority.json"
+
+          SNAPSHOT="$HANDOFF/snapshot"
+
+          lane="$(jq -r .lane "$MANIFEST")"
+
+          case "$lane" in
+
+          governed)
+            jq -r '.changes[]' "$MANIFEST" | while IFS= read -r change; do
+              echo "::group::crucible ci verify $change"
+              node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$SNAPSHOT" ci verify "$change" --manifest "$MANIFEST"
+              echo "::endgroup::"
+            done
+            ;;
+          archive)
+            node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$SNAPSHOT" ci verify --manifest "$MANIFEST"
+            ;;
+          framework-bootstrap|authority-finalization)
+            echo "Authority lane $lane has no candidate oracle execution."
+            ;;
+          *)
+            echo "Unknown authority lane: $lane" >&2
+            exit 1
+            ;;
+          esac
+    needs: authority
+
+  # Credential-separated authority: this job reads candidate bytes as data and
+  # recomputes routing with target config/pin. It never consumes verify outputs.
+  route:
+    needs:
+      - authority
+      - verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+    steps:
+      - name: Checkout candidate data (exact event SHA)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Download authority handoff
+        uses: actions/download-artifact@v4
+        with:
+          name: crucible-authority
+          path: ${{ runner.temp }}/crucible-authority
+      - name: Checkout target-pinned Crucible framework
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.authority.outputs.repository }}
+          ref: ${{ needs.authority.outputs.commit }}
+          path: crucible-framework
+          persist-credentials: false
+      - name: Build target-pinned Crucible framework
+        working-directory: crucible-framework
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+      - name: Recompute route and enforce independent review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: >
+          set -euo pipefail
+
+          report="$(node
+          "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json
+          --config-from "$RUNNER_TEMP/crucible-authority/snapshot" ci route
+          --manifest "$RUNNER_TEMP/crucible-authority/authority.json")"
+
+          printf '%s\n' "$report"
+
+          routing="$(printf '%s' "$report" | jq -r '.routing.decision')"
+
+          if [ "$routing" != "human" ]; then
+            echo "Routing is '$routing' — auto-merge path."
+            exit 0
+          fi
+
+          approved="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews"
+          --jq "[.[] | select(.state == \"APPROVED\" and .user.login !=
+          \"$PR_AUTHOR\")] | length")"
+
+          if [ "$approved" -gt 0 ]; then
+            echo "Found a non-author APPROVED review — human routing satisfied."
+            exit 0
+          fi
+
+          echo "No non-author APPROVED review yet — this check stays red until
+          one lands."
+
+          exit 1
+  authority:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      repository: ${{ steps.target.outputs.repository }}
+      commit: ${{ steps.target.outputs.commit }}
+      base_sha: ${{ steps.target.outputs.base_sha }}
+      head_sha: ${{ steps.target.outputs.head_sha }}
+    steps:
+      - name: Checkout candidate head (exact event SHA)
+        id: candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Mint complete target-branch enforcement snapshot and framework pin
         id: target
-        # The Target-Branch Rule made concrete. Every enforcement input comes
-        # from one target commit and is written OUTSIDE the PR checkout, so PR
-        # config/workflow bytes can never satisfy their own gate. The main
-        # managed workflow is required; the detached reviewer is exact-target
-        # presence/absence, then pinned core judges posture congruence.
         run: |
           set -euo pipefail
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
@@ -106,7 +255,8 @@ jobs:
           mkdir -p "$SNAPSHOT_PARENT"
           SNAPSHOT="$(mktemp -d "$SNAPSHOT_PARENT/snapshot.XXXXXX")"
           REVIEW_WORKFLOW=".github/workflows/crucible-review.yml"
-          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          git fetch --no-tags origin "$BASE_SHA"
+          git cat-file -e "$HEAD_SHA^{commit}"
           mkdir -p "$SNAPSHOT/.crucible" "$SNAPSHOT/.github/workflows"
 
           require_regular_target_file() {
@@ -157,159 +307,39 @@ jobs:
             `snapshot=${process.env.SNAPSHOT}\nrepository=${value.repository}\ncommit=${value.commit}\nbase_sha=${process.env.BASE_SHA}\nhead_sha=${process.env.HEAD_SHA}\n`,
           );
           NODE
-
-      - name: Set up Java for JUnit oracles
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Confirm Docker service for Testcontainers
-        # GitHub-hosted Ubuntu runners provide the Docker daemon Testcontainers
-        # drives. Treat an unavailable daemon as a broken judge, never a skip.
-        run: |
-          set -euo pipefail
-          docker info
-
       - name: Checkout pinned Crucible framework
         uses: actions/checkout@v4
         with:
-          repository: ${{ steps.target.outputs.repository }}
-          ref: ${{ steps.target.outputs.commit }}
+          repository: ${{ needs.authority.outputs.repository }}
+          ref: ${{ needs.authority.outputs.commit }}
           path: crucible-framework
           persist-credentials: false
-
       - name: Build pinned Crucible framework
         working-directory: crucible-framework
         run: |
           set -euo pipefail
           npm ci
           npm run build
-
-      - name: Detect changed change-bundles
-        id: changes
-        # A PR governs the change bundle(s) it touches under
-        # openspec/changes/<name>/. Enumerate them from the diff against the
-        # target branch; zero touched → nothing to enforce (clean pass). The gate
-        # judges only what the PR actually changes.
-        run: |
+      - name: Mint authority handoff
+        id: authority
+        run: >-
           set -euo pipefail
-          BASE="${{ steps.target.outputs.base_sha }}"
-          names="$(git diff --name-only "$BASE...HEAD" \
-            | sed -n 's#^openspec/changes/\([^/]*\)/.*#\1#p' | sort -u)"
-          {
-            echo 'names<<EOF'
-            echo "$names"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Verify (enforcement config from the target branch)
-        id: verify
-        # The required gate. `--config-from` points at the target-branch config
-        # extracted above (invariant #7), NOT the PR working tree; `--diff-base`
-        # points at origin/<base_ref> so the tier is computed against the target
-        # branch too. This mechanical job runs the sealed deterministic/oracle
-        # path only. It never emits routing, writes issues/comments, or invokes a
-        # reviewer: those authorities live in the separate non-executing route
-        # and detached-review workflows.
-        run: |
-          set -euo pipefail
-          BASE="${{ steps.target.outputs.base_sha }}"
-          SNAPSHOT="${{ steps.target.outputs.snapshot }}"
-          names="${{ steps.changes.outputs.names }}"
-          if [ -z "$names" ]; then
-            echo "No change bundles touched by this PR — nothing to verify."
-            exit 0
-          fi
-          for change in $names; do
-            echo "::group::crucible verify $change"
-            node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$SNAPSHOT" verify "$change" --diff-base "$BASE"
-            echo "::endgroup::"
-          done
-
-  # Credential-separated authority: this job reads candidate bytes as data and
-  # recomputes routing with target config/pin. It never consumes verify outputs.
-  route:
-    needs: verify
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-      issues: write
-    steps:
-      - name: Checkout candidate data (exact event SHA)
-        uses: actions/checkout@v4
+                    HANDOFF="$RUNNER_TEMP/crucible-authority"
+                    rm -rf "$HANDOFF"
+                    mkdir -p "$HANDOFF"
+                    git diff --name-only -z "${{ steps.target.outputs.base_sha }}...${{ steps.target.outputs.head_sha }}" > "$HANDOFF/changed-paths"
+                    SNAPSHOT="${{ steps.target.outputs.snapshot }}"
+                    SNAPSHOT_HASH="$(find "$SNAPSHOT" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
+                    node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$SNAPSHOT" ci authority \
+                      --changed-paths "$HANDOFF/changed-paths" \
+                      --base-sha "${{ steps.target.outputs.base_sha }}" \
+                      --head-sha "${{ steps.target.outputs.head_sha }}" \
+                      --snapshot-hash "$SNAPSHOT_HASH" \
+                      --manifest-out "$HANDOFF/authority.json"
+                    cp -a "$SNAPSHOT" "$HANDOFF/snapshot"
+      - name: Upload authority handoff
+        uses: actions/upload-artifact@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Mint target snapshot and framework pin for route
-        id: target
-        run: |
-          set -euo pipefail
-          BASE_SHA="${{ github.event.pull_request.base.sha }}"
-          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-          SNAPSHOT_PARENT="$RUNNER_TEMP/crucible-route-target"
-          mkdir -p "$SNAPSHOT_PARENT"
-          SNAPSHOT="$(mktemp -d "$SNAPSHOT_PARENT/snapshot.XXXXXX")"
-          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
-          mkdir -p "$SNAPSHOT/.crucible" "$SNAPSHOT/.github/workflows"
-          for path in crucible.yaml .crucible/framework.lock.json .github/workflows/crucible.yml; do
-            case "$(git ls-tree "$BASE_SHA" -- "$path")" in $'100644 blob '*$'\t'"$path") ;; *) echo "Missing regular target file: $path" >&2; exit 1;; esac
-            git show "$BASE_SHA:$path" > "$SNAPSHOT/$path"
-          done
-          REVIEW_WORKFLOW=".github/workflows/crucible-review.yml"
-          review_entry="$(git ls-tree "$BASE_SHA" -- "$REVIEW_WORKFLOW")"
-          if [ -n "$review_entry" ]; then
-            case "$review_entry" in $'100644 blob '*$'\t'"$REVIEW_WORKFLOW") ;; *) echo "Invalid optional target workflow: $REVIEW_WORKFLOW" >&2; exit 1;; esac
-            git show "$BASE_SHA:$REVIEW_WORKFLOW" > "$SNAPSHOT/$REVIEW_WORKFLOW"
-          fi
-          SNAPSHOT="$SNAPSHOT" BASE_SHA="$BASE_SHA" HEAD_SHA="$HEAD_SHA" node <<'NODE'
-          const fs = require('node:fs');
-          const p = `${process.env.SNAPSHOT}/.crucible/framework.lock.json`;
-          const v = JSON.parse(fs.readFileSync(p, 'utf8'));
-          if (Object.keys(v).sort().join(',') !== 'commit,repository,version' || v.version !== 1 || typeof v.repository !== 'string' || !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(v.repository) || typeof v.commit !== 'string' || !/^[0-9a-f]{40}$/.test(v.commit)) throw new Error(`Invalid framework pin at ${p}`);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `snapshot=${process.env.SNAPSHOT}\nrepository=${v.repository}\ncommit=${v.commit}\nbase_sha=${process.env.BASE_SHA}\nhead_sha=${process.env.HEAD_SHA}\n`);
-          NODE
-
-      - name: Checkout target-pinned Crucible framework
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ steps.target.outputs.repository }}
-          ref: ${{ steps.target.outputs.commit }}
-          path: crucible-framework
-          persist-credentials: false
-
-      - name: Build target-pinned Crucible framework
-        working-directory: crucible-framework
-        run: |
-          set -euo pipefail
-          npm ci
-          npm run build
-
-      - name: Recompute route and enforce independent review
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: |
-          set -euo pipefail
-          report="$(node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "${{ steps.target.outputs.snapshot }}" route --diff-base "${{ steps.target.outputs.base_sha }}")"
-          printf '%s\n' "$report"
-          routing="$(printf '%s' "$report" | jq -r '.routing.decision')"
-          if [ "$routing" != "human" ]; then
-            echo "Routing is '$routing' — auto-merge path."
-            exit 0
-          fi
-          approved="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" --jq "[.[] | select(.state == \"APPROVED\" and .user.login != \"$PR_AUTHOR\")] | length")"
-          if [ "$approved" -gt 0 ]; then
-            echo "Found a non-author APPROVED review — human routing satisfied."
-            exit 0
-          fi
-          echo "No non-author APPROVED review yet — this check stays red until one lands."
-          exit 1
+          name: crucible-authority
+          path: ${{ runner.temp }}/crucible-authority
+          if-no-files-found: error

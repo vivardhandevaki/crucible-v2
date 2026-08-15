@@ -35,7 +35,8 @@ function step(job: Job | undefined, named: string): Step {
 describe.each([
   ['generic', generic],
   ['java-junit', java],
-] as const)('managed %s workflow (P4-24)', (_name, workflow) => {
+] as const)('managed %s workflow (P4-25)', (_name, workflow) => {
+  const authority = workflow.jobs?.authority;
   const verify = workflow.jobs?.verify;
   const route = workflow.jobs?.route;
 
@@ -60,7 +61,7 @@ describe.each([
   });
 
   it('mints the only mechanical snapshot from exact event SHAs', () => {
-    const bootstrap = step(verify, 'Mint complete target-branch enforcement snapshot').run ?? '';
+    const bootstrap = step(authority, 'Mint complete target-branch enforcement snapshot').run ?? '';
     expect(bootstrap).toContain('github.event.pull_request.base.sha');
     expect(bootstrap).toContain('github.event.pull_request.head.sha');
     expect(bootstrap).toContain('mktemp -d');
@@ -70,7 +71,7 @@ describe.each([
   });
 
   it('recomputes route independently from candidate bytes and target pin', () => {
-    expect(route?.needs).toBe('verify');
+    expect(route?.needs).toEqual(['authority', 'verify']);
     expect(route?.permissions).toMatchObject({
       contents: 'read',
       'pull-requests': 'read',
@@ -80,11 +81,12 @@ describe.each([
       ref: '${{ github.event.pull_request.head.sha }}',
       'persist-credentials': false,
     });
-    const bootstrap = step(route, 'Mint target snapshot').run ?? '';
-    expect(bootstrap).toContain('github.event.pull_request.base.sha');
-    expect(bootstrap).toContain('mktemp -d');
+    expect(route?.steps?.some((candidate) => candidate.name === 'Download authority handoff')).toBe(
+      true,
+    );
+    expect(route?.steps?.some((candidate) => (candidate.id ?? '') === 'target')).toBe(false);
     const enforce = step(route, 'Recompute route').run ?? '';
-    expect(enforce).toContain(' route --diff-base ');
+    expect(enforce).toContain(' ci route --manifest ');
     expect(enforce).not.toContain('needs.verify.outputs');
     expect(enforce).toContain('APPROVED');
     expect(enforce).toContain('exit 1');

@@ -4,7 +4,7 @@ import { loadApproval, verifyApproval } from '../artifacts/approval.js';
 import { loadOracles } from '../artifacts/oracles.js';
 import { loadOverride } from '../artifacts/override.js';
 import { assertTypeConformance, readChangeType } from '../changetype/changetype.js';
-import type { EnforcementConfig } from '../config/enforcement.js';
+import { humanReviewMode, type EnforcementConfig } from '../config/enforcement.js';
 import { computeTier } from '../tier/tier.js';
 import { preconditionError } from '../util/errors.js';
 import { routingFor, routingWithOverride, type RoutingDecision } from '../verifyx/report.js';
@@ -61,6 +61,13 @@ export function routeDecision(
     // Presence is not enough: a malformed bypass artifact must stop routing
     // rather than silently gaining the forced-human path.
     loadOverride(overridePath);
+    if (humanReviewMode(config) !== 'required') {
+      throw preconditionError(
+        'OVERRIDE_REQUIRES_HUMAN_REVIEW',
+        'An override requires target-branch independent human review to be required.',
+        'Set review.human_mode to required before using an override.',
+      );
+    }
     return routingWithOverride(tier);
   }
   return routingFor(tier);

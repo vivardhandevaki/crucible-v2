@@ -114,7 +114,7 @@ export function registerVerify(program: Command): void {
 }
 
 /** The live dependencies for a real verify invocation. */
-function liveDeps(
+export function liveDeps(
   root: string,
   diffBase: string | undefined,
   reviewOpts: { change: string; withReview: boolean },
