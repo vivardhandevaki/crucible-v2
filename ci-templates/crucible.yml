@@ -234,27 +234,18 @@ jobs:
           node-version: '20'
       - name: Mint complete target-branch enforcement snapshot and framework pin
         id: target
-        run: >
+        run: |
           set -euo pipefail
-
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
-
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-
           TARGET="$BASE_SHA"
-
           SNAPSHOT_PARENT="$RUNNER_TEMP/crucible-target"
-
           mkdir -p "$SNAPSHOT_PARENT"
-
           SNAPSHOT="$(mktemp -d "$SNAPSHOT_PARENT/snapshot.XXXXXX")"
-
           REVIEW_WORKFLOW=".github/workflows/crucible-review.yml"
-
-          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
-
+          git fetch --no-tags origin "$BASE_SHA"
+          git cat-file -e "$HEAD_SHA^{commit}"
           mkdir -p "$SNAPSHOT/.crucible" "$SNAPSHOT/.github/workflows"
-
 
           require_regular_target_file() {
             local path="$1"
@@ -269,24 +260,14 @@ jobs:
             esac
           }
 
-
           require_regular_target_file "crucible.yaml"
-
           require_regular_target_file ".crucible/framework.lock.json"
-
           require_regular_target_file ".github/workflows/crucible.yml"
-
           git show "$TARGET:crucible.yaml" > "$SNAPSHOT/crucible.yaml"
-
-          git show "$TARGET:.crucible/framework.lock.json" >
-          "$SNAPSHOT/.crucible/framework.lock.json"
-
-          git show "$TARGET:.github/workflows/crucible.yml" >
-          "$SNAPSHOT/.github/workflows/crucible.yml"
-
+          git show "$TARGET:.crucible/framework.lock.json" > "$SNAPSHOT/.crucible/framework.lock.json"
+          git show "$TARGET:.github/workflows/crucible.yml" > "$SNAPSHOT/.github/workflows/crucible.yml"
 
           review_entry="$(git ls-tree "$TARGET" -- "$REVIEW_WORKFLOW")"
-
           if [ -n "$review_entry" ]; then
             case "$review_entry" in
               $'100644 blob '*$'\t'"$REVIEW_WORKFLOW") ;;
@@ -298,38 +279,26 @@ jobs:
             git show "$TARGET:.github/workflows/crucible-review.yml" > "$SNAPSHOT/.github/workflows/crucible-review.yml"
           fi
 
-
-          SNAPSHOT="$SNAPSHOT" BASE_SHA="$BASE_SHA" HEAD_SHA="$HEAD_SHA" node
-          <<'NODE'
-
+          SNAPSHOT="$SNAPSHOT" BASE_SHA="$BASE_SHA" HEAD_SHA="$HEAD_SHA" node <<'NODE'
           const fs = require('node:fs');
-
-          const lockPath =
-          `${process.env.SNAPSHOT}/.crucible/framework.lock.json`;
-
+          const lockPath = `${process.env.SNAPSHOT}/.crucible/framework.lock.json`;
           let value;
-
           try {
             value = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
           } catch (error) {
             throw new Error(`Invalid framework pin: ${error.message}`);
           }
-
           const keys = Object.keys(value).sort();
-
-          if (keys.join(',') !== 'commit,repository,version' || value.version
-          !== 1
+          if (keys.join(',') !== 'commit,repository,version' || value.version !== 1
             || typeof value.repository !== 'string'
             || !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(value.repository)
             || typeof value.commit !== 'string' || !/^[0-9a-f]{40}$/.test(value.commit)) {
             throw new Error(`Invalid framework pin at ${lockPath}`);
           }
-
           fs.appendFileSync(
             process.env.GITHUB_OUTPUT,
             `snapshot=${process.env.SNAPSHOT}\nrepository=${value.repository}\ncommit=${value.commit}\nbase_sha=${process.env.BASE_SHA}\nhead_sha=${process.env.HEAD_SHA}\n`,
           );
-
           NODE
       - name: Checkout pinned Crucible framework
         uses: actions/checkout@v4

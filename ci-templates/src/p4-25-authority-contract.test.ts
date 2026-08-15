@@ -31,6 +31,8 @@ describe('P4-25 authority workflow contract', () => {
       expect(authority?.permissions).toEqual({ contents: 'read' });
       const authorityRun = (authority?.steps ?? []).map((step) => step.run ?? '').join('\n');
       expect(authorityRun).toContain('ci authority');
+      expect(authorityRun).toContain('git cat-file -e');
+      expect(authorityRun).not.toContain('origin "$BASE_SHA" "$HEAD_SHA"');
       expect(
         (authority?.steps ?? []).some((step) => step.name === 'Upload authority handoff'),
       ).toBe(true);
