@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildProgram } from '../cli/program.js';
+import { buildProgram } from './program.js';
 
 describe('review-posture bootstrap surface', () => {
   it('requires immutable source and explicit root acknowledgement', () => {
