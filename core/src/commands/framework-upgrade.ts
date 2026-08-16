@@ -71,11 +71,10 @@ export function frameworkUpgrade(options: FrameworkUpgradeOptions): FrameworkUpg
   const dualTrigger =
     currentWorkflow.includes('  pull_request:') &&
     currentWorkflow.includes('  pull_request_target:');
-  const bridgeWorkflow = renderAuthorityTransitionTemplateForAdapter(
-    adapter,
-    humanReviewMode(config),
-  );
-  const exactLegacyBridge = currentWorkflow === bridgeWorkflow;
+  const exactLegacyBridge =
+    dualTrigger &&
+    currentWorkflow ===
+      renderAuthorityTransitionTemplateForAdapter(adapter, humanReviewMode(config));
   if (dualTrigger && !exactLegacyBridge) {
     throw preconditionError(
       'FRAMEWORK_UPGRADE_LEGACY_BRIDGE_UNRECOGNIZED',
@@ -133,7 +132,7 @@ export function frameworkUpgrade(options: FrameworkUpgradeOptions): FrameworkUpg
     [
       '.github/workflows/crucible.yml',
       phase === 'legacy-bootstrap'
-        ? bridgeWorkflow
+        ? renderAuthorityTransitionTemplateForAdapter(adapter, humanReviewMode(config))
         : renderCiTemplateForAdapter(adapter, humanReviewMode(config)),
     ],
   ]);
