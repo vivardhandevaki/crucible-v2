@@ -59,7 +59,14 @@ export function renderCiTemplateForAdapter(
   if (routeStart < 0) {
     throw new Error('Shipped Crucible workflow is missing its required route job.');
   }
-  return withoutReviewTrigger.slice(0, routeStart).replace(/\s*$/, '\n');
+  const authorityStart = withoutReviewTrigger.indexOf('\n  authority:', routeStart);
+  if (authorityStart < 0) {
+    throw new Error('Shipped Crucible workflow is missing its required authority job.');
+  }
+  return (
+    withoutReviewTrigger.slice(0, routeStart).replace(/\s*$/, '\n') +
+    withoutReviewTrigger.slice(authorityStart)
+  );
 }
 
 /** Render the one-time P4-25 bridge for a legacy pull_request-only target.

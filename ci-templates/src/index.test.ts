@@ -39,6 +39,7 @@ describe('@crucible/ci-templates surface', () => {
 
   it('selects a route-free JVM workflow when independent human review is advisory', () => {
     expect(renderCiTemplateForAdapter('java-junit', 'advisory')).not.toContain('\n  route:\n');
+    expect(renderCiTemplateForAdapter('java-junit', 'advisory')).toContain('\n  authority:\n');
     expect(renderCiTemplateForAdapter('java-junit', 'required')).toContain('\n  route:\n');
   });
 });
