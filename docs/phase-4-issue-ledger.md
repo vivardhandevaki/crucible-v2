@@ -32,6 +32,8 @@ an issue is fixed; do not silently remove the history.
 
 | P4-024 | The first P4-25 Notes authority-transition PR correctly built the target P4-22 framework pin, which has no `ci authority` command. A candidate-owned workflow cannot become target-owned merely by running a newer candidate pin. | Resolved by P4-25 legacy-bootstrap amendment; implementation in progress | Treat phase one as an explicitly acknowledged manual two-file root bootstrap with no authority claim or required verify check. After that bridge merges, an exact same-pin workflow-only finalization is classified by target-owned authority. Reject bridge drift and repins; preserve Notes PRs #20 and #21 as failure evidence. |
 
+| P4-025 | Notes PR #23 proved P4-25 target-owned authority, verification, and route are healthy after the bridge, but its detached reviewer correctly failed because the preserved target has no review block and therefore defaults CI review to required. No API key is authorized. Candidate config cannot select advisory for itself, and a red or empty judge cannot be merged or treated as advisory. | Design ratified as P4-26; implementation queued | Add one explicit P4-26 manual solo-posture root bootstrap from the exact post-#22 bridge only. It stages an allowlisted pin/workflow/config/settings transaction, requires acknowledgement plus manual comparison and local review, and ends at target-owned advisory/advisory posture with required local review. It never weakens required mode or creates a generic config bypass. Close #23 as superseded; preserve #8/#18. |
+
 ## Resolution protocol
 
 For a framework issue, fix it in `crucible-v2` under the normal test-first
