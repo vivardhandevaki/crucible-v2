@@ -320,7 +320,7 @@ jobs:
                     HANDOFF="$RUNNER_TEMP/crucible-authority"
                     rm -rf "$HANDOFF"
                     mkdir -p "$HANDOFF"
-                    git diff --name-only -z "${{ steps.target.outputs.base_sha }}...${{ steps.target.outputs.head_sha }}" > "$HANDOFF/changed-paths"
+                    git diff --no-renames --name-only -z "${{ steps.target.outputs.base_sha }}...${{ steps.target.outputs.head_sha }}" > "$HANDOFF/changed-paths"
                     SNAPSHOT="${{ steps.target.outputs.snapshot }}"
                     SNAPSHOT_HASH="$(find "$SNAPSHOT" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
                     node "$GITHUB_WORKSPACE/crucible-framework/core/dist/cli/bin.js" --json --config-from "$SNAPSHOT" ci authority \
