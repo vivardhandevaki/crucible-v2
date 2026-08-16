@@ -15,7 +15,7 @@
       "id": "P4-26-cli-surface",
       "evidence": [
         {
-          "file": "core/src/commands/review-posture-bootstrap.cli.test.ts",
+          "file": "core/src/cli/review-posture-bootstrap.test.ts",
           "title": "review-posture bootstrap surface"
         }
       ]
