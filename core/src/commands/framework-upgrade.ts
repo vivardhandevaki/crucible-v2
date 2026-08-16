@@ -20,6 +20,8 @@ export interface FrameworkUpgradeOptions {
   pin: FrameworkPin;
   /** Injected Git edge: callers must reject tracked dirt before this transaction. */
   trackedDirty: boolean;
+  /** Explicit human acknowledgement for the one non-authoritative legacy bridge. */
+  acknowledgeLegacyBootstrap?: boolean;
   /** Test seam for a mid-transaction filesystem failure. */
   writeFile?: (path: string, content: string) => void;
 }
@@ -31,7 +33,8 @@ export interface FrameworkUpgradeAction {
 
 export interface FrameworkUpgradeReport {
   actions: FrameworkUpgradeAction[];
-  phase: 'ordinary' | 'authority-transition' | 'authority-finalization';
+  phase: 'ordinary' | 'legacy-bootstrap' | 'authority-finalization';
+  operatorInstructions?: string[];
 }
 
 /**
@@ -48,13 +51,6 @@ export function frameworkUpgrade(options: FrameworkUpgradeOptions): FrameworkUpg
   }
   const current = loadFrameworkPin(join(options.root, FRAMEWORK_PIN_RELPATH));
   refuseActiveLockSeal(options.root);
-  if (current.repository === options.pin.repository && current.commit === options.pin.commit) {
-    throw preconditionError(
-      'FRAMEWORK_UPGRADE_PIN_UNCHANGED',
-      'Framework upgrade requires a new immutable framework pin.',
-      'Provide a source pin different from the currently committed pin.',
-    );
-  }
   const config = loadEnforcementConfig(options.root);
   const adapter = Object.keys(config.adapters)[0];
   if (adapter === undefined) {
@@ -72,20 +68,72 @@ export function frameworkUpgrade(options: FrameworkUpgradeOptions): FrameworkUpg
   const legacyPullRequestOnly =
     currentWorkflow.includes('  pull_request:') &&
     !currentWorkflow.includes('  pull_request_target:');
-  const transitionWorkflow =
+  const dualTrigger =
     currentWorkflow.includes('  pull_request:') &&
     currentWorkflow.includes('  pull_request_target:');
-  const phase = legacyPullRequestOnly
-    ? 'authority-transition'
-    : transitionWorkflow
-      ? 'authority-finalization'
-      : 'ordinary';
+  const bridgeWorkflow = renderAuthorityTransitionTemplateForAdapter(
+    adapter,
+    humanReviewMode(config),
+  );
+  const exactLegacyBridge = currentWorkflow === bridgeWorkflow;
+  if (dualTrigger && !exactLegacyBridge) {
+    throw preconditionError(
+      'FRAMEWORK_UPGRADE_LEGACY_BRIDGE_UNRECOGNIZED',
+      'A dual-trigger workflow is not the exact Crucible legacy bootstrap bridge.',
+      'Restore the managed workflow or finalize only from a clean checkout of the merged exact bridge.',
+    );
+  }
+
+  let phase: FrameworkUpgradeReport['phase'];
+  let operatorInstructions: string[] | undefined;
+  if (legacyPullRequestOnly) {
+    if (options.acknowledgeLegacyBootstrap !== true) {
+      throw preconditionError(
+        'FRAMEWORK_UPGRADE_LEGACY_ACK_REQUIRED',
+        'Legacy bootstrap requires explicit acknowledgement because target-owned authority is not installed yet.',
+        'Review the two-file diff and rerun framework upgrade with --acknowledge-legacy-bootstrap.',
+      );
+    }
+    if (current.repository === options.pin.repository && current.commit === options.pin.commit) {
+      throw preconditionError(
+        'FRAMEWORK_UPGRADE_PIN_UNCHANGED',
+        'Framework upgrade requires a new immutable framework pin.',
+        'Provide a source pin different from the currently committed pin.',
+      );
+    }
+    phase = 'legacy-bootstrap';
+    operatorInstructions = [
+      'This one bridge PR is not a Crucible enforcement gate.',
+      'Remove verify from required checks for this one legacy-bootstrap PR.',
+      'Manually compare the exact reported two-file diff before merging.',
+      'After merge, restore verify as required and run framework upgrade from a fresh target checkout to finalize.',
+    ];
+  } else if (exactLegacyBridge) {
+    if (current.repository !== options.pin.repository || current.commit !== options.pin.commit) {
+      throw preconditionError(
+        'FRAMEWORK_UPGRADE_LEGACY_BRIDGE_REPIN',
+        'Cannot repin an unmerged legacy bootstrap bridge.',
+        'Merge the bridge, start from a fresh target checkout, and finalize it at the bridge pin.',
+      );
+    }
+    phase = 'authority-finalization';
+  } else {
+    if (current.repository === options.pin.repository && current.commit === options.pin.commit) {
+      throw preconditionError(
+        'FRAMEWORK_UPGRADE_PIN_UNCHANGED',
+        'Framework upgrade requires a new immutable framework pin.',
+        'Provide a source pin different from the currently committed pin.',
+      );
+    }
+    phase = 'ordinary';
+  }
+
   const desired = new Map<string, string>([
     [FRAMEWORK_PIN_RELPATH, serializeFrameworkPin(options.pin)],
     [
       '.github/workflows/crucible.yml',
-      legacyPullRequestOnly
-        ? renderAuthorityTransitionTemplateForAdapter(adapter, humanReviewMode(config))
+      phase === 'legacy-bootstrap'
+        ? bridgeWorkflow
         : renderCiTemplateForAdapter(adapter, humanReviewMode(config)),
     ],
   ]);
@@ -141,7 +189,11 @@ export function frameworkUpgrade(options: FrameworkUpgradeOptions): FrameworkUpg
     );
   }
 
-  return { actions, phase };
+  return {
+    actions,
+    phase,
+    ...(operatorInstructions === undefined ? {} : { operatorInstructions }),
+  };
 }
 
 function refuseActiveLockSeal(root: string): void {

@@ -1,9 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
-import { CI_TEMPLATE_PATH, JAVA_JUNIT_CI_TEMPLATE_PATH } from './index.js';
+import {
+  CI_TEMPLATE_PATH,
+  JAVA_JUNIT_CI_TEMPLATE_PATH,
+  renderAuthorityTransitionTemplateForAdapter,
+} from './index.js';
 
 interface Job {
+  if?: string;
   needs?: string | string[];
   permissions?: Record<string, string>;
   steps?: Array<{ name?: string; run?: string; with?: Record<string, unknown> }>;
@@ -56,4 +61,23 @@ describe('P4-25 authority workflow contract', () => {
       expect((route?.steps ?? []).map((step) => step.run ?? '').join('\n')).toContain('ci route');
     });
   }
+  it('renders a non-authoritative legacy bootstrap bridge for both workflow variants', () => {
+    const dollar = String.fromCharCode(36);
+    for (const adapter of ['stub', 'java-junit']) {
+      const value = parseYaml(
+        renderAuthorityTransitionTemplateForAdapter(adapter, 'required'),
+      ) as Workflow;
+      const bootstrap = value.jobs?.['legacy-bootstrap'];
+      expect(bootstrap?.if).toBe(dollar + "{{ github.event_name == 'pull_request' }}");
+      expect(bootstrap?.permissions).toEqual({ contents: 'read' });
+      const bootstrapRun = (bootstrap?.steps ?? []).map((step) => step.run ?? '').join('\n');
+      expect(bootstrapRun).toContain('manual bootstrap acknowledgement');
+      expect(bootstrapRun).not.toContain('ci authority');
+      expect(bootstrapRun).not.toContain('ci verify');
+      expect(bootstrapRun).not.toContain('ci route');
+      for (const name of ['authority', 'verify', 'route']) {
+        expect(value.jobs?.[name]?.if).toBe(dollar + "{{ github.event_name != 'pull_request' }}");
+      }
+    }
+  });
 });

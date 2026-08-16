@@ -5,7 +5,10 @@ import type { EnforcementConfig } from '../config/enforcement.js';
 import { FRAMEWORK_PIN_RELPATH, loadFrameworkPin } from '../framework/pin.js';
 import { invalidInputError, preconditionError } from '../util/errors.js';
 import { reviewPostureDrift } from './review-posture.js';
-import { renderCiTemplateForAdapter } from '@crucible/ci-templates';
+import {
+  renderAuthorityTransitionTemplateForAdapter,
+  renderCiTemplateForAdapter,
+} from '@crucible/ci-templates';
 import { humanReviewMode } from '../config/enforcement.js';
 
 const CHANGE_PREFIX = 'openspec/changes/';
@@ -279,14 +282,6 @@ function assertAuthorityFinalization(options: ClassifyCiAuthorityOptions): void 
       'Use the dedicated framework upgrade transition plan.',
     );
   }
-  const base = readFileSync(basePath, 'utf8');
-  if (!base.includes('pull_request:') || !base.includes('pull_request_target:')) {
-    throw invalidInputError(
-      'CI_FINALIZATION_LEGACY_MISMATCH',
-      'Authority finalization requires the exact dual-trigger transition workflow on the target branch.',
-      'Complete the legacy transition phase before finalizing authority.',
-    );
-  }
   const adapter = Object.keys(options.config.adapters)[0];
   if (adapter === undefined)
     throw preconditionError(
@@ -294,6 +289,18 @@ function assertAuthorityFinalization(options: ClassifyCiAuthorityOptions): void 
       'Authority finalization requires a configured target adapter.',
       'Repair the initialized target enforcement configuration.',
     );
+  const base = readFileSync(basePath, 'utf8');
+  const expectedBridge = renderAuthorityTransitionTemplateForAdapter(
+    adapter,
+    humanReviewMode(options.config),
+  );
+  if (base !== expectedBridge) {
+    throw invalidInputError(
+      'CI_FINALIZATION_LEGACY_MISMATCH',
+      'Authority finalization requires the exact dual-trigger transition workflow on the target branch.',
+      'Complete the legacy transition phase before finalizing authority.',
+    );
+  }
   const expected = renderCiTemplateForAdapter(adapter, humanReviewMode(options.config));
   if (readFileSync(headPath, 'utf8') !== expected) {
     throw invalidInputError(

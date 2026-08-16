@@ -5,6 +5,7 @@ import { TOY_REPO_ROOT } from '@crucible/fixtures';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { serializeFrameworkPin } from '../framework/pin.js';
 import { frameworkUpgrade } from './framework-upgrade.js';
+import { renderAuthorityTransitionTemplateForAdapter } from '@crucible/ci-templates';
 
 const OLD = '1111111111111111111111111111111111111111';
 const NEXT = '2222222222222222222222222222222222222222';
@@ -42,7 +43,21 @@ describe('frameworkUpgrade — restricted pin transaction (P4-25)', () => {
     expect(readFileSync(join(root, '.crucible', 'framework.lock.json'), 'utf8')).toContain(NEXT);
   });
 
-  it('emits the dual-trigger authority transition before finalization for a legacy target', () => {
+  it('requires explicit acknowledgement before staging a non-authoritative legacy bootstrap', () => {
+    mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+    writeFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'on:\n  pull_request:\n');
+
+    expect(() =>
+      frameworkUpgrade({
+        root,
+        pin: { version: 1, repository: 'owner/crucible', commit: NEXT },
+        trackedDirty: false,
+      }),
+    ).toThrow(/legacy bootstrap.*acknowledgement/i);
+    expect(readFileSync(join(root, '.crucible', 'framework.lock.json'), 'utf8')).toContain(OLD);
+  });
+
+  it('stages the exact acknowledged legacy bootstrap bridge', () => {
     mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
     writeFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'on:\n  pull_request:\n');
 
@@ -50,18 +65,26 @@ describe('frameworkUpgrade — restricted pin transaction (P4-25)', () => {
       root,
       pin: { version: 1, repository: 'owner/crucible', commit: NEXT },
       trackedDirty: false,
+      acknowledgeLegacyBootstrap: true,
     });
-    expect(transition.phase).toBe('authority-transition');
-    expect(readFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'utf8')).toContain(
-      '  pull_request:\n  pull_request_target:',
+    expect(transition.phase).toBe('legacy-bootstrap');
+    expect(transition.operatorInstructions).toContain(
+      'Remove verify from required checks for this one legacy-bootstrap PR.',
+    );
+    expect(readFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'utf8')).toBe(
+      renderAuthorityTransitionTemplateForAdapter('stub', 'required'),
     );
   });
 
-  it('finalizes a previously staged authority transition with the exact final workflow', () => {
+  it('finalizes only an exact merged bootstrap bridge at the same pin', () => {
     mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
     writeFileSync(
       join(root, '.github', 'workflows', 'crucible.yml'),
-      'on:\n  pull_request:\n  pull_request_target:\n',
+      renderAuthorityTransitionTemplateForAdapter('stub', 'required'),
+    );
+    writeFileSync(
+      join(root, '.crucible', 'framework.lock.json'),
+      serializeFrameworkPin({ version: 1, repository: 'owner/crucible', commit: NEXT }),
     );
 
     const result = frameworkUpgrade({
@@ -70,12 +93,28 @@ describe('frameworkUpgrade — restricted pin transaction (P4-25)', () => {
       trackedDirty: false,
     });
     expect(result.phase).toBe('authority-finalization');
+    expect(
+      result.actions.find((action) => action.relpath === '.crucible/framework.lock.json')?.kind,
+    ).toBe('unchanged');
     expect(readFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'utf8')).not.toContain(
       '  pull_request:\n',
     );
-    expect(readFileSync(join(root, '.github', 'workflows', 'crucible.yml'), 'utf8')).toContain(
-      '  pull_request_target:',
+  });
+
+  it('refuses to repin an unmerged legacy bootstrap bridge', () => {
+    mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+    writeFileSync(
+      join(root, '.github', 'workflows', 'crucible.yml'),
+      renderAuthorityTransitionTemplateForAdapter('stub', 'required'),
     );
+
+    expect(() =>
+      frameworkUpgrade({
+        root,
+        pin: { version: 1, repository: 'owner/crucible', commit: NEXT },
+        trackedDirty: false,
+      }),
+    ).toThrow(/unmerged legacy bootstrap bridge/i);
   });
 
   it('refuses tracked dirt before it writes anything', () => {
