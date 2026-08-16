@@ -136,11 +136,11 @@ export function reviewPostureBootstrap(
   const settingsPath = join(options.root, SETTINGS);
   const settingsText = readRequired(settingsPath, SETTINGS);
   const settings = parseConvenienceFile(settingsText, settingsPath, 'settings');
-  if (settings.review !== undefined) {
+  if (settings.review?.local_mode !== 'advisory') {
     throw preconditionError(
       'REVIEW_POSTURE_BOOTSTRAP_LOCAL_POLICY_PRESENT',
-      'Review-posture root bootstrap requires an absent local review policy on the legacy target.',
-      'Use the ordinary local-review configuration path after bootstrap.',
+      'Review-posture root bootstrap requires the exact advisory local review policy on the legacy target.',
+      'Restore the exact legacy local review policy before retrying.',
     );
   }
 
@@ -151,7 +151,7 @@ export function reviewPostureBootstrap(
       ENFORCEMENT_CONFIG,
       appendReviewPolicy(configText, 'ci_mode: advisory\n  human_mode: advisory'),
     ],
-    [SETTINGS, appendReviewPolicy(settingsText, 'local_mode: required')],
+    [SETTINGS, replaceLocalReviewPolicy(settingsText)],
   ]);
   const allPaths = [
     FRAMEWORK_PIN_RELPATH,
@@ -197,6 +197,18 @@ export function reviewPostureBootstrap(
       'Confirm fresh local review and deterministic verification, then restore verify immediately after merge.',
     ],
   };
+}
+
+function replaceLocalReviewPolicy(text: string): string {
+  const legacy = 'review:\n  local_mode: advisory\n';
+  if (!text.includes(legacy)) {
+    throw preconditionError(
+      'REVIEW_POSTURE_BOOTSTRAP_LOCAL_POLICY_TEXT_MISMATCH',
+      'Review-posture root bootstrap requires exact advisory local review bytes.',
+      'Restore the exact legacy settings before retrying.',
+    );
+  }
+  return text.replace(legacy, 'review:\n  local_mode: required\n');
 }
 
 function appendReviewPolicy(text: string, body: string): string {

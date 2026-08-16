@@ -42,6 +42,11 @@ beforeEach(() => {
     join(root, '.github', 'workflows', 'crucible-review.yml'),
     readFileSync(CI_REVIEW_TEMPLATE_PATH, 'utf8'),
   );
+  writeFileSync(
+    join(root, '.crucible', 'settings.yaml'),
+    readFileSync(join(root, '.crucible', 'settings.yaml'), 'utf8') +
+      '\nreview:\n  local_mode: advisory\n',
+  );
 });
 
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -110,6 +115,23 @@ describe('reviewPostureBootstrap - P4-26 manual root transaction', () => {
         acknowledgeRootBootstrap: true,
       }),
     ).toThrow(/absent review policy/i);
+  });
+
+  it('rejects a non-advisory local-review legacy setting', () => {
+    const settings = join(root, '.crucible', 'settings.yaml');
+    writeFileSync(
+      settings,
+      readFileSync(settings, 'utf8').replace('local_mode: advisory', 'local_mode: required'),
+    );
+
+    expect(() =>
+      reviewPostureBootstrap({
+        root,
+        pin: { version: 1, repository: 'vivardhandevaki/crucible-v2', commit: NEXT },
+        trackedDirty: false,
+        acknowledgeRootBootstrap: true,
+      }),
+    ).toThrow(/exact advisory local review policy/i);
   });
 
   it('rolls back the complete transaction when a later write fails', () => {
