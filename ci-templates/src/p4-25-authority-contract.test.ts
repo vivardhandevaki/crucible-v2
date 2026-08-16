@@ -60,6 +60,12 @@ describe('P4-25 authority workflow contract', () => {
       expect((verify?.steps ?? []).map((step) => step.run ?? '').join('\n')).toContain('ci verify');
       expect((route?.steps ?? []).map((step) => step.run ?? '').join('\n')).toContain('ci route');
     });
+    it(label + ': authority transport expands archive moves into additions and removals', () => {
+      const authority = workflow(path).jobs?.authority;
+      const authorityRun = (authority?.steps ?? []).map((step) => step.run ?? '').join('\n');
+
+      expect(authorityRun).toContain('git diff --no-renames --name-only -z');
+    });
   }
   it('renders a non-authoritative legacy bootstrap bridge for both workflow variants', () => {
     const dollar = String.fromCharCode(36);

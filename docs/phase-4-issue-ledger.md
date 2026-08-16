@@ -34,6 +34,8 @@ an issue is fixed; do not silently remove the history.
 
 | P4-025 | Notes PR #23 proved P4-25 target-owned authority, verification, and route are healthy after the bridge, but its detached reviewer correctly failed because the preserved target has no review block and therefore defaults CI review to required. No API key is authorized. Candidate config cannot select advisory for itself, and a red or empty judge cannot be merged or treated as advisory. | Implemented as P4-26; pending merge | Add one explicit P4-26 manual solo-posture root bootstrap from the exact post-#22 bridge only. It stages an allowlisted pin/workflow/config/settings transaction, requires acknowledgement plus manual comparison and local review, and ends at target-owned advisory/advisory posture with required local review. It never weakens required mode or creates a generic config bypass. Close #23 as superseded; preserve #8/#18. |
 
+| P4-026 | A canonical `crucible archive` move was reported as `CI_ARCHIVE_INCOMPLETE` in target-owned CI because `git diff --name-only` detected renames and omitted the required active-bundle deletion paths. | Resolved; pending merge | Both shipped authority workflows now use `git diff --no-renames --name-only -z`, preserving the NUL-safe transport while reporting archive moves as additions plus removals. P4-25 workflow-contract coverage guards both templates; focused template/authority tests and ci-templates typecheck pass. Re-pin the consumer framework and rerun archive PR #2. |
+
 ## Resolution protocol
 
 For a framework issue, fix it in `crucible-v2` under the normal test-first
