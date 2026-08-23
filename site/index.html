@@ -1037,20 +1037,92 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
             </p>
           </div>
         </details>
-        <h3>AI review is separate and optional</h3>
+
+        <h3>Two checks, two different jobs</h3>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Mode</th><th>Credential behavior</th><th>Merge effect</th></tr></thead>
+            <thead><tr><th></th><th><code>verify</code></th><th><code>ai-review</code></th></tr></thead>
             <tbody>
-              <tr><td><code>off</code> <strong>(default)</strong></td><td>No model call; no API key</td><td>No AI-review check</td></tr>
-              <tr><td><code>advisory</code></td><td>Runs only when credentials are configured</td><td>Findings never block</td></tr>
-              <tr><td><code>required</code></td><td>Missing credential, transport failure, or malformed verdict is red</td><td>Known-rubric blocking findings prevent merge</td></tr>
+              <tr>
+                <td><strong>Purpose</strong></td>
+                <td>Prove the implementation satisfies sealed artifacts, current oracles, archived regression oracles, declared suites, traceability, hashes, and pins.</td>
+                <td>Apply bounded engineering judgment from an independent model against a target-owned, enumerated rubric.</td>
+              </tr>
+              <tr>
+                <td><strong>Mechanism</strong></td>
+                <td>Deterministic code and adapter execution. Identical inputs produce the same machine-readable result.</td>
+                <td>An LLM call whose response must be current, independent, and valid against a strict verdict schema.</td>
+              </tr>
+              <tr>
+                <td><strong>Credentials</strong></td>
+                <td>Never requires an LLM API key.</td>
+                <td>Requires a configured API key only when policy enables the review.</td>
+              </tr>
+              <tr>
+                <td><strong>Merge authority</strong></td>
+                <td>The required baseline check. A red <code>verify</code> always blocks.</td>
+                <td><code>off</code> does not run, <code>advisory</code> never blocks, and <code>required</code> must be green.</td>
+              </tr>
+              <tr>
+                <td><strong>What may block</strong></td>
+                <td>Any failed or skipped judge, invalid seal, missing result, suite failure, malformed adapter output, or other deterministic contract violation.</td>
+                <td>Only known rubric IDs may produce blocking findings. Unknown concerns are observations; malformed or unavailable review fails only in <code>required</code> mode.</td>
+              </tr>
             </tbody>
           </table>
         </div>
+        <div class="statement">
+          <strong><code>ai-review</code> never runs inside <code>verify</code>.</strong> A green AI review cannot
+          rescue a red deterministic verdict. Turning AI review on, off, advisory, or required does not
+          change a single <code>verify</code> input, byte, or result.
+        </div>
+
+        <h3>AI review is separate, optional, and credential-aware</h3>
         <p class="reading">
-          Deterministic <code>verify</code> is identical in all three modes and never requires LLM access.
-          Implementing-session prose or local self-review is never reused as CI evidence.
+          <strong>An API key provides capability; it does not provide authority.</strong> Merely configuring
+          a key never turns AI review on and never makes it blocking. The target-owned
+          <code>ai-review</code> mode decides whether a model call is disabled, advisory, or required.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Target-owned mode</th><th>No API key configured</th><th>API key configured</th><th>Deterministic <code>verify</code></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>off</code> <strong>(default)</strong></td>
+                <td>No model call. No AI-review check.</td>
+                <td>Still no model call. The unused key does not change policy.</td>
+                <td>Runs and remains the required merge check.</td>
+              </tr>
+              <tr>
+                <td><code>advisory</code></td>
+                <td>No model call. AI review contributes no merge decision.</td>
+                <td>AI review runs and reports findings, but those findings never block.</td>
+                <td>Runs identically and remains the required merge check.</td>
+              </tr>
+              <tr>
+                <td><code>required</code></td>
+                <td>The AI-review check is red because its required credential is missing.</td>
+                <td>AI review runs. Missing transport, malformed output, unknown rubric IDs, or valid blocking findings are red.</td>
+                <td>Runs identically; both required checks must be green.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="grid two">
+          <article class="card good">
+            <span class="num">WITHOUT A KEY</span>
+            <h4>The normal deterministic path still works</h4>
+            <p><code>propose</code>, <code>approve</code>, <code>implement</code>, <code>verify</code>, archive, and trusted CI need no LLM credential. The default <code>off</code> mode makes no model call.</p>
+          </article>
+          <article class="card">
+            <span class="num">WITH A KEY</span>
+            <h4>The credential stays isolated</h4>
+            <p>The key is available only to the independent AI-review transport when policy enables it. Candidate code and deterministic <code>verify</code> never receive or depend on that secret.</p>
+          </article>
+        </div>
+        <p class="reading">
+          Implementing-session prose or local self-review is never reused as CI evidence. When AI review
+          runs, its verdict must be independent, current, and schema-valid.
         </p>
       </div>
     </section>
@@ -1091,7 +1163,7 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
         <details><summary>Does Crucible’s CLI run Codex or Claude Code?</summary><div class="answer">No. Open Codex or Claude Code in the initialized project and use the generated Crucible skills or commands. Those surfaces guide the active session and call the pinned project-local CLI for deterministic validation; Crucible does not launch a child agent.</div></details>
         <details><summary>Who chooses the oracle test file and binding?</summary><div class="answer">The authoring agent chooses a conventional path and native target during <code>propose</code>. The CLI does not authorize a candidate path or pass a <code>candidateFile</code> handoff. It validates containment, uniqueness, collection, grounding, and red-on-base behavior where required.</div></details>
         <details><summary>Can the implementer change a bad oracle?</summary><div class="answer">Not directly. A sealed edit blocks implementation and verification. If the approved intent is wrong or incomplete, the agent uses <code>amend</code>; a human reviews the exact intent/test delta and mints a new seal. Ordinary code fixes need no amendment.</div></details>
-        <details><summary>Does verification require an LLM API key?</summary><div class="answer">No. Deterministic <code>verify</code> is the required check and never calls a model. AI review is a separate optional feature with <code>off</code>, <code>advisory</code>, and <code>required</code> modes.</div></details>
+        <details><summary>What happens if I do or do not configure an LLM API key?</summary><div class="answer">The full deterministic lifecycle, including required <code>verify</code>, works without a key. In the default <code>off</code> mode, no model call occurs even if a key exists. In <code>advisory</code> mode, review runs only when a key exists and never blocks. In <code>required</code> mode, a missing key is red; with a key, the independent review must complete with a valid, non-blocking verdict. In every case, <code>verify</code> runs independently with identical inputs and results.</div></details>
         <details><summary>Is local green authoritative?</summary><div class="answer">No. Local verification is fast feedback on an agent-controlled machine. Enforcement-grade merge authority requires target-owned CI. <code>doctor --ci</code> reports whether the repository actually has ruleset or App protection, or only an advisory local workflow.</div></details>
         <details><summary>Why not use <code>pull_request_target</code>?</summary><div class="answer">Because executing untrusted candidate code in its privileged context is not accepted as the default design. The preferred path is an organization-required workflow on ordinary restricted <code>pull_request</code>. Any future bounded use requires its own threat model and ratification.</div></details>
         <details><summary>What happens to custom OpenSpec artifacts during approval and archive?</summary><div class="answer">Schema-required pre-approval artifacts enter the approval candidate set and seal automatically. Archive preserves those extensions - and unknown extra files - alongside <code>oracles.md</code>, approvals, amendments, tasks, specs, and design. The archive is schema-complete, not a hard-coded shortlist.</div></details>
