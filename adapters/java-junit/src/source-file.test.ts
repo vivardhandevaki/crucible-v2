@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { candidateTargetFile, groundTargetFile } from './source-file.js';
+import { groundTargetFile } from './source-file.js';
 
 let root: string;
 beforeEach(() => {
@@ -93,38 +93,5 @@ describe('groundTargetFile', () => {
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
-  });
-});
-
-describe('candidateTargetFile (P4-11)', () => {
-  it('reuses an existing declared test source when only the target method is missing', () => {
-    source('src/test/java/com/acme/CheckoutTest.java', 'package com.acme; class CheckoutTest {}\n');
-    expect(
-      candidateTargetFile({
-        root,
-        className: 'com.acme.CheckoutTest',
-        sourceRoots: [join(root, 'src/test/java')],
-      }),
-    ).toBe('src/test/java/com/acme/CheckoutTest.java');
-  });
-
-  it('maps a missing addressable class into the first configured test root', () => {
-    expect(
-      candidateTargetFile({
-        root,
-        className: 'com.acme.NewCheckoutTest',
-        sourceRoots: [join(root, 'custom-tests'), join(root, 'src/test/java')],
-      }),
-    ).toBe('custom-tests/com/acme/NewCheckoutTest.java');
-  });
-
-  it('rejects a malformed class', () => {
-    expect(
-      candidateTargetFile({
-        root,
-        className: 'com.acme.Invalid-Test',
-        sourceRoots: [join(root, 'src/test/java')],
-      }),
-    ).toBeUndefined();
   });
 });

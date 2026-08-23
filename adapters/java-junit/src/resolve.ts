@@ -31,7 +31,7 @@ export interface ResolveHelperResult {
 export interface InvokeResolveOptions {
   /** Path to the shaded resolve-helper jar. */
   jarPath: string;
-  /** The project-under-test's evaluated test-execution classpath entries. */
+  /** The project-under-test's compiled classpath entries (main + test classes). */
   classpath: string[];
   /** Adapter target strings to classify (`com.acme.FooTest#bar`). */
   targets: string[];

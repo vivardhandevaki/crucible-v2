@@ -52,25 +52,6 @@ export function groundTargetFile(options: GroundTargetFileOptions): string | und
   return undefined;
 }
 
-export function candidateTargetFile(options: GroundTargetFileOptions): string | undefined {
-  const existing = groundTargetFile(options);
-  if (existing !== undefined) return existing;
-  const root = realpathIfPresent(options.root);
-  if (root === undefined) return undefined;
-  const outerClass = options.className.split('$', 1)[0]!;
-  const parts = outerClass.split('.');
-  const simpleName = parts.pop();
-  if (simpleName === undefined || !isJavaIdentifier(simpleName)) return undefined;
-  if (parts.some((part) => !isJavaIdentifier(part))) return undefined;
-  const sourceRel = join(...parts, simpleName + '.java');
-  for (const configuredRoot of options.sourceRoots) {
-    const candidate = join(resolve(options.root, configuredRoot), sourceRel);
-    if (!isContained(root, candidate)) continue;
-    return relative(root, candidate).split(sep).join('/');
-  }
-  return undefined;
-}
-
 function realpathIfPresent(path: string): string | undefined {
   try {
     return realpathSync(path);

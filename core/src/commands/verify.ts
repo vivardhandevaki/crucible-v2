@@ -173,8 +173,6 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   // refactor/bugfix may have none. A malformed artifact → exit 3 (fail-closed).
   const requirements = loadRequirementsForType(changeDir, changeRel, type);
   const oracles = loadOracles(join(changeDir, 'oracles.md'));
-  const approvalPath = join(changeDir, 'approval.yaml');
-  const approval = existsSync(approvalPath) ? loadApproval(approvalPath) : undefined;
 
   // Revalidate the type against the bundle's real shape (design §4): a refactor
   // that carries a spec delta or oracles, or a bugfix with no reproduction oracle,
@@ -211,7 +209,6 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
         specDelta: requirements.length > 0,
         touchedPaths: facts.touchedPaths,
         diffLines: facts.diffLines,
-        ...(approval?.minimum_tier !== undefined ? { forced: approval.minimum_tier } : {}),
       },
       options.config,
     );
@@ -297,16 +294,10 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   // Check 4 — approval-hash, ONLY when a seal exists. A pre-approve verify (during
   // propose) has no approval.yaml and skips this cleanly (not a failure). A void
   // seal is a red check here (exit 1), never a silent pass (invariant 6).
-  if (approval) {
-    checks.push(
-      approvalCheck(
-        verifyApproval(root, approval, {
-          ...(extras.tier?.tier === 'critical'
-            ? { criticalOracleIds: oracles.map((o) => o.id) }
-            : {}),
-        }),
-      ),
-    );
+  const approvalPath = join(changeDir, 'approval.yaml');
+  if (existsSync(approvalPath)) {
+    const approval = loadApproval(approvalPath);
+    checks.push(approvalCheck(verifyApproval(root, approval)));
   }
 
   return aggregate(change, checks, extras);

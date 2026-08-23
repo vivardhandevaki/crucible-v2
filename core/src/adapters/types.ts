@@ -17,24 +17,16 @@ export type AdapterVerb = 'resolve' | 'run';
 // ─── resolve ────────────────────────────────────────────────────────────────
 // Batch dry-run collection: does each target exist / collect? No execution.
 
-/**
- * A strict resolve union. A collected target identifies its sealable file;
- * a missing target may name a deterministic pre-approval authoring candidate.
- */
-export const resolveResultSchema = z.discriminatedUnion('status', [
-  z.strictObject({
-    target: z.string().min(1),
-    status: z.literal('found'),
-    targetFile: z.string().min(1),
-  }),
-  z.strictObject({
-    target: z.string().min(1),
-    status: z.literal('missing'),
-    candidateFile: z.string().min(1).optional(),
-  }),
-]);
-
+/** A single `resolve` result: `found` (with the resolved file) or `missing`. */
+export const resolveResultSchema = z.strictObject({
+  target: z.string().min(1),
+  status: z.enum(['found', 'missing']),
+  // Present only when `found`; the file the target lives in (unused by lint,
+  // surfaced by `crucible why`). Optional under exactOptionalPropertyTypes.
+  targetFile: z.string().optional(),
+});
 export type ResolveResult = z.infer<typeof resolveResultSchema>;
+
 // ─── run ──────────────────────────────────────────────────────────────────
 // Execute targets; the normalized result schema is the ONLY shape core parses
 // (charter §Bindings & the Adapter Protocol).

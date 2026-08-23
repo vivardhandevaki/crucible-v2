@@ -196,7 +196,6 @@ export async function implement(
       cmd: 'implement',
       summary: 'tasks.md generated',
       transcript: relative(root, tasksTranscript),
-      execution_mode: 'headless',
     },
     'implementing',
   );
@@ -228,7 +227,6 @@ export async function implement(
         cmd: 'implement',
         summary: 'halted — escalation filed',
         transcript: relative(root, implementTranscript),
-        execution_mode: 'headless',
       },
       'escalated',
     );
@@ -248,7 +246,6 @@ export async function implement(
       cmd: 'implement',
       summary: `${LOCAL_VERIFY_SUMMARY_PREFIX} ${report.verdict}`,
       transcript: relative(root, implementTranscript),
-      execution_mode: 'headless',
     },
     report.verdict === 'pass' ? 'implemented' : 'implement-red',
   );

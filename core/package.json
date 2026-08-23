@@ -14,7 +14,6 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@fission-ai/openspec": "1.6.0",
     "@crucible/adapter-java-junit": "*",
     "@crucible/ci-templates": "*",
     "@crucible/schemas": "*",

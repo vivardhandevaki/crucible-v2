@@ -40,11 +40,6 @@ const auditSchema = z.strictObject({
   sample_rate: z.number().min(0).max(1),
 });
 
-const reviewSchema = z.strictObject({
-  ci_mode: z.enum(['advisory', 'required']).optional(),
-  human_mode: z.enum(['advisory', 'required']).optional(),
-});
-
 // `.strict()` at every level: an unrecognized key fails rather than being
 // stripped, so config typos surface loudly (architecture.md §4). Dynamic maps
 // (tiers/adapters/suites) key on names the project chooses; their *values* are
@@ -56,27 +51,11 @@ const enforcementSchema = z.strictObject({
   suites: z.record(z.string(), z.string()).default({}),
   trajectory: trajectorySchema,
   audit: auditSchema,
-  review: reviewSchema.optional(),
 });
 
 export type EnforcementConfig = z.infer<typeof enforcementSchema>;
 export type TierConfig = z.infer<typeof tierSchema>;
 export type AdapterConfig = z.infer<typeof adapterSchema>;
-export type CiReviewMode = Exclude<NonNullable<EnforcementConfig['review']>['ci_mode'], undefined>;
-export type HumanReviewMode = Exclude<
-  NonNullable<EnforcementConfig['review']>['human_mode'],
-  undefined
->;
-
-/** Target-branch CI review policy; omission preserves P4-14 required mode. */
-export function ciReviewMode(config: EnforcementConfig): CiReviewMode {
-  return config.review?.ci_mode ?? 'required';
-}
-
-/** Target-branch independent-human-review policy; omission preserves P2 routing. */
-export function humanReviewMode(config: EnforcementConfig): HumanReviewMode {
-  return config.review?.human_mode ?? 'required';
-}
 
 /** The path `crucible.yaml` is expected at, given the config root directory. */
 export function enforcementConfigPath(configRoot: string): string {

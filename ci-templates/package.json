@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "description": "Reusable CI templates (e.g. crucible.yml) that enforce verify on the target branch. Shipped as data, validated by tests.",
-  "//": "The built core CLI loads this package under plain Node in consumer CI, so its runtime export is dist/index.js. TypeScript checks run before build, so declarations remain source-visible. `crucible init` copies the crucible.yml data into a target repo's .github/workflows/.",
-  "main": "dist/index.js",
+  "//": "Resolves to TypeScript source, not dist (like @crucible/schemas): src/index.ts only computes the shipped template's path. `crucible init` copies the crucible.yml data into a target repo's .github/workflows/.",
+  "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
     ".": {
       "types": "./src/index.ts",
-      "default": "./dist/index.js"
+      "default": "./src/index.ts"
     }
   },
   "scripts": {

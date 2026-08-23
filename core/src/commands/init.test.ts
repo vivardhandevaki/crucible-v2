@@ -1,11 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  CI_REVIEW_TEMPLATE_PATH,
-  CI_TEMPLATE_PATH,
-  JAVA_JUNIT_CI_TEMPLATE_PATH,
-} from '@crucible/ci-templates';
+import { CI_TEMPLATE_PATH, JAVA_JUNIT_CI_TEMPLATE_PATH } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES } from '@crucible/schemas';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FRAMEWORK_PIN_RELPATH, loadFrameworkPin, type FrameworkPin } from '../framework/pin.js';
@@ -14,7 +10,6 @@ import {
   GITIGNORE_LINES,
   MANAGED_BLOCK_FILES,
   init,
-  MANAGED_SKILL_NAMES,
   type ConfirmOverwrite,
   type InitAnswers,
   type InitReport,
@@ -96,10 +91,6 @@ describe('init — fresh repo → complete working setup', () => {
       readFileSync(CI_TEMPLATE_PATH, 'utf8'),
     );
 
-    expect(read(join('.github', 'workflows', 'crucible-review.yml'))).toBe(
-      readFileSync(CI_REVIEW_TEMPLATE_PATH, 'utf8'),
-    );
-
     // AGENTS.md is canonical; CLAUDE.md is a compatibility bridge.
     for (const file of MANAGED_BLOCK_FILES) expect(read(file)).toContain('crucible:managed');
     expect(read('AGENTS.md')).toContain('crucible propose');
@@ -116,29 +107,6 @@ describe('init — fresh repo → complete working setup', () => {
   });
 });
 
-describe('init — explicit P4-18/P4-19 review posture', () => {
-  it('writes selected modes, omits disabled PR jobs, and requires no API key input', async () => {
-    await init(
-      {
-        root: scratch,
-        answers: {
-          ...ANSWERS,
-          ciReviewMode: 'advisory',
-          humanReviewMode: 'advisory',
-          localReviewMode: 'required',
-        },
-      },
-      { confirmOverwrite: confirmNever },
-    );
-
-    expect(read('crucible.yaml')).toContain('ci_mode: advisory');
-    expect(read('crucible.yaml')).toContain('human_mode: advisory');
-    expect(read(join('.crucible', 'settings.yaml'))).toContain('local_mode: required');
-    expect(read(join('.github', 'workflows', 'crucible.yml'))).not.toContain('\n  route:\n');
-    expect(existsSync(join(scratch, '.github', 'workflows', 'crucible-review.yml'))).toBe(false);
-  });
-});
-
 describe('init — validation framework pin', () => {
   it('writes a strict repository+commit pin when a validation bootstrap is requested', async () => {
     await init(
@@ -147,38 +115,6 @@ describe('init — validation framework pin', () => {
     );
 
     expect(loadFrameworkPin(join(scratch, FRAMEWORK_PIN_RELPATH))).toEqual(FRAMEWORK_PIN);
-  });
-});
-
-describe('init — managed interactive skills (P4-08/P4-10)', () => {
-  it('installs equivalent validated skills and a local pinned launcher without touching human instructions', async () => {
-    writeFileSync(join(scratch, 'AGENTS.md'), '# Human-owned instructions\n', 'utf8');
-    await init(
-      { root: scratch, answers: ANSWERS, frameworkPin: FRAMEWORK_PIN },
-      { confirmOverwrite: () => true },
-    );
-
-    for (const name of MANAGED_SKILL_NAMES) {
-      for (const root of ['.agents', '.claude']) {
-        const skill = read(join(root, 'skills', name, 'SKILL.md'));
-        expect(skill).toContain(`name: ${name}`);
-        expect(skill).toContain('node .crucible/bin/crucible.mjs');
-        expect(skill).not.toContain('codex exec');
-        expect(skill).not.toContain('claude -p');
-        expect(read(join('.agents', 'skills', 'review', 'SKILL.md'))).toContain(
-          'fresh Codex conversation',
-        );
-        expect(read(join('.agents', 'skills', 'review', 'SKILL.md'))).toContain(
-          'session review start',
-        );
-      }
-    }
-    const launcher = read(join('.crucible', 'bin', 'crucible.mjs'));
-    expect(launcher).toContain(FRAMEWORK_PIN.commit);
-    // init.ts runs from both core/src and core/dist; the generated launcher must
-    // point at the repository's one core/dist tree, never core/core/dist.
-    expect(launcher).not.toContain('/core/core/dist/cli/bin.js');
-    expect(read('AGENTS.md')).toContain('# Human-owned instructions');
   });
 });
 
@@ -267,9 +203,6 @@ describe('init — adapter detection (CLI edge)', () => {
       runners: ['junit'],
       paths: ['**/*.java'],
       unitCommand: 'mvn test',
-      ciReviewMode: 'required',
-      humanReviewMode: 'required',
-      localReviewMode: 'advisory',
     });
   });
 

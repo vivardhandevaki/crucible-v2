@@ -172,7 +172,6 @@ export async function amend(options: AmendOptions, deps: AmendDeps): Promise<Ame
     deps.resolve,
     collectArchivedRequirementIds(root),
     readChangeType(changeDir),
-    { allowPostApprovalTasks: true },
   );
 
   // A red regeneration cannot be re-sealed and does not resolve the ambiguity:
