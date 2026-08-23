@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Crucible V2 is an artifact-first framework for AI-driven software development. Humans approve intent and executable oracles; agents implement; deterministic verification enforces the sealed promise.">
-  <title>Crucible V2 — Approve the promise</title>
+  <title>Crucible V2 - Approve the promise</title>
   <script>
     (function () {
       try {
@@ -123,6 +123,15 @@
     .lede { max-width: 820px; color: var(--soft); font-size: clamp(19px, 2.2vw, 23px); line-height: 1.5; }
     .lede strong { color: var(--ink); }
     .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 30px; }
+    .hero-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+    .button {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 10px 15px; border: 1px solid var(--line-strong); border-radius: 9px;
+      background: var(--panel); color: var(--ink); font-size: 14px; font-weight: 680;
+      text-decoration: none; box-shadow: 0 5px 18px rgba(56, 43, 30, 0.05);
+    }
+    .button.primary { border-color: var(--accent); background: var(--accent); color: #fff8f2; }
+    .button:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
     .chip, .badge {
       display: inline-flex; align-items: center; border: 1px solid var(--line);
       border-radius: 999px; background: var(--panel); color: var(--soft);
@@ -253,6 +262,26 @@
     }
     details[open] summary::before { content: "−"; }
     details .answer { padding: 0 4px 18px 29px; color: var(--soft); }
+    details.insight {
+      overflow: hidden; margin: 16px 0; border: 1px solid var(--line);
+      border-radius: 12px; background: var(--panel);
+    }
+    details.insight > summary {
+      display: flex; gap: 10px; align-items: center; padding: 14px 16px;
+    }
+    details.insight > summary::before { flex: none; }
+    details.insight .insight-kind {
+      flex: none; padding: 3px 7px; border-radius: 5px;
+      background: var(--accent-soft); color: var(--accent-2);
+      font: 700 10px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    details.insight.rationale .insight-kind { background: var(--amber-soft); color: var(--amber); }
+    details.insight.deep .insight-kind { background: var(--blue-soft); color: var(--blue); }
+    details.insight .insight-body {
+      padding: 17px 20px 7px; border-top: 1px solid var(--line);
+      color: var(--soft); font-size: 15px;
+    }
+    details.insight .insight-body > :last-child { margin-bottom: 10px; }
     .roadmap { display: grid; gap: 12px; margin-top: 25px; }
     .phase {
       display: grid; grid-template-columns: 105px 1fr auto; gap: 16px; align-items: start;
@@ -310,7 +339,7 @@
     <div class="shell navrow">
       <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span>Crucible V2</a>
       <nav id="site-nav" aria-label="Primary navigation">
-        <a href="#why">Why</a><a href="#loop">The loop</a><a href="#example">Example</a><a href="#trust">Trust model</a>
+        <a href="#what">What</a><a href="#why">Why</a><a href="#how">How</a><a href="#example">Example</a><a href="#trust">Trust</a>
         <a href="#architecture">Architecture</a><a href="#ci">Trusted CI</a>
         <a href="#status">Status</a><a href="#faq">FAQ</a>
       </nav>
@@ -321,35 +350,76 @@
   <main id="top">
     <div class="hero">
       <div class="shell">
-        <div class="eyebrow">Artifact-first AI development</div>
-        <h1>Approve the promise.<br>Let machines prove the code.</h1>
+        <div class="eyebrow">A verification framework for agent-built software</div>
+        <h1>Approve the promise.<br>Let the code prove itself.</h1>
         <p class="lede">
-          Crucible moves the human gate from code review to <strong>intent review</strong>.
-          An agent drafts specifications, executable oracles, and scope. A person approves that
-          complete bundle once. The implementation must then satisfy the sealed promise through
-          deterministic local and target-owned CI verification.
+          Crucible lets AI agents build software while humans approve <strong>what the software must do</strong>,
+          not every line used to do it. Specifications and executable oracles become the reviewed contract.
+          Deterministic verification makes the implementation answer to that contract.
         </p>
         <div class="chips" aria-label="Core properties">
           <span class="chip">one human gate</span><span class="chip">oracles before implementation</span>
           <span class="chip">no agent self-attestation</span><span class="chip">no API key required</span>
           <span class="chip">OpenSpec layer, not fork</span>
         </div>
-        <div class="status-strip">
-          <span class="badge active">Phase 4R active</span>
-          <div>
-            <strong>Current state:</strong> the V2 premise and reset design are ratified; the previous Phase 4
-            implementation was halted after consumer validation exposed architectural failure.
-            P4R-00 and P4R-01 are complete. The thin framework is now being rebuilt from P4R-02 onward,
-            and should not yet be presented as release-ready.
-          </div>
+        <div class="hero-links">
+          <a class="button primary" href="#example">See one feature, end to end</a>
+          <a class="button" href="#how">Understand the workflow</a>
         </div>
       </div>
     </div>
 
+    <section id="what">
+      <div class="shell">
+        <div class="kicker">01 - What</div>
+        <h2>A contract-first workflow around your coding agent.</h2>
+        <p class="subhead">
+          Crucible is not another model, IDE, or test framework. It is the governance and verification layer
+          around an agent-driven development loop.
+        </p>
+
+        <div class="grid three">
+          <article class="card">
+            <span class="num">HUMAN</span>
+            <h4>Approve intent</h4>
+            <p>Review the specification, scenarios, scope, exclusions, seams, and executable judges at one deliberate gate.</p>
+          </article>
+          <article class="card">
+            <span class="num">AGENT</span>
+            <h4>Author and implement</h4>
+            <p>Draft the artifact bundle, then build any implementation that satisfies the approved goalposts.</p>
+          </article>
+          <article class="card">
+            <span class="num">MACHINE</span>
+            <h4>Enforce the contract</h4>
+            <p>Validate traceability, seal approved bytes, run every judge, and produce a reproducible verdict.</p>
+          </article>
+        </div>
+
+        <details class="insight">
+          <summary><span class="insight-kind">ELI5</span>The answer-key version</summary>
+          <div class="insight-body">
+            <p>
+              Imagine the agent is taking an exam. It may write any answer it likes, but before it starts,
+              you review the questions and the answer key. Then you lock the answer key. Crucible is the
+              locked grading room: the agent cannot rewrite the questions, alter the key, skip an
+              inconvenient question, or award itself a passing grade.
+            </p>
+          </div>
+        </details>
+
+        <div class="statement">
+          You keep your agent, language, test runner, and repository. Crucible supplies the artifact contract,
+          the single approval gate, the tamper-evident seal, the adapter boundary, and the deterministic path
+          from intent to merge evidence.
+        </div>
+      </div>
+    </section>
+
     <section id="why">
       <div class="shell">
         <div class="reading">
-          <div class="kicker">01 — The core inversion</div>
+          <div class="kicker">02 - Why</div>
           <h2>Verification effort is conserved, not eliminated.</h2>
           <p class="subhead">
             If humans stop reading AI-written code, trust has to move somewhere better. Crucible
@@ -361,7 +431,7 @@
             “the specs, oracles, and harness,” then concentrates human attention there.
           </div>
           <p>
-            The agent is allowed to write the code and to draft the tests that will judge it—but
+            The agent is allowed to write the code and to draft the tests that will judge it - but
             those judges must exist before implementation and a human must seal them. Once sealed,
             the implementer can freely change product code and ordinary tests, but cannot silently
             move the goalposts.
@@ -370,19 +440,62 @@
         <div class="grid three">
           <article class="card"><span class="num">01</span><h4>Recognition over recall</h4><p>The agent enumerates requirements, scenarios, exclusions, and seams. The human spots what is missing instead of inventing every edge case from scratch.</p></article>
           <article class="card"><span class="num">02</span><h4>Artifact authority</h4><p>Files and validation decide what may happen next. Conversation history, caches, checkpoints, and “done” messages have no enforcement power.</p></article>
-          <article class="card"><span class="num">03</span><h4>One rich gate</h4><p>The complete proposal—including custom artifacts and real bound tests—is reviewed once. There is no second approval ceremony after implementation.</p></article>
+          <article class="card"><span class="num">03</span><h4>One rich gate</h4><p>The complete proposal - including custom artifacts and real bound tests - is reviewed once. There is no second approval ceremony after implementation.</p></article>
         </div>
+
+        <details class="insight rationale">
+          <summary><span class="insight-kind">Rationale</span>Why line-by-line code review stops scaling</summary>
+          <div class="insight-body">
+            <p>
+              Agent output can grow far faster than human review capacity. Keeping the old review model turns
+              the person into the bottleneck and makes attention shallower as volume rises. Removing review
+              entirely simply trades a visible bottleneck for invisible risk.
+            </p>
+            <p>
+              Crucible relocates attention to the smaller, higher-leverage surface: the promises and the
+              checks that define correctness. One approved oracle can judge many implementations and keep
+              judging every future change.
+            </p>
+          </div>
+        </details>
+
+        <details class="insight deep">
+          <summary><span class="insight-kind">Deep dive</span>How agent-authored judges can carry trust</summary>
+          <div class="insight-body">
+            <p>
+              The agent drafts the oracle scenarios and their real test code before implementation exists.
+              A human reviews that complete bundle, while traceability lint proves every requirement has a
+              collected executable target. Approval then seals every relevant byte by content hash.
+            </p>
+            <p>
+              Trust does not come from believing the agent wrote a perfect test. It comes from separating
+              goalpost creation from implementation, concentrating human review on those goalposts, and
+              making later alteration mechanically visible.
+            </p>
+          </div>
+        </details>
       </div>
     </section>
 
-    <section id="loop">
+    <section id="how">
       <div class="shell">
-        <div class="kicker">02 — The ordinary path</div>
+        <div class="kicker">03 - How</div>
         <h2>A thin lifecycle that feels like TDD.</h2>
         <p class="subhead">
           Generated Codex or Claude Code skills steer the user’s already-active session. They call a
           project-local pinned CLI for status and validation. The CLI never launches a child agent.
         </p>
+        <details class="insight">
+          <summary><span class="insight-kind">ELI5</span>From a chat request to a verified change</summary>
+          <div class="insight-body">
+            <p>
+              Ask your coding agent for a feature. It first writes down the promise and the tests that would
+              prove it. You review and lock those goalposts. The same agent then writes the code. A
+              deterministic checker runs the locked tests, and the complete change is archived before one
+              pull request.
+            </p>
+          </div>
+        </details>
         <div class="flow" aria-label="Crucible lifecycle">
           <div class="flow-step"><span class="actor">CLI</span><b>init</b><small>Install the pinned local framework, schema, adapter, and agent surfaces.</small></div>
           <div class="flow-step"><span class="actor">Agent + CLI</span><b>propose</b><small>Draft intent, all required artifacts, oracles, and real red tests.</small></div>
@@ -430,12 +543,44 @@ target: com.acme.auth.LockoutTest#fifthFailureLocks
           <article class="card good"><h4>When intent changes</h4><p><code>amend</code> validates the changed intent, custom artifacts, and bound tests together. A human reviews only the delta and mints a new seal generation.</p></article>
           <article class="card warn"><h4>When code changes</h4><p>No amendment is needed. Product code and ordinary implementation tests remain freely editable; verification simply reruns against the unchanged goalposts.</p></article>
         </div>
+
+        <details class="insight rationale">
+          <summary><span class="insight-kind">Rationale</span>Why the CLI does not launch another agent</summary>
+          <div class="insight-body">
+            <p>
+              Nested agent sessions create avoidable context, sandbox, authentication, recovery, and trust
+              problems. Crucible instead meets developers inside the agent session they already chose.
+              Generated skills provide role guidance; the local CLI supplies deterministic status,
+              preconditions, validation, and reports.
+            </p>
+            <p>
+              The conversation makes the experience pleasant, but it has no authority. If the session ends,
+              a fresh session can recover the exact next action from artifacts alone.
+            </p>
+          </div>
+        </details>
+
+        <details class="insight deep">
+          <summary><span class="insight-kind">Deep dive</span>Why archive happens before the pull request</summary>
+          <div class="insight-body">
+            <p>
+              Archiving after merge creates a second lifecycle, a second branch, and recovery states for
+              partially completed work. Crucible archives on the feature branch after verification.
+              Canonical specs are synced, the complete change directory is moved atomically, and the bound
+              oracle tests stay in the product suite.
+            </p>
+            <p>
+              The result is one coherent pull request containing implementation, final artifacts, and the
+              regression promise it adds to the project.
+            </p>
+          </div>
+        </details>
       </div>
     </section>
 
     <section id="example">
       <div class="shell">
-        <div class="kicker">03 — End-to-end example · The tangible TL;DR</div>
+        <div class="kicker">04 - Example · The tangible TL;DR</div>
         <h2>“Expire inactive sessions automatically after 30 minutes.”</h2>
         <p class="subhead">
           One ordinary feature, followed all the way from a sentence in chat to a permanent,
@@ -477,8 +622,8 @@ target: com.acme.auth.LockoutTest#fifthFailureLocks
             </ul>
             <p>
               Absolute maximum lifetime, “remember me,” browser redirect UX, and background deletion of
-              expired records are explicitly out of scope. The important seams—authentication middleware,
-              session store, application clock, and multi-instance consistency—are pulled into the review
+              expired records are explicitly out of scope. The important seams - authentication middleware,
+              session store, application clock, and multi-instance consistency - are pulled into the review
               instead of being left inside the implementer’s context.
             </p>
           </article>
@@ -516,7 +661,7 @@ target: com.acme.auth.LockoutTest#fifthFailureLocks
               </div>
               <div class="card">
                 <code>SessionExpiryOracleTest.java</code>
-                <p>Real test code in the product suite, written now—before approval or implementation.</p>
+                <p>Real test code in the product suite, written now - before approval or implementation.</p>
               </div>
             </div>
 
@@ -603,7 +748,7 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
               Ordinary tests are the agent’s TDD scaffolding and carry no independent trust weight. The
               six approved oracle methods are different: editing, deleting, renaming, or skipping one
               causes a seal or oracle failure. If the approved intent itself is wrong, the path is
-              <code>amend</code> plus a human delta re-seal—not a quiet test edit.
+              <code>amend</code> plus a human delta re-seal - not a quiet test edit.
             </p>
           </article>
 
@@ -667,7 +812,7 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           <strong>The whole framework in this example:</strong> the agent expands intent and writes real
           judges; the human reviews and seals them once; the agent implements against immovable goalposts;
           deterministic machinery catches the exact-boundary bug; archive turns the feature into permanent
-          regression memory; target-owned CI—not the candidate—decides whether it may merge.
+          regression memory; target-owned CI - not the candidate - decides whether it may merge.
         </div>
 
         <div class="grid three">
@@ -692,12 +837,22 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
 
     <section id="trust">
       <div class="shell">
-        <div class="kicker">04 — Constitution</div>
+        <div class="kicker">05 - Trust</div>
         <h2>The agent’s self-report is worth zero.</h2>
         <p class="subhead">These rules define Crucible even when no convenience UI is available. Violating one is a framework bug, regardless of how many unit tests pass.</p>
+        <details class="insight">
+          <summary><span class="insight-kind">ELI5</span>The goalposts stay put</summary>
+          <div class="insight-body">
+            <p>
+              Once you approve the rules of the game, the player cannot move the goalposts, dismiss the
+              referee, skip a difficult play, or declare victory. Crucible treats every broken or missing
+              judge as a loss, then explains exactly which rule was not satisfied.
+            </p>
+          </div>
+        </details>
         <div class="grid three">
           <article class="card"><span class="num">01</span><h4>Artifacts are truth</h4><p>Status is derived from validated artifacts. A cache or conversation cannot authorize a transition.</p></article>
-          <article class="card"><span class="num">02</span><h4>Self-report is zero</h4><p>“Done” means an artifact exists and validates or a named check passes—never that an agent says so.</p></article>
+          <article class="card"><span class="num">02</span><h4>Self-report is zero</h4><p>“Done” means an artifact exists and validates or a named check passes - never that an agent says so.</p></article>
           <article class="card"><span class="num">03</span><h4>Fail closed</h4><p>Malformed, missing, ambiguous, unresolvable, or unparseable inputs fail instead of warning or skipping.</p></article>
           <article class="card"><span class="num">04</span><h4>Skip equals fail</h4><p>A skipped oracle is a failed judge. Missing results and uncollected targets are also red.</p></article>
           <article class="card"><span class="num">05</span><h4>Preconditions teach</h4><p>Every command checks its prior-stage artifact and names the exact corrective action when blocked.</p></article>
@@ -709,12 +864,39 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           <article class="card"><span class="num">11</span><h4>Convenience is not enforcement</h4><p>Skills, notifications, watch mode, and status displays may fail without turning red into green or green into red.</p></article>
           <article class="card"><span class="num">12</span><h4>The core is deterministic</h4><p>Everything except proposal, implementation, and optional AI review is reproducible from identical inputs.</p></article>
         </div>
+
+        <details class="insight rationale">
+          <summary><span class="insight-kind">Rationale</span>Why a skipped oracle is a failure</summary>
+          <div class="insight-body">
+            <p>
+              A skipped judge says nothing about the product. Treating it as neutral would make disabling an
+              inconvenient oracle the cheapest path to green. Crucible therefore fails on skipped, missing,
+              uncollected, malformed, or incomplete oracle results.
+            </p>
+          </div>
+        </details>
+
+        <details class="insight deep">
+          <summary><span class="insight-kind">Deep dive</span>Current oracles, ordinary tests, and regression</summary>
+          <div class="insight-body">
+            <p>
+              Current-change oracles prove the implementation honors newly approved intent. Ordinary tests
+              help the agent design and debug the implementation, but the agent may edit them freely, so
+              they carry no independent trust weight. Archived oracle tests form the regression suite and
+              prove that past promises still hold.
+            </p>
+            <p>
+              This separation is why a pure refactor needs no invented feature oracle: its contract is the
+              unchanged specification plus the accumulated regression suite.
+            </p>
+          </div>
+        </details>
       </div>
     </section>
 
     <section id="architecture">
       <div class="shell">
-        <div class="kicker">05 — Architecture</div>
+        <div class="kicker">06 - Architecture</div>
         <h2>One protocol, many ecosystems.</h2>
         <p class="subhead">
           Crucible is a TypeScript/Node monorepo built on OpenSpec’s artifact format. It is a layer,
@@ -726,6 +908,17 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           <article class="card"><h4>Generated agent surfaces</h4><p>Codex and Claude Code receive generated skills or commands from one provider-neutral definition. They steer the active session but do not become workflow state.</p></article>
           <article class="card"><h4>Frozen adapter boundary</h4><p><code>resolve</code> proves targets exist and are collected; <code>run</code> emits normalized results. Malformed transport or dependency discovery aborts.</p></article>
         </div>
+
+        <details class="insight">
+          <summary><span class="insight-kind">ELI5</span>Adapters are translators</summary>
+          <div class="insight-body">
+            <p>
+              Crucible asks, “Does this named check exist?” and “Did it pass?” An adapter translates those
+              two questions into the native language of JUnit, pytest, Cargo, or another test runner, then
+              translates the result back into one strict format.
+            </p>
+          </div>
+        </details>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Layer</th><th>Responsibility</th><th>Trust treatment</th></tr></thead>
@@ -745,25 +938,58 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           <code>.openspec.yaml</code>, every artifact added by schema extensions, and any unknown extra
           files. Bound oracle test code remains in the product suite and becomes permanent regression input.
         </p>
-        <h3>The first production adapter remains Java/JUnit</h3>
+        <h3>The first reference adapter is Java/JUnit</h3>
         <p class="reading">
-          The retained reference adapter targets JUnit 5 through Maven and Gradle. Phase 4R will narrowly
-          port dependency-backed discovery so Spring MockMvc and other real classpath-dependent targets
-          resolve correctly, while preserving the frozen core protocol. Stub remains useful for generic
-          consumer proof; Python and TypeScript adapters are future ecosystem work.
+          The reference adapter targets JUnit 5 through Maven and Gradle, including dependency-backed
+          discovery for Spring MockMvc and other real classpath-dependent tests. A stub adapter provides
+          protocol and generic lifecycle conformance. Additional adapters can cover Python, TypeScript,
+          Rust, and other ecosystems without teaching core about their test frameworks.
         </p>
+
+        <details class="insight rationale">
+          <summary><span class="insight-kind">Rationale</span>Why adapters are separate executables</summary>
+          <div class="insight-body">
+            <p>
+              Keeping adapters out of core prevents one ecosystem’s assumptions from leaking into every
+              project. The JSON stdin/stdout boundary also makes adapters independently packageable,
+              pinnable, testable, and replaceable.
+            </p>
+          </div>
+        </details>
+
+        <details class="insight deep">
+          <summary><span class="insight-kind">Deep dive</span>Why an adapter belongs in the trusted computing base</summary>
+          <div class="insight-body">
+            <p>
+              An adapter decides whether an executable judge was found and whether it passed. Compromising
+              that decision collapses the verification story, so adapters are pinned by version and content
+              hash, immutable during implementation, and certified against conformance fixtures.
+            </p>
+          </div>
+        </details>
       </div>
     </section>
 
     <section id="ci">
       <div class="shell">
-        <div class="kicker">06 — Trusted CI</div>
+        <div class="kicker">07 - Trusted CI</div>
         <h2>The candidate never chooses its own judge.</h2>
         <p class="subhead">
           Local <code>verify</code> is fast advisory feedback. Merge authority comes from the same
           deterministic verification rerun in CI using enforcement inputs taken from the exact target
-          branch—not from the incoming PR.
+          branch - not from the incoming PR.
         </p>
+
+        <details class="insight">
+          <summary><span class="insight-kind">ELI5</span>The home team cannot bring its own referee</summary>
+          <div class="insight-body">
+            <p>
+              A pull request is allowed to bring new code and new proposed promises. It is not allowed to
+              bring a weaker rulebook, a friendlier verifier, or a replacement scoreboard for judging
+              itself. Those come from the branch the change wants to enter.
+            </p>
+          </div>
+        </details>
         <div class="trust-diagram">
           <div class="trust-box base"><h3>Trusted base inputs</h3><ul><li>Enforcement configuration</li><li>Exact framework verifier pin</li><li>Exact adapter pins</li><li>Historical specs, oracles, tests, and harness</li><li>AI-review policy and rubric, if enabled</li></ul></div>
           <div class="judge-arrow" aria-hidden="true">→</div>
@@ -778,14 +1004,39 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           <article class="card good"><h4>Preferred organization deployment</h4><p>An organization or enterprise ruleset requires a workflow stored in a separately trusted repository. It runs on ordinary restricted <code>pull_request</code>, checks out exact base and head separately, and also handles <code>merge_group</code>.</p></article>
           <article class="card stop"><h4>Candidate execution constraints</h4><p>No secrets, write token, persisted checkout credentials, privileged cache, or persistent runner. A candidate job with the same check name cannot satisfy the trusted required workflow.</p></article>
         </div>
-        <h3>Five independently tracked CI deliverables</h3>
+        <h3>What enforcement-grade CI must establish</h3>
         <div class="grid two">
-          <article class="card"><span class="num">P4R-10A</span><h4>Ratify the exact trust partition</h4><p>Base config, framework pin, adapter pins, historical oracle inputs, and optional reviewer policy.</p></article>
-          <article class="card"><span class="num">P4R-10B</span><h4>Prove the ruleset-required workflow</h4><p>Threat model and red executable tests first; then ordinary <code>pull_request</code> transport.</p></article>
-          <article class="card"><span class="num">P4R-10C</span><h4>Choose the non-organization offering</h4><p>A GitHub App with real authority, or an explicitly advisory repository-local workflow—never a false enforcement claim.</p></article>
-          <article class="card"><span class="num">P4R-10D</span><h4>Ship <code>doctor --ci</code></h4><p>Report whether the installed repository has ruleset/App enforcement or only advisory local checks.</p></article>
-          <article class="card"><span class="num">P4R-10E</span><h4>Reject <code>pull_request_target</code> by default</h4><p>It is not the candidate-execution transport unless a later, separately ratified threat model proves a bounded use.</p></article>
+          <article class="card"><span class="num">TRUST INPUTS</span><h4>Exact base-owned judge</h4><p>Configuration, framework verifier, adapter pins, historical oracle inputs, and optional reviewer policy come from the target branch.</p></article>
+          <article class="card"><span class="num">EVENT BINDING</span><h4>Exact base and candidate commits</h4><p>The workflow handles same-repository heads, forks, and merge queues without confusing which bytes are trusted.</p></article>
+          <article class="card"><span class="num">ISOLATION</span><h4>Restricted candidate execution</h4><p>Candidate code receives no secret, write token, persisted checkout credential, privileged cache, or persistent runner.</p></article>
+          <article class="card"><span class="num">AUTHORITY</span><h4>A required check the candidate cannot spoof</h4><p>A same-name workflow in the pull request cannot replace the independently required verifier.</p></article>
+          <article class="card"><span class="num">HONESTY</span><h4>Protection grade is visible</h4><p><code>doctor --ci</code> distinguishes ruleset or App enforcement from a repository-local workflow that is only advisory.</p></article>
         </div>
+
+        <details class="insight rationale">
+          <summary><span class="insight-kind">Rationale</span>Why configuration comes from the target branch</summary>
+          <div class="insight-body">
+            <p>
+              If a candidate could choose the policy, verifier, adapter, or historical suite used for its
+              own evaluation, it could weaken the judge in the same change that needs approval. A trust-file
+              edit is therefore treated as untrusted candidate data now; once independently merged, it may
+              govern later pull requests.
+            </p>
+          </div>
+        </details>
+
+        <details class="insight deep">
+          <summary><span class="insight-kind">Deep dive</span>Why <code>pull_request_target</code> is not the default</summary>
+          <div class="insight-body">
+            <p>
+              Candidate code must run, but it must not run inside a privileged workflow context. The
+              preferred organization deployment uses an independently required workflow on ordinary,
+              restricted <code>pull_request</code>, with exact base and candidate checkouts.
+              <code>pull_request_target</code> candidate execution remains rejected unless a separately
+              reviewed threat model proves a narrowly bounded use.
+            </p>
+          </div>
+        </details>
         <h3>AI review is separate and optional</h3>
         <div class="table-wrap">
           <table>
@@ -806,7 +1057,7 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
 
     <section id="status">
       <div class="shell">
-        <div class="kicker">07 — Current state &amp; roadmap</div>
+        <div class="kicker">08 - Status</div>
         <h2>Phase 4 failed usefully. Phase 4R is the rebuild.</h2>
         <p class="subhead">
           The repository preserves completed evidence without pretending that every historical mechanism
@@ -835,23 +1086,23 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
 
     <section id="faq">
       <div class="shell">
-        <div class="kicker">08 — Questions</div>
-        <h2>What this design does—and does not—claim.</h2>
-        <details><summary>Does Crucible’s CLI run Codex or Claude Code?</summary><div class="answer">No. The reset explicitly removes CLI-spawned child agents. You open Codex or Claude Code in the initialized project and use generated Crucible skills or commands. Those surfaces call the pinned project-local CLI for deterministic validation.</div></details>
+        <div class="kicker">09 - Questions</div>
+        <h2>Questions worth asking.</h2>
+        <details><summary>Does Crucible’s CLI run Codex or Claude Code?</summary><div class="answer">No. Open Codex or Claude Code in the initialized project and use the generated Crucible skills or commands. Those surfaces guide the active session and call the pinned project-local CLI for deterministic validation; Crucible does not launch a child agent.</div></details>
         <details><summary>Who chooses the oracle test file and binding?</summary><div class="answer">The authoring agent chooses a conventional path and native target during <code>propose</code>. The CLI does not authorize a candidate path or pass a <code>candidateFile</code> handoff. It validates containment, uniqueness, collection, grounding, and red-on-base behavior where required.</div></details>
         <details><summary>Can the implementer change a bad oracle?</summary><div class="answer">Not directly. A sealed edit blocks implementation and verification. If the approved intent is wrong or incomplete, the agent uses <code>amend</code>; a human reviews the exact intent/test delta and mints a new seal. Ordinary code fixes need no amendment.</div></details>
         <details><summary>Does verification require an LLM API key?</summary><div class="answer">No. Deterministic <code>verify</code> is the required check and never calls a model. AI review is a separate optional feature with <code>off</code>, <code>advisory</code>, and <code>required</code> modes.</div></details>
-        <details><summary>Is local green authoritative?</summary><div class="answer">No. Local verification is fast feedback on an agent-controlled machine. Enforcement-grade merge authority requires target-owned CI. Until P4R-10 proves and ships that deployment, <code>doctor --ci</code> must describe repository-local workflows honestly as advisory.</div></details>
+        <details><summary>Is local green authoritative?</summary><div class="answer">No. Local verification is fast feedback on an agent-controlled machine. Enforcement-grade merge authority requires target-owned CI. <code>doctor --ci</code> reports whether the repository actually has ruleset or App protection, or only an advisory local workflow.</div></details>
         <details><summary>Why not use <code>pull_request_target</code>?</summary><div class="answer">Because executing untrusted candidate code in its privileged context is not accepted as the default design. The preferred path is an organization-required workflow on ordinary restricted <code>pull_request</code>. Any future bounded use requires its own threat model and ratification.</div></details>
-        <details><summary>What happens to custom OpenSpec artifacts during approval and archive?</summary><div class="answer">Schema-required pre-approval artifacts enter the approval candidate set and seal automatically. Archive preserves those extensions—and unknown extra files—alongside <code>oracles.md</code>, approvals, amendments, tasks, specs, and design. The archive is schema-complete, not a hard-coded shortlist.</div></details>
-        <details><summary>Is Crucible V2 ready to use in production today?</summary><div class="answer">No. The architecture and Phase 4R work ledger are ratified, but only P4R-00 and P4R-01 are complete. This page describes the intended full V2 contract and labels the implementation status explicitly. Release qualification requires P4R-02 through P4R-14 and real disposable consumer evidence.</div></details>
+        <details><summary>What happens to custom OpenSpec artifacts during approval and archive?</summary><div class="answer">Schema-required pre-approval artifacts enter the approval candidate set and seal automatically. Archive preserves those extensions - and unknown extra files - alongside <code>oracles.md</code>, approvals, amendments, tasks, specs, and design. The archive is schema-complete, not a hard-coded shortlist.</div></details>
+        <details><summary>Is Crucible V2 ready to use in production today?</summary><div class="answer">Consult the <a href="#status">Status section</a> for current release readiness. The rest of this page describes the intended product contract so that the design remains understandable without mixing it with the build ledger.</div></details>
       </div>
     </section>
   </main>
   <footer>
     <div class="shell footer-row">
       <div><strong style="color:var(--ink)">Crucible V2</strong><br>Approve artifacts. Seal the judges. Prove the code.</div>
-      <div>Source of truth: <code>docs/charter.md</code> · <code>docs/design/architecture.md</code><br>Active design: <code>docs/design/phase-4r-reset.md</code> · Status as of 2026-08-24</div>
+      <div>Technical reference: <code>docs/charter.md</code> · <code>docs/design/architecture.md</code><br>Build readiness and phase history live in the <a href="#status">Status section</a>.</div>
     </div>
   </footer>
   <script>
