@@ -139,7 +139,7 @@
       border-color: color-mix(in srgb, var(--amber) 50%, transparent);
       background: transparent; color: var(--amber);
     }
-    section { padding: 72px 0; border-top: 1px solid var(--line); }
+    section { padding: 72px 0; border-top: 1px solid var(--line); scroll-margin-top: 62px; }
     .subhead { max-width: 760px; margin-bottom: 30px; color: var(--soft); font-size: 18.5px; }
     .statement {
       margin: 28px 0; padding: 21px 24px; border-left: 4px solid var(--accent);
@@ -151,13 +151,47 @@
     .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .card {
       padding: 19px 20px; border: 1px solid var(--line);
-      border-radius: 13px; background: var(--panel);
+      border-radius: 13px; background: var(--panel); min-width: 0;
     }
     .card p { margin: 0; color: var(--soft); font-size: 15px; }
     .card .num { display: block; margin-bottom: 8px; color: var(--accent-2); font: 700 11px/1 var(--mono); }
     .card.good { border-color: color-mix(in srgb, var(--green) 35%, var(--line)); background: var(--green-soft); }
     .card.warn { border-color: color-mix(in srgb, var(--amber) 35%, var(--line)); background: var(--amber-soft); }
     .card.stop { border-color: color-mix(in srgb, var(--red) 35%, var(--line)); background: var(--red-soft); }
+    .walkthrough {
+      display: grid; gap: 14px; margin: 28px 0; counter-reset: walkthrough;
+    }
+    .walk-step {
+      position: relative; padding: 22px 22px 22px 66px;
+      border: 1px solid var(--line); border-radius: 13px; background: var(--panel);
+      min-width: 0;
+    }
+    .walk-step::before {
+      counter-increment: walkthrough; content: counter(walkthrough);
+      position: absolute; top: 21px; left: 20px;
+      display: grid; width: 30px; height: 30px; place-items: center;
+      border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+      border-radius: 50%; background: var(--accent-soft); color: var(--accent-2);
+      font: 700 12px/1 var(--mono);
+    }
+    .walk-step h3 { margin: 0 0 7px; }
+    .walk-step > p:last-child, .walk-step > ul:last-child { margin-bottom: 0; }
+    .step-meta {
+      display: inline-block; margin-bottom: 6px; color: var(--faint);
+      font: 700 10.5px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .artifact-tree {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px; margin: 18px 0;
+    }
+    .artifact-tree .card code { display: inline-block; margin-bottom: 5px; }
+    .verdict {
+      display: flex; gap: 10px; align-items: flex-start; margin: 10px 0;
+      padding: 11px 13px; border-radius: 9px; background: var(--panel-2);
+      color: var(--soft); font-size: 14.5px;
+    }
+    .verdict b { min-width: 43px; color: var(--green); font: 700 11px/1.6 var(--mono); }
+    .verdict.fail b { color: var(--red); }
     .flow {
       display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 8px; margin: 28px 0 34px;
@@ -255,7 +289,9 @@
       .shell { width: min(calc(100% - 28px), var(--wide)); }
       .hero { padding: 62px 0 52px; }
       section { padding: 52px 0; }
-      .grid.two, .grid.three, .lanes, .split-note { grid-template-columns: 1fr; }
+      .grid.two, .grid.three, .lanes, .split-note, .artifact-tree { grid-template-columns: 1fr; }
+      .walk-step { padding: 62px 17px 19px; }
+      .walk-step::before { top: 18px; left: 17px; }
       .flow { grid-template-columns: 1fr; }
       .flow-step { min-height: 0; }
       .flow-step:not(:last-child)::after { content: "↓"; top: auto; bottom: -17px; right: 50%; }
@@ -274,7 +310,7 @@
     <div class="shell navrow">
       <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span>Crucible V2</a>
       <nav id="site-nav" aria-label="Primary navigation">
-        <a href="#why">Why</a><a href="#loop">The loop</a><a href="#trust">Trust model</a>
+        <a href="#why">Why</a><a href="#loop">The loop</a><a href="#example">Example</a><a href="#trust">Trust model</a>
         <a href="#architecture">Architecture</a><a href="#ci">Trusted CI</a>
         <a href="#status">Status</a><a href="#faq">FAQ</a>
       </nav>
@@ -397,9 +433,266 @@ target: com.acme.auth.LockoutTest#fifthFailureLocks
       </div>
     </section>
 
+    <section id="example">
+      <div class="shell">
+        <div class="kicker">03 — End-to-end example · The tangible TL;DR</div>
+        <h2>“Expire inactive sessions automatically after 30 minutes.”</h2>
+        <p class="subhead">
+          One ordinary feature, followed all the way from a sentence in chat to a permanent,
+          target-branch-verified promise. This is Crucible V2 in concrete form.
+        </p>
+
+        <div class="statement">
+          <span class="step-meta">The human’s starting request</span><br>
+          “For security, automatically expire an authenticated session after 30 minutes of inactivity.
+          A user whose session has expired must sign in again.”
+        </div>
+
+        <div class="walkthrough">
+          <article class="walk-step">
+            <span class="step-meta">Optional explore · no authority yet</span>
+            <h3>The agent turns one sentence into decisions worth reviewing.</h3>
+            <p>
+              Before creating governed artifacts, the active agent session identifies the ambiguities
+              hidden inside “30 minutes of inactivity.” The human confirms the intended semantics:
+            </p>
+            <ul>
+              <li>
+                <strong>Activity</strong> means a successfully authenticated request to a protected
+                application endpoint. Health checks, failed authentication, and anonymous traffic do not
+                refresh the session.
+              </li>
+              <li>
+                Expiry is checked <strong>before</strong> protected request logic. At exactly
+                <strong>30:00</strong> since the last qualifying activity, the session is expired.
+              </li>
+              <li>
+                A qualifying request before the deadline resets that session’s inactivity window.
+                Sessions belonging to the same user expire independently.
+              </li>
+              <li>
+                The service invalidates the expired server-side session and returns
+                <code>401 SESSION_EXPIRED</code>. A later request cannot revive it.
+              </li>
+            </ul>
+            <p>
+              Absolute maximum lifetime, “remember me,” browser redirect UX, and background deletion of
+              expired records are explicitly out of scope. The important seams—authentication middleware,
+              session store, application clock, and multi-instance consistency—are pulled into the review
+              instead of being left inside the implementer’s context.
+            </p>
+          </article>
+
+          <article class="walk-step">
+            <span class="step-meta">Propose · agent authors, CLI validates</span>
+            <h3>The request becomes a complete, reviewable artifact bundle.</h3>
+            <p>
+              Using the generated propose skill, the agent authors the OpenSpec change and real JUnit
+              oracle tests. It chooses a conventional test file and native targets; Crucible does not
+              authorize a path through a session handoff. The CLI only accepts the proposal when every
+              schema-required artifact exists and every binding is contained, unique, found, and collected.
+            </p>
+
+            <div class="artifact-tree">
+              <div class="card">
+                <code>proposal.md</code>
+                <p>Why the change exists, affected behavior, explicit scope, exclusions, and rollout assumptions.</p>
+              </div>
+              <div class="card">
+                <code>specs/session-lifecycle/spec.md</code>
+                <p>Normative requirements with stable IDs and exact boundary behavior.</p>
+              </div>
+              <div class="card">
+                <code>design.md</code>
+                <p>Clock injection, atomic session-store update, middleware ordering, and service seams.</p>
+              </div>
+              <div class="card">
+                <code>oracles.md</code>
+                <p>Human-readable scenarios bound to executable JUnit methods.</p>
+              </div>
+              <div class="card">
+                <code>security-review.md</code>
+                <p>An example custom artifact required by this repository’s OpenSpec schema extension.</p>
+              </div>
+              <div class="card">
+                <code>SessionExpiryOracleTest.java</code>
+                <p>Real test code in the product suite, written now—before approval or implementation.</p>
+              </div>
+            </div>
+
+            <pre><code>### Requirement: Inactivity deadline [REQ-session-expiry-1]
+The service SHALL reject a protected request when elapsed time since
+the session's last qualifying activity is greater than or equal to 30 minutes.
+
+### Requirement: Activity refresh [REQ-session-expiry-2]
+The service SHALL refresh only that session's last-activity time after
+accepting a successfully authenticated request before the expiry deadline.
+
+### Requirement: Expired-session response [REQ-session-expiry-3]
+The service SHALL invalidate an expired session and return
+401 with error code SESSION_EXPIRED; an invalidated session SHALL NOT revive.</code></pre>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Approved oracle</th><th>Behavior it fixes in place</th><th>Bound executable target</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>ORC-session-001</code></td><td>Valid at 29:59 of inactivity</td><td><code>#remainsValidBeforeDeadline</code></td></tr>
+                  <tr><td><code>ORC-session-002</code></td><td>Expired at exactly 30:00</td><td><code>#expiresAtExactDeadline</code></td></tr>
+                  <tr><td><code>ORC-session-003</code></td><td>Qualifying activity at 29:00 resets the window</td><td><code>#activityRefreshesWindow</code></td></tr>
+                  <tr><td><code>ORC-session-004</code></td><td>Health checks and failed auth do not refresh it</td><td><code>#nonActivityDoesNotRefresh</code></td></tr>
+                  <tr><td><code>ORC-session-005</code></td><td>Expired session returns 401 and cannot revive</td><td><code>#expiredSessionStaysInvalid</code></td></tr>
+                  <tr><td><code>ORC-session-006</code></td><td>A second session for the user remains independent</td><td><code>#sessionsExpireIndependently</code></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              The new behavioral tests must be <strong>red on the base revision</strong>: today’s product
+              does not expire inactive sessions, so a test that is already green would not prove this
+              feature. <code>tasks.md</code> is deliberately absent; implementation planning starts only
+              after the goalposts are approved.
+            </p>
+          </article>
+
+          <article class="walk-step">
+            <span class="step-meta">Approve · the one human gate</span>
+            <h3>The person reviews the promise, not an implementation diff.</h3>
+            <pre><code>$ crucible approve automatic-session-expiry
+
+✓ proposal and spec delta valid
+✓ security-review.md present (schema extension)
+✓ 3 requirements ↔ 6 oracles ↔ 6 collected JUnit targets
+✓ new feature oracles are red on base
+
+Review: scope · exclusions · seams · requirements · scenarios · bound test code
+Seal this exact bundle? [y/N]</code></pre>
+            <p>
+              The terminal renders every schema-declared pre-approval artifact and the grounded test file.
+              Suppose the reviewer notices that the first draft treated a background heartbeat as activity.
+              The agent corrects the requirement and oracle <em>before</em> approval, validation reruns, and
+              the person confirms the corrected bundle.
+            </p>
+            <p>
+              <code>approval.yaml</code> now records SHA-256 hashes for the proposal, delta, design,
+              <code>oracles.md</code>, <code>security-review.md</code>, schema metadata, and
+              <code>SessionExpiryOracleTest.java</code>. No agent message, skill, checkpoint, or
+              <code>state.yaml</code> can mint or replace this seal. Changing one sealed byte voids it.
+            </p>
+          </article>
+
+          <article class="walk-step">
+            <span class="step-meta">Implement · same active session, new role</span>
+            <h3>The agent may change the solution, but not the approved goalposts.</h3>
+            <p>
+              Artifact-derived <code>status</code> says the change is approved and ready to implement. The
+              implement skill’s first action is to create <code>tasks.md</code>; then the agent adds an
+              injectable clock, an atomic “validate and touch” session-store operation, middleware expiry,
+              and ordinary implementation tests.
+            </p>
+            <pre><code>// Product code may change freely.
+Instant deadline = session.lastActivityAt().plus(Duration.ofMinutes(30));
+
+if (!clock.instant().isBefore(deadline)) {
+    sessionStore.invalidate(session.id());
+    throw SessionExpired.INSTANCE;
+}
+
+sessionStore.touch(session.id(), clock.instant());</code></pre>
+            <p>
+              Ordinary tests are the agent’s TDD scaffolding and carry no independent trust weight. The
+              six approved oracle methods are different: editing, deleting, renaming, or skipping one
+              causes a seal or oracle failure. If the approved intent itself is wrong, the path is
+              <code>amend</code> plus a human delta re-seal—not a quiet test edit.
+            </p>
+          </article>
+
+          <article class="walk-step">
+            <span class="step-meta">Verify · deterministic red/green</span>
+            <h3>A boundary bug is caught without asking an agent whether it is done.</h3>
+            <p>
+              Imagine the first implementation uses “later than 30 minutes” instead of “at least 30
+              minutes.” Everything looks plausible, and most ordinary tests pass. The approved boundary
+              oracle makes the result unambiguous:
+            </p>
+            <div class="verdict"><b>PASS</b><span>Approval hashes, adapter pin, custom artifact, and requirement traceability are intact.</span></div>
+            <div class="verdict"><b>PASS</b><span><code>ORC-session-001</code>: the session remains valid at 29:59.</span></div>
+            <div class="verdict fail"><b>FAIL</b><span><code>ORC-session-002</code>: the session is still accepted at exactly 30:00; expected <code>401 SESSION_EXPIRED</code>.</span></div>
+            <div class="verdict"><b>PASS</b><span>Configured build, unit, lint, and all archived regression suites complete.</span></div>
+            <p>
+              The agent fixes the comparison in product code and reruns the same credential-free command.
+              All six current oracles, every historical oracle, and the repository suites pass. Identical
+              inputs produce the same machine-readable report. An agent saying “looks good,” marking the
+              test skipped, or returning a prose self-review cannot change the verdict.
+            </p>
+          </article>
+
+          <article class="walk-step">
+            <span class="step-meta">Archive · still on the feature branch</span>
+            <h3>The approved promise becomes permanent project memory.</h3>
+            <pre><code>$ crucible archive automatic-session-expiry
+
+✓ seal current
+✓ deterministic verify green
+✓ session-lifecycle canonical spec synced exactly once
+✓ complete change moved atomically to the dated archive</code></pre>
+            <p>
+              The archive includes the proposal, spec delta, design, <code>oracles.md</code>,
+              <code>tasks.md</code>, approval history, <code>security-review.md</code>, schema metadata, and
+              every other extension or extra artifact. The JUnit oracle file stays in the product test
+              suite. Archiving registers it as a regression promise; there is no second archive-only PR or
+              post-merge recovery lane.
+            </p>
+          </article>
+
+          <article class="walk-step">
+            <span class="step-meta">One PR · target-owned enforcement</span>
+            <h3>The candidate brings the work; the target branch brings the judge.</h3>
+            <p>
+              The feature PR contains the implementation, ordinary tests, complete archive, and new oracle
+              test. The required CI workflow evaluates it using the target branch’s enforcement
+              configuration, exact verifier and adapter pins, and all previously archived oracle inputs.
+              Candidate edits to those trust files are inert for this candidate’s own evaluation.
+            </p>
+            <ul>
+              <li>The candidate runs without secrets, write permission, persisted credentials, or privileged cache.</li>
+              <li>Deterministic <code>verify</code> is the required merge authority and needs no LLM API key.</li>
+              <li>Optional <code>ai-review</code> remains separately <code>off</code>, <code>advisory</code>, or <code>required</code>.</li>
+              <li>A later authentication refactor must still pass these six session-expiry oracles automatically.</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="statement">
+          <strong>The whole framework in this example:</strong> the agent expands intent and writes real
+          judges; the human reviews and seals them once; the agent implements against immovable goalposts;
+          deterministic machinery catches the exact-boundary bug; archive turns the feature into permanent
+          regression memory; target-owned CI—not the candidate—decides whether it may merge.
+        </div>
+
+        <div class="grid three">
+          <article class="card">
+            <span class="num">HUMAN ATTENTION</span>
+            <h4>One high-leverage review</h4>
+            <p>Are the six scenarios, exclusions, seams, and bound tests the promise we actually want?</p>
+          </article>
+          <article class="card">
+            <span class="num">AGENT FREEDOM</span>
+            <h4>Implementation is replaceable</h4>
+            <p>Any design or code is acceptable if it respects the sealed inputs and satisfies every judge.</p>
+          </article>
+          <article class="card">
+            <span class="num">MACHINE AUTHORITY</span>
+            <h4>Green has a precise meaning</h4>
+            <p>All approved current and historical promises pass under trusted, deterministic enforcement.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
     <section id="trust">
       <div class="shell">
-        <div class="kicker">03 — Constitution</div>
+        <div class="kicker">04 — Constitution</div>
         <h2>The agent’s self-report is worth zero.</h2>
         <p class="subhead">These rules define Crucible even when no convenience UI is available. Violating one is a framework bug, regardless of how many unit tests pass.</p>
         <div class="grid three">
@@ -421,7 +714,7 @@ target: com.acme.auth.LockoutTest#fifthFailureLocks
 
     <section id="architecture">
       <div class="shell">
-        <div class="kicker">04 — Architecture</div>
+        <div class="kicker">05 — Architecture</div>
         <h2>One protocol, many ecosystems.</h2>
         <p class="subhead">
           Crucible is a TypeScript/Node monorepo built on OpenSpec’s artifact format. It is a layer,
@@ -464,7 +757,7 @@ target: com.acme.auth.LockoutTest#fifthFailureLocks
 
     <section id="ci">
       <div class="shell">
-        <div class="kicker">05 — Trusted CI</div>
+        <div class="kicker">06 — Trusted CI</div>
         <h2>The candidate never chooses its own judge.</h2>
         <p class="subhead">
           Local <code>verify</code> is fast advisory feedback. Merge authority comes from the same
@@ -513,7 +806,7 @@ target: com.acme.auth.LockoutTest#fifthFailureLocks
 
     <section id="status">
       <div class="shell">
-        <div class="kicker">06 — Current state &amp; roadmap</div>
+        <div class="kicker">07 — Current state &amp; roadmap</div>
         <h2>Phase 4 failed usefully. Phase 4R is the rebuild.</h2>
         <p class="subhead">
           The repository preserves completed evidence without pretending that every historical mechanism
@@ -542,7 +835,7 @@ target: com.acme.auth.LockoutTest#fifthFailureLocks
 
     <section id="faq">
       <div class="shell">
-        <div class="kicker">07 — Questions</div>
+        <div class="kicker">08 — Questions</div>
         <h2>What this design does—and does not—claim.</h2>
         <details><summary>Does Crucible’s CLI run Codex or Claude Code?</summary><div class="answer">No. The reset explicitly removes CLI-spawned child agents. You open Codex or Claude Code in the initialized project and use generated Crucible skills or commands. Those surfaces call the pinned project-local CLI for deterministic validation.</div></details>
         <details><summary>Who chooses the oracle test file and binding?</summary><div class="answer">The authoring agent chooses a conventional path and native target during <code>propose</code>. The CLI does not authorize a candidate path or pass a <code>candidateFile</code> handoff. It validates containment, uniqueness, collection, grounding, and red-on-base behavior where required.</div></details>
