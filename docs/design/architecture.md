@@ -10,17 +10,18 @@ commands/     one module per command; orchestrates lower layers.
 artifacts/    read/parse/validate OpenSpec + Crucible artifacts (bundle, oracles, spec deltas, approval, state, escalation)
 hash/         canonical sha256 file/bundle hashing; approval sealing & verification
 lint/         traceability: extraction + set arithmetic
-tier/         tier computation from facts (spec delta, globs, diff size)
+tier/         legacy P2/P3 policy; parked during Phase 4R
 verifyx/      verify orchestration; aggregates check results into a report
-substrate/    AgentSubstrate interface + Codex/Claude Code/Fake implementations + runtime resolver
+skills/       provider-neutral workflow definitions + generated agent-tool wrappers
+substrate/    legacy P1-P3 agent launchers; retired and removed by P4R-02
 adapters/     adapter client: manifest loading, spawn, JSON transport, result normalization
 config/       crucible.yaml / settings.yaml / local.yaml loading + validation
-state/        state.yaml event log (write-only from commands; reconcile in status)
+state/        legacy committed state; replaced by artifact-derived status in P4R
 notify/       convenience-only dispatch (terminal/desktop/webhook/github); may fail, never blocks (added P2-00, built P2-15)
 util/         pure helpers only
 ```
 
-**Dependency direction (enforced by convention, later by lint):** `cli → commands → {artifacts, hash, lint, tier, verifyx, substrate, adapters, config, state, notify} → util`. Lower layers never import upward. `substrate` and `adapters` never import each other. Nothing outside `substrate` invokes an agent; nothing outside `adapters` spawns an adapter process.
+**Dependency direction (enforced by convention, later by lint):** `cli → commands → {artifacts, hash, lint, verifyx, skills, adapters, config, state, notify} → util`. Lower layers never import upward. Nothing in the CLI or command graph invokes an agent; generated skills are data consumed by an already-active agent tool. Nothing outside `adapters` spawns an adapter process. Legacy `tier/` and `substrate/` remain only until their Phase 4R removal/parking tasks land.
 
 ## 2. Exit codes (CLI-wide)
 
@@ -55,7 +56,27 @@ The taxonomy lives in `util/errors.ts` (the lowest layer), not in `cli/`, so eve
 - Artifact IDs per charter grammar: `REQ-<domain>-<slug>-<n>`, `ORC-<slug>-<seq>`, rubric `R-###`, tasks `P<phase>-##`.
 - Command modules named exactly as the CLI verb (`commands/approve.ts`).
 
-## 6. AgentSubstrate interface (frozen; settled P1-08)
+## 6. Agent execution boundary (amended P4R-00)
+
+The P1-P3 `AgentSubstrate` contract below is historical and remains useful for
+understanding the removed headless path. Phase 4 validation proved that CLI-
+spawned agents create sandbox, context, recovery, and trust-boundary complexity
+that is unnecessary for the ordinary product. P4R-02 retires the interface from
+production command paths and removes it after replacement coverage is red.
+
+The active contract is:
+
+- `init` installs provider-appropriate skills/commands from one canonical
+  workflow definition;
+- skills run inside the user's already-active agent session and call only the
+  project-local pinned CLI;
+- CLI commands scaffold, instruct, validate, seal, verify, and archive but never
+  invoke `codex`, `claude`, or another agent;
+- no conversation message, skill result, or persisted session checkpoint is an
+  enforcement input;
+- `status` derives allowed next actions from artifacts and strict preconditions.
+
+### Historical P1-P3 shape
 
 Contract intent, unchanged since seed:
 - Input: role (propose|implement|review), prompt/context payload, working dir, model id.
@@ -89,3 +110,21 @@ Verbs `resolve`/`run` (+ optional `scope`), JSON over stdin/stdout, normalized r
 - Framework: vitest. Unit tests colocated (`*.test.ts`); integration tests in `core/test/` run against `fixtures/toy-repo`.
 - TCB modules (hash, lint, tier, artifacts parsers, adapter client, verdict parsing) require malformed-input cases in every suite.
 - The tracer integration test (P1-16) is the permanent end-to-end regression anchor; it must stay green from Phase 1 onward.
+
+## 10. Phase 4R reset contracts
+
+- Deterministic `verify` is required and credential-free. `ai-review` is a
+  separate `off|advisory|required` facility.
+- Adapter `resolve` returns only strict `found` with a grounded `targetFile`, or
+  `missing`; core never asks an adapter where an agent may create a test.
+- Approval scope is derived from the resolved OpenSpec schema and grounded
+  bound tests, not a hard-coded artifact filename list.
+- Archive validates and atomically moves the entire change directory before the
+  feature PR, preserving every Crucible/custom artifact while leaving bound
+  tests in the permanent regression suite.
+- CI reads enforcement config, framework/adapter pins, and historical trust
+  inputs from the exact target commit. The candidate cannot choose its own
+  judge. The preferred GitHub transport is a ruleset-required trusted workflow;
+  `pull_request_target` candidate execution is not the default.
+- Tier-dependent ceremony, routing, override, trajectory, mutation, and ratchet
+  automation are parked until the thin reset lifecycle is qualified.

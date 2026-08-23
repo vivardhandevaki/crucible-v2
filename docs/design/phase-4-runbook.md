@@ -1,5 +1,11 @@
 # Phase 4 — Validation Project Runbook
 
+> **HISTORICAL — HALTED 2026-08-24.** This runbook records the validation
+> experiment that exposed the Phase 4 architectural failure. It is not an
+> executable current-phase guide. The final evidence is preserved at
+> `p4-experimental-final-2026-08-24`; active design and tasks live in
+> `docs/design/phase-4r-reset.md` and `docs/tasks/phase-4r.md`.
+
 Phase 4 has **no framework design doc by decision** (PHASES.md): the product's designs are Crucible artifacts in the product's own repo. This runbook covers only the framework-side operation: kickoff, instrumentation, and how remaining backlog items get pulled in.
 
 ## Kickoff checklist (product repo)

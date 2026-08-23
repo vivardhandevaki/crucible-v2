@@ -7,29 +7,30 @@ Crucible is a framework for AI-driven software development where humans approve 
 ## Build decisions (settled — do not relitigate in-session)
 
 - Language: **TypeScript/Node**, strict mode. Monorepo: `core/`, `schemas/`, `adapters/stub/`, `adapters/java-junit/`, `fixtures/`, `ci-templates/`, `docs/`.
-- Agent execution substrates: **OpenAI Codex** and **Claude Code**, isolated behind the internal `AgentSubstrate` interface and selected by `.crucible/settings.yaml`.
+- Agent authoring surfaces: generated **OpenAI Codex** and **Claude Code** skills/commands drive the project-local CLI inside the user's active session. The CLI never spawns an agent. Provider syntax stays outside deterministic core.
 - Adapters are separate executables speaking JSON over stdin/stdout. Framework core never imports a test framework.
 - Built on OpenSpec's artifact format via a custom schema bundle; Crucible is a layer, not a fork.
 
 ## Invariants (violating any of these is a bug, regardless of tests passing)
 
-1. **Artifacts are truth.** state.yaml is a derived cache/audit trail; nothing reads it to make an enforcement decision.
+1. **Artifacts are truth.** Workflow phase is derived from artifacts, bindings, seals, and verification evidence. Any cache is gitignored and never an enforcement input.
 2. **Agent self-report is worth zero.** "Done" = artifact exists and validates / named tests pass. Never trust an agent's claim of completion — including your own.
 3. **Fail-closed everywhere.** Malformed JSON, unparseable artifacts, unresolvable bindings, missing preconditions → failure, never a warning or a skip.
 4. **`skip` = fail for oracle targets.** A skipped judge is a fail-closed event.
 5. **Preconditions gate every command.** Each command refuses to run unless the prior stage's artifact exists and validates, and says exactly what to run instead.
-6. **Hashes seal.** approval.yaml stores sha256 of every bundle file + bound test file; any mismatch voids approval. Post-approval, oracle/TCB paths are immutable to implement.
+6. **Hashes seal.** approval.yaml stores sha256 of every schema-declared pre-approval artifact + every grounded bound test file; any mismatch voids approval. Post-approval, sealed intent/oracle paths are immutable to implement.
 7. **Enforcement config is read from the target branch in CI** — never from the PR branch. Convenience config (settings.yaml, local.yaml) never affects enforcement.
-8. **Tiers are computed, never declared.** Force up allowed; force down impossible. Risk-glob match always dominates.
-9. **The reviewer blocks only on enumerated rubric lines.** Findings citing unknown rubric IDs → fail (the reviewer may not invent rules). Everything else → observations.
-10. **Statelessness per role.** Command-invoked agents start with fresh context: role prompt from `.crucible/context/` + the artifact bundle. Interactive sessions distill intent; they never author artifacts directly.
+8. **Verify and AI review are distinct.** Deterministic `verify` is credential-free and required in CI. AI review is independently `off`, `advisory`, or `required`; it never changes deterministic verification.
+9. **Optional reviewer law.** When AI review runs, only a strict schema-valid verdict may block; unknown rubric IDs or malformed/missing required verdicts fail closed. Agent prose is never a verdict.
+10. **Skills steer; the CLI judges.** Agents author through generated skills in the active session. Conversation, skill text, and agent self-report carry no authority; every transition is re-derived by the CLI from artifacts. The CLI never launches a child agent.
 11. **Convenience is never enforcement.** Notify hooks, agent shortcuts, status displays can fail without unblocking or blocking anything.
-12. **Deterministic core.** Everything except the agent calls (propose/implement/review) must be reproducible: same inputs → same outputs, no wall-clock or randomness in decisions.
+12. **Deterministic core.** Every CLI decision is reproducible: same inputs → same outputs, no wall-clock or randomness in decisions. Agent authoring happens outside core and is judged only by resulting artifacts.
+13. **Archive is complete and pre-PR.** A normal change archives its entire OpenSpec change directory, including `oracles.md` and schema extensions, before its single product PR. Bound oracle code remains permanent regression coverage.
 
 ## Session rules
 
 - **Routing rule:** before implementing any component, read the charter/design sections named in the task's `Reads:` field and restate the requirements in your plan. If the task and charter conflict, stop and say so — do not pick silently.
-- **Test-first rule:** every task's acceptance tests are written and failing before implementation code. Done = those named tests pass. Correctness-critical modules (hashing, oracle/spec parsing, traceability lint, tier computation, verdict parsing, adapter client) require thorough coverage including malformed-input cases — they are the TCB of every future Crucible project.
+- **Test-first rule:** every task's acceptance tests are written and failing before implementation code. Done = those named tests pass. Correctness-critical modules (hashing, oracle/spec parsing, traceability lint, approval, verification reports, adapter client, and trusted-CI inputs) require thorough coverage including malformed-input cases — they are the TCB of every future Crucible project.
 - **Amendment discipline:** if implementation reveals a design/charter decision is wrong, update the relevant doc **in the same commit** as the code change, with a one-line rationale. Docs never silently drift from code.
 - **Commit at every green step.** Small commits; any session must be safely abandonable.
 - **Scope discipline:** one task (or a declared small cluster) per session. Do not refactor beyond the task's `Delivers:` without flagging it.
