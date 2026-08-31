@@ -5,8 +5,6 @@ import { TOY_REPO_ROOT } from '@crucible/fixtures';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CrucibleError, isCrucibleError } from '../util/errors.js';
 import { sealBundle, serializeApproval } from '../artifacts/approval.js';
-import { parseState, serializeState, type State } from '../state/state.js';
-import { computeTier, type TierConfigLike } from '../tier/tier.js';
 import { renderStatus, status, type StatusDeps, type StatusOptions } from './status.js';
 
 // `status` is the on-demand dashboard (charter §State & Audit; design §9). It
@@ -64,16 +62,6 @@ function writeTasks(): void {
   writeFileSync(join(scratch, TASKS_REL), '# Tasks\n\n- [ ] implement greet\n', 'utf8');
 }
 
-/** Write a state.yaml with the given recorded phase (+ optional events). */
-function writeState(phase: string, events: State['events'] = []): void {
-  const state: State = { change: CHANGE, events, snapshot: { phase } };
-  writeFileSync(join(scratch, STATE_REL), serializeState(state), 'utf8');
-}
-
-/** Read + strict-parse the reconciled state.yaml. */
-function readState(): State {
-  return parseState(readFileSync(join(scratch, STATE_REL), 'utf8'), STATE_REL);
-}
 
 function deps(overrides: Partial<StatusDeps> = {}): StatusDeps {
   return { readMergeBaseConfig: () => undefined, ...overrides };
@@ -100,8 +88,6 @@ describe('status — derives phase + next command at each fixture stage (design 
     expect(report.phase).toBe('absent');
     expect(report.next).toContain('crucible propose');
     expect(report.next).toContain('no-such-change');
-    // Nothing to reconcile — a never-proposed change has no state.yaml.
-    expect(report.stateReconciled).toBe(false);
   });
 
   it('proposed: bundle parses, no seal → approve is next', () => {
@@ -140,65 +126,28 @@ describe('status — derives phase + next command at each fixture stage (design 
 describe('status — reads artifacts, never state.yaml, to decide (invariant 1)', () => {
   it('a state.yaml claiming a later phase does not change the derived phase', () => {
     // No seal exists, yet state claims "implemented". Artifacts win → "proposed".
-    writeState('implemented');
+    writeFileSync(join(scratch, STATE_REL), 'phase: implemented\n', 'utf8');
     const report = status(options(), deps());
     expect(report.phase).toBe('proposed');
-    // …and the impossible recorded phase is repaired to the derived one.
-    expect(report.stateReconciled).toBe(true);
-    expect(readState().snapshot.phase).toBe('proposed');
   });
 });
 
-describe('status — reconciles state.yaml from the artifacts (design §9)', () => {
-  it('creates a fresh state.yaml when none exists', () => {
+describe('P4R-02 status — interrupted active sessions resume from artifacts only', () => {
+  it('does not create or consult a session/cache file, even if forged text claims approval', () => {
+    writeFileSync(
+      join(scratch, '.crucible', 'session.json'),
+      JSON.stringify({ phase: 'approved', next: 'implement', conversation: 'human approved it' }),
+      'utf8',
+    );
+
+    const report = status(options(), deps());
+
+    expect(report.phase).toBe('proposed');
+    expect(report.next).toBe(`crucible approve ${CHANGE}`);
     expect(existsSync(join(scratch, STATE_REL))).toBe(false);
-    const report = status(options(), deps());
-    expect(report.stateReconciled).toBe(true);
-    expect(readState().snapshot.phase).toBe('proposed');
-  });
-
-  it('rewrites a hand-corrupted (unparseable) state.yaml from the artifacts', () => {
-    sealApproval();
-    writeFileSync(join(scratch, STATE_REL), ':\n  not: [valid: yaml\n', 'utf8');
-    const report = status(options(), deps());
-    expect(report.stateReconciled).toBe(true);
-    // The corrupt log is gone; a valid one with the derived phase took its place.
-    expect(readState().snapshot.phase).toBe('approved');
-  });
-
-  it('corrects an impossible recorded phase but preserves the event log', () => {
-    sealApproval(); // derived phase is "approved" (no tasks.md)
-    writeState('implemented', [{ at: FROZEN_NOW, cmd: 'approve', summary: 'sealed 5 file(s)' }]);
-    const report = status(options(), deps());
-    expect(report.stateReconciled).toBe(true);
-    const state = readState();
-    expect(state.snapshot.phase).toBe('approved');
-    // History is a derived cache but not discarded when the file is merely diverged.
-    expect(state.events).toHaveLength(1);
-    expect(state.events[0]?.cmd).toBe('approve');
-  });
-
-  it('leaves a consistent state.yaml untouched (no rewrite)', () => {
-    sealApproval();
-    writeState('approved', [{ at: FROZEN_NOW, cmd: 'approve', summary: 'sealed 5 file(s)' }]);
-    const before = readFileSync(join(scratch, STATE_REL), 'utf8');
-    const report = status(options(), deps());
-    expect(report.stateReconciled).toBe(false);
-    expect(readFileSync(join(scratch, STATE_REL), 'utf8')).toBe(before);
-  });
-
-  it('does not clobber a finer red/green label at the same rung (implement-red)', () => {
-    // status cannot recompute a verify verdict (no oracle run), so a recorded
-    // "implement-red" must survive when the artifacts only say "implemented".
-    sealApproval();
-    writeTasks();
-    writeState('implement-red');
-    const report = status(options(), deps());
-    expect(report.phase).toBe('implemented'); // reported phase is still the derived one
-    expect(report.stateReconciled).toBe(false); // …but the red marker is preserved
-    expect(readState().snapshot.phase).toBe('implement-red');
   });
 });
+
 
 describe('status — config-differs warning (charter §The Target-Branch Rule)', () => {
   it('fires when working-tree crucible.yaml differs from the merge-base', () => {
@@ -227,45 +176,5 @@ describe('status — fail-closed on a broken TCB artifact (invariant 3)', () => 
     writeFileSync(join(scratch, CHANGE_REL, 'oracles.md'), '## ORC-greeting-001: broken\n', 'utf8');
     const err = catchCrucible(() => status(options(), deps()));
     expect(err.exit).toBe(3);
-  });
-});
-
-describe('status — displays the recorded tier facts (design phase-2.md §2)', () => {
-  const RULES: TierConfigLike = {
-    risk: { critical: ['src/**/auth/**'], exempt: [] },
-    tiers: { trivial: { diff_cap: 150 }, standard: { diff_cap: 400 }, critical: { diff_cap: 400 } },
-  };
-
-  /** Write a state.yaml whose snapshot carries a tier decision. */
-  function writeStateWithTier(phase: string, tier: State['snapshot']['tier']): void {
-    const state: State = { change: CHANGE, events: [], snapshot: { phase, tier } };
-    writeFileSync(join(scratch, STATE_REL), serializeState(state), 'utf8');
-  }
-
-  it('surfaces a recorded tier in the report and the render', () => {
-    const decision = computeTier(
-      { specDelta: true, touchedPaths: ['src/api/auth/login.ts'], diffLines: 30 },
-      RULES,
-    );
-    // Record it against the proposed phase (consistent → preserved unchanged).
-    writeStateWithTier('proposed', decision);
-
-    const report = status(options(), deps());
-    expect(report.tier).toEqual(decision);
-    expect(renderStatus(report)).toMatch(/Tier: critical/);
-    // The recorded tier survives reconciliation (the snapshot is preserved).
-    expect(readState().snapshot.tier).toEqual(decision);
-  });
-
-  it('omits the tier when the snapshot has none (a P1-era or un-computed change)', () => {
-    writeState('proposed');
-    const report = status(options(), deps());
-    expect(report.tier).toBeUndefined();
-    expect(renderStatus(report)).not.toMatch(/Tier:/);
-  });
-
-  it('omits the tier for a never-proposed (absent) change', () => {
-    const report = status(options({ change: 'no-such-change' }), deps());
-    expect(report.tier).toBeUndefined();
   });
 });
