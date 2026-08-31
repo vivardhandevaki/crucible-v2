@@ -45,8 +45,10 @@ import {
   gatherTypeFacts,
   judgeBundle,
   loadRequirementsForType,
+  schemaPreApprovalPaths,
 } from './bundle.js';
-import { assertTypeConformance, readChangeType } from '../changetype/changetype.js';
+import { assertTypeConformance, readChangeType, schemaForType } from '../changetype/changetype.js';
+import { loadSchemaBundle } from '../changetype/schema-bundle.js';
 import { computeTier, type TierDecision, type TierName } from '../tier/tier.js';
 import type { EnforcementConfig } from '../config/enforcement.js';
 import type { AgentSubstrate } from '../substrate/types.js';
@@ -133,6 +135,8 @@ export interface ApproveOptions {
   change: string;
   /** Skip the interactive walk + confirm (`--yes`). Refused for critical tier. */
   yes: boolean;
+  /** Require the installed schema-complete P4R approval boundary. */
+  requireSchema?: boolean;
   /**
    * `--confirm-consistency`: proceed past a staleness refusal (charter §Editing
    * Artifacts). When an upstream artifact was hand-edited after a downstream one
@@ -194,6 +198,28 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
   // The pinned change type (charter §Change Types): a FEATURE requires a spec
   // delta; a refactor/bugfix may carry none. Revalidated below (design §4).
   const type = readChangeType(changeDir);
+  if (options.requireSchema === true) {
+    const schema = loadSchemaBundle(
+      join(root, 'openspec', 'schemas', schemaForType(type), 'schema.yaml'),
+    );
+    for (const artifact of schemaPreApprovalPaths(changeDir, schema)) {
+      const path = join(changeDir, artifact);
+      if (!existsSync(path) || readFileSync(path).length === 0) {
+        throw preconditionError(
+          'SCHEMA_ARTIFACT_MISSING',
+          `Cannot approve ${change}: schema-declared artifact ${join(changeRel, artifact)} is missing or empty.`,
+          `Revise the complete proposal in the active session, then re-run \`crucible propose ${change}\`.`,
+        );
+      }
+    }
+    if (schema.apply?.tracks && existsSync(join(changeDir, schema.apply.tracks))) {
+      throw preconditionError(
+        'POST_APPROVAL_ARTIFACT_PRESENT',
+        `Cannot approve ${change}: ${join(changeRel, schema.apply.tracks)} is post-approval work and must not exist yet.`,
+        `Remove ${schema.apply.tracks}, revise the proposal if needed, then re-run \`crucible propose ${change}\`.`,
+      );
+    }
+  }
   const requirements = loadRequirementsForType(changeDir, changeRel, type);
   let oracles = loadOracles(join(changeDir, 'oracles.md'));
 
@@ -274,8 +300,12 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
     color: options.color ?? PLAIN_STYLE.color,
   };
   const relpaths = await computeHashScope(root, changeRel, changeDir, oracles, deps.resolve);
+  const reviewedFiles = relpaths.map((relpath) => ({
+    relpath,
+    content: readFileSync(join(root, relpath), 'utf8'),
+  }));
   const overview = renderOverview(
-    { change, type, decision, proposal, requirements, oracles, relpaths },
+    { change, type, decision, proposal, requirements, oracles, relpaths, reviewedFiles },
     style,
   );
 

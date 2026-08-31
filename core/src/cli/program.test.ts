@@ -40,6 +40,21 @@ describe('buildProgram', () => {
     expect(STUB_VERBS).toEqual([]);
   });
 
+  it('requires an explicit reviewer identity for terminal approval', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['approve', 'some-change'], cap.io);
+    expect(code).toBe(2);
+    expect(cap.err()).toContain('--approved-by');
+  });
+
+  it('advertises the explicit non-interactive approval form', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['approve', '--help'], cap.io);
+    expect(code).toBe(0);
+    expect(cap.out()).toContain('--yes');
+    expect(cap.out()).toContain('--approved-by');
+  });
+
   it.each(REAL_VERBS)(
     'real verb `%s`: no <change> arg → usage error (exit 2), not stub exit 4',
     async (verb) => {
