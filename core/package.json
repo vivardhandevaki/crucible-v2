@@ -1,6 +1,6 @@
 {
   "name": "@crucible/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Crucible framework core: artifacts, hashing, lint, tier, verify, substrate, adapters client.",
@@ -11,9 +11,11 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.test.json",
-    "build": "tsc"
+    "build": "tsc",
+    "package": "node scripts/package.mjs"
   },
   "dependencies": {
+    "@fission-ai/openspec": "1.6.0",
     "@crucible/adapter-java-junit": "*",
     "@crucible/ci-templates": "*",
     "@crucible/schemas": "*",

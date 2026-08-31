@@ -57,17 +57,23 @@ import {
   type AdapterLock,
 } from '../adapters/lockfile.js';
 import { loadManifest } from '../adapters/manifest.js';
+import { FRAMEWORK_PIN_RELPATH, loadFrameworkPin } from '../framework/pin.js';
 import {
-  FRAMEWORK_PIN_RELPATH,
-  serializeFrameworkPin,
-  type FrameworkPin,
-} from '../framework/pin.js';
+  FRAMEWORK_BIN_RELPATH,
+  FRAMEWORK_PACKAGE_RELPATH,
+  frameworkPinForPackage,
+  installFrameworkDistribution,
+  resolveFrameworkEntrypoint,
+} from '../framework/distribution.js';
 import { invalidInputError } from '../util/errors.js';
 import { renderWorkflow, WORKFLOW_NAMES } from '../skills/workflow.js';
 
 // core/src/commands/init.ts (or core/dist/commands/init.js) → core/ → assets/,
 // the same resolution `review/rubric.ts` uses for the shipped rubric default.
-const assetsRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets');
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+const assetsRoot = existsSync(join(moduleDir, 'assets'))
+  ? join(moduleDir, 'assets')
+  : join(moduleDir, '..', '..', 'assets');
 
 /** The gitignore entries init guarantees (design §7): the personal convenience
  * layer and the two caller-minted, never-committed transcript/verdict trees. */
@@ -117,6 +123,11 @@ export interface AdapterPackageSource {
   executablePath: string;
 }
 
+/** A complete, already-built Crucible release package. */
+export interface FrameworkPackageSource {
+  root: string;
+}
+
 export interface InitOptions {
   /** The repo root to install into. */
   root: string;
@@ -124,8 +135,8 @@ export interface InitOptions {
   answers: InitAnswers;
   /** First-party package selected by the CLI detection edge, when shipped. */
   adapterPackage?: AdapterPackageSource;
-  /** Validation-only pin for the framework source CI must build. */
-  frameworkPin?: FrameworkPin;
+  /** Immutable built release installed under the consumer's project-local path. */
+  frameworkPackage?: FrameworkPackageSource;
 }
 
 /** What init did to one target path. `skipped` = a conflict the caller declined. */
@@ -171,18 +182,31 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
     await installAdapterPackage(root, options.adapterPackage, deps, apply);
   }
 
-  // 1.75. Phase-4 validation bootstrap. Public package distribution remains
-  // deferred; when the CLI has a source pin it records the exact framework
-  // checkout CI must build. This file is consumed from the target branch by the
-  // shipped workflow, never silently inferred in CI.
-  if (options.frameworkPin !== undefined) {
-    await writeFullFile(
-      root,
-      FRAMEWORK_PIN_RELPATH,
-      serializeFrameworkPin(options.frameworkPin),
-      deps,
-      apply,
-    );
+  // 1.75. Install the exact built framework package before any workflow surface
+  // points at it. Initialized pins are immutable: changing one is a dedicated
+  // maintenance operation, not an ordinary init re-run.
+  if (options.frameworkPackage !== undefined) {
+    const desiredPin = frameworkPinForPackage(options.frameworkPackage.root);
+    const lockPath = join(root, FRAMEWORK_PIN_RELPATH);
+    if (existsSync(lockPath)) {
+      const current = loadFrameworkPin(lockPath);
+      if (JSON.stringify(current) !== JSON.stringify(desiredPin)) {
+        throw invalidInputError(
+          'FRAMEWORK_PIN_UPDATE_OUT_OF_SCOPE',
+          'This project is already pinned to a different Crucible release.',
+          'Start the separately reviewed framework maintenance workflow; init never updates a pin.',
+        );
+      }
+      resolveFrameworkEntrypoint(root);
+      apply({ relpath: FRAMEWORK_PIN_RELPATH, kind: 'unchanged' });
+      apply({ relpath: FRAMEWORK_PACKAGE_RELPATH, kind: 'unchanged' });
+      apply({ relpath: FRAMEWORK_BIN_RELPATH, kind: 'unchanged' });
+    } else {
+      installFrameworkDistribution({ root, source: options.frameworkPackage.root });
+      apply({ relpath: FRAMEWORK_PIN_RELPATH, kind: 'created' });
+      apply({ relpath: FRAMEWORK_PACKAGE_RELPATH, kind: 'created' });
+      apply({ relpath: FRAMEWORK_BIN_RELPATH, kind: 'created' });
+    }
   }
 
   // 2. Convenience defaults + reviewer rubric + role prompts (the .crucible TCB).
