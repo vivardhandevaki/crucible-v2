@@ -270,41 +270,160 @@ Non-scope: framework lifecycle, Spring-specific core logic.
 
 ### P4R-10 · Target-owned deterministic CI verification
 
-Tier: Fable / Sol security design gate + Opus / Terra implementation
+P4R-10 is complete only when P4R-10A through P4R-10E are complete. The split
+keeps the trust decision, GitHub transport, fallback offering, installation
+diagnostic, and rejected privileged transport independently reviewable.
+
+Delivery protocol: ratify P4R-10A and land its red executable trust-boundary
+tests before implementing a transport. If current GitHub evidence contradicts
+the preferred design, stop for a design amendment. AI review and framework-
+update UX remain outside every P4R-10 subtask.
+
+#### P4R-10A · Ratify the exact base/candidate trust partition
+
+Tier: Fable / Sol security design gate
 
 Depends: P4R-07, P4R-08, P4R-09
 
-Reads: Phase 4R §10; charter Target-Branch Rule; GitHub required-workflow,
-ruleset, check-source, `pull_request`, `pull_request_target`, and merge-group
-security documentation; AGENTS invariants.
+Reads: Phase 4R §10; charter Target-Branch Rule; architecture Phase 4R reset
+contracts; GitHub check-source, ruleset, event-SHA, and merge-group security
+documentation; AGENTS invariants.
 
-Delivers: explicit base/candidate trust partition; preferred organization-
-ruleset required workflow using the ordinary restricted `pull_request` event;
-exact base config/framework/adapter inputs; required deterministic `verify`;
-and an honest protection-grade diagnostic.
-
-Delivery protocol: land the threat model and red executable workflow tests
-before selecting or implementing transport.  If GitHub evidence contradicts
-the preferred design, stop for a design amendment.
+Delivers: a threat model and executable trust-boundary contract that identify
+the exact base commit `B`, candidate commit `H`, attacker capabilities, and the
+origin of every verification input.
 
 Acceptance:
 
-- candidate edits to config, verifier pin, adapter pin, workflow, or historical
-  harness cannot affect that candidate's evaluation;
-- exact base/head binding, same-repository and fork heads, and merge queue
-  events are covered;
+- enforcement config, framework/verifier pin, adapter pins, historical oracle
+  and harness inputs, and applicable reviewer policy/rubric are read from exact
+  base commit `B`;
+- product code, ordinary tests, and the proposed approved change and oracle
+  tests are evaluated from exact candidate commit `H`;
+- proposed edits to trust files are treated only as untrusted candidate data
+  and cannot affect that candidate's result;
+- same-repository heads, fork heads, base movement, stale event data, malformed
+  SHAs, and merge-group commits have explicit fail-closed fixtures;
+- red executable tests prove that substituting any base-owned input or either
+  commit identity is rejected before P4R-10B transport work begins.
+
+Non-scope: choosing credentials, AI review, and framework maintenance.
+
+#### P4R-10B · Prove the organization-ruleset required workflow
+
+Tier: Fable / Sol transport review + Opus / Terra implementation
+
+Depends: P4R-10A
+
+Reads: the P4R-10A threat model; official GitHub required-workflow, organization
+ruleset, check-source, restricted `pull_request`, token-permission, fork, and
+`merge_group` documentation.
+
+Delivers: the preferred organization/enterprise required workflow, stored in
+a separately trusted workflow repository, that runs deterministic `verify`
+for ordinary PRs and merge queues using the ratified `B`/`H` partition.
+
+Acceptance:
+
+- the workflow checks out exact base and candidate commits separately, takes
+  every trust input from `B`, and executes the candidate from `H`;
 - candidate execution receives no secret, write token, persisted checkout
   credential, privileged cache, or persistent runner;
-- required workflow absence/failure cannot be replaced by a same-name candidate
-  job;
-- `doctor --ci` distinguishes enforcement-grade ruleset/App protection from an
-  advisory repository-local workflow;
-- `pull_request_target` candidate execution is rejected by default and remains
-  an explicit TODO unless a separately ratified proof bounds it;
-- missing required-workflow support yields the chosen honest fallback, never a
-  false enforcement claim.
+- same-repository and fork PRs run through the restricted ordinary
+  `pull_request` path, and merge queues run through `merge_group`;
+- the protected rule requires the expected workflow/check source, so a
+  candidate job with the same display name cannot satisfy or replace it;
+- missing, cancelled, stale, or failed required-workflow execution stays red;
+- executable fixtures prove the happy path and each security boundary above.
 
-Non-scope: AI review and framework-update UX.
+Non-scope: repository-local enforcement claims and LLM credentials.
+
+#### P4R-10C · Decide and deliver the non-organization offering
+
+Tier: Fable / Sol product and trust decision + Opus / Terra implementation
+
+Depends: P4R-10A, P4R-10B
+
+Reads: P4R-10A/B evidence; GitHub App expected-source and repository-ruleset
+capabilities; charter requirement for honest advisory labeling.
+
+Delivers: a ratified decision between an expected-source GitHub App and an
+explicitly advisory repository-local workflow, followed by the minimum
+installable implementation and documentation for the chosen offering.
+
+Delivery protocol: record the capability, operational, and security tradeoffs
+before implementation. Choosing a GitHub App that expands the ratified trust
+model requires a design amendment; choosing the local workflow must never call
+it enforcement-grade.
+
+Acceptance:
+
+- repositories without organization required-workflow support receive one
+  documented, installable offering rather than an implied protection level;
+- a GitHub App path, if selected, proves expected check source, exact `B`/`H`
+  binding, least privilege, and the P4R-10A trust partition;
+- a repository-local path, if selected, labels its status and checks advisory
+  because candidate-controlled repository configuration cannot grant merge
+  authority;
+- unsupported, partially installed, or misconfigured states fail closed and
+  never report enforcement-grade protection.
+
+Non-scope: a marketplace/catalog program or support for unrelated CI vendors.
+
+#### P4R-10D · Add enforcement-grade `doctor --ci` diagnostics
+
+Tier: Opus / Terra
+
+Depends: P4R-10B, P4R-10C
+
+Reads: P4R-10A trust grades; the installed organization workflow/App/advisory
+contracts from P4R-10B/C; architecture diagnostic conventions.
+
+Delivers: deterministic human and machine-readable `crucible doctor --ci`
+output that reports the protection actually installed, with evidence and
+actionable remediation.
+
+Acceptance:
+
+- valid expected-source required-workflow or App protection is reported as
+  enforcement-grade only when every required rule, event, pin, and check source
+  matches;
+- repository-local candidate-controlled CI is reported as advisory even when
+  its latest check is green;
+- absent, inaccessible, partial, stale, spoofable, or malformed protection is
+  distinguished from a valid installation and never upgraded by assumption;
+- output identifies which required capability failed without exposing secrets,
+  and identical observations produce byte-stable machine output;
+- fixtures cover organization, App if selected, advisory, absent, and malformed
+  states.
+
+Non-scope: repairing remote rules without explicit human authorization.
+
+#### P4R-10E · Reject default `pull_request_target` candidate execution
+
+Tier: Fable / Sol security contract + Opus / Terra guardrails
+
+Depends: P4R-10A
+
+Reads: Phase 4R §10; GitHub `pull_request_target` security guidance; P4R-10A
+attacker model; the P4R-10B/C selected transports.
+
+Delivers: documented and executable guardrails that reject
+`pull_request_target` as the default transport whenever candidate code or
+candidate-controlled executable input would run in its privileged context.
+
+Acceptance:
+
+- generated templates and supported installation paths never execute candidate
+  code through `pull_request_target`;
+- configuration or workflow inspection reports such execution as unsupported
+  and non-enforcement-grade;
+- documentation retains an explicit TODO requiring a separately ratified,
+  bounded threat model before any future exception;
+- tests reject direct checkout, indirect script loading, artifact reuse, or
+  other candidate-controlled execution in a privileged target context.
+
+Non-scope: designing or approving that future exception.
 
 ### P4R-11 · Optional independent AI review
 
