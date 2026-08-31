@@ -10,6 +10,7 @@ import { Command } from 'commander';
 import { internalError } from '../util/errors.js';
 import { registerAdapter } from '../commands/adapter-add.cli.js';
 import { registerActiveSessionCommands } from '../commands/active-session.cli.js';
+import { registerApprove } from '../commands/approve.cli.js';
 import { registerArchive } from '../commands/archive.cli.js';
 import { registerDoctor } from '../commands/doctor.cli.js';
 import { registerEscalate } from '../commands/escalate.cli.js';
@@ -73,6 +74,7 @@ export function buildProgram(): Command {
 
   registerAdapter(program);
   registerActiveSessionCommands(program);
+  registerApprove(program);
   registerArchive(program);
   registerDoctor(program);
   registerEscalate(program);

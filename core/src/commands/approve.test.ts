@@ -61,9 +61,51 @@ let scratch: string;
 beforeEach(() => {
   scratch = mkdtempSync(join(tmpdir(), 'crucible-approve-'));
   cpSync(TOY_REPO_ROOT, scratch, { recursive: true });
+  installSchema();
 });
 
 afterEach(() => rmSync(scratch, { recursive: true, force: true }));
+
+function installSchema(): void {
+  const schemaDir = join(scratch, 'openspec', 'schemas', 'crucible');
+  mkdirSync(join(schemaDir, 'templates'), { recursive: true });
+  writeFileSync(
+    join(schemaDir, 'schema.yaml'),
+    [
+      'name: crucible',
+      'version: 1',
+      'description: test schema',
+      'artifacts:',
+      '  - id: proposal',
+      '    generates: proposal.md',
+      '    description: proposal',
+      '    template: proposal.md',
+      '  - id: specs',
+      "    generates: 'specs/**/*.md'",
+      '    description: specs',
+      '    template: spec.md',
+      '  - id: design',
+      '    generates: design.md',
+      '    description: design',
+      '    template: design.md',
+      '  - id: oracles',
+      '    generates: oracles.md',
+      '    description: oracles',
+      '    template: oracles.md',
+      '  - id: tasks',
+      '    generates: tasks.md',
+      '    description: post approval tasks',
+      '    template: tasks.md',
+      'apply:',
+      '  requires: [tasks]',
+      '  tracks: tasks.md',
+    ].join('\n'),
+  );
+  for (const name of ['proposal.md', 'spec.md', 'design.md', 'oracles.md', 'tasks.md']) {
+    writeFileSync(join(schemaDir, 'templates', name), 'template\n');
+  }
+  rmSync(join(scratch, CHANGE_REL, 'tasks.md'));
+}
 
 /**
  * Fixed deps: auto-confirm, frozen clock, deterministic approver, plus
@@ -178,6 +220,83 @@ describe('approve — preconditions gate the seal (invariant 5)', () => {
 });
 
 describe('approve — writes a correct approval.yaml on confirm (invariant 6)', () => {
+  it('seals schema-declared custom pre-approval artifacts', async () => {
+    const schemaDir = join(scratch, 'openspec', 'schemas', 'crucible');
+    mkdirSync(join(schemaDir, 'templates'), { recursive: true });
+    const schemaPath = join(schemaDir, 'schema.yaml');
+    writeFileSync(
+      schemaPath,
+      [
+        'name: crucible',
+        'version: 1',
+        'description: test schema',
+        'artifacts:',
+        '  - id: proposal',
+        '    generates: proposal.md',
+        '    description: proposal',
+        '    template: proposal.md',
+        '  - id: specs',
+        "    generates: 'specs/**/*.md'",
+        '    description: specs',
+        '    template: spec.md',
+        '  - id: design',
+        '    generates: design.md',
+        '    description: design',
+        '    template: design.md',
+        '  - id: oracles',
+        '    generates: oracles.md',
+        '    description: oracles',
+        '    template: oracles.md',
+        '  - id: decisions',
+        '    generates: decisions.md',
+        '    description: custom human-reviewed decisions',
+        '    template: decisions.md',
+        '  - id: tasks',
+        '    generates: tasks.md',
+        '    description: post-approval tasks',
+        '    template: tasks.md',
+        'apply:',
+        '  requires: [tasks]',
+        '  tracks: tasks.md',
+      ].join('\n'),
+    );
+    for (const name of [
+      'proposal.md',
+      'spec.md',
+      'design.md',
+      'oracles.md',
+      'decisions.md',
+      'tasks.md',
+    ]) {
+      writeFileSync(join(schemaDir, 'templates', name), 'template\n');
+    }
+    writeFileSync(join(scratch, CHANGE_REL, 'decisions.md'), '# Decisions\n\nUse UTC.\n');
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: true, requireSchema: true },
+      deps(),
+    );
+
+    expect(result.sealedFiles).toContain(join(CHANGE_REL, 'decisions.md'));
+    expect(
+      Object.hasOwn(
+        parseApproval(readFileSync(approvalPath(scratch), 'utf8'), approvalPath(scratch)).files,
+        join(CHANGE_REL, 'decisions.md'),
+      ),
+    ).toBe(true);
+    expect(result.render).toContain('Use UTC.');
+  });
+
+  it('refuses an uncollected post-approval tasks artifact before sealing', async () => {
+    writeFileSync(join(scratch, CHANGE_REL, 'tasks.md'), '# Tasks\n');
+
+    const err = await catchCrucible(() =>
+      approve({ root: scratch, change: CHANGE, yes: true, requireSchema: true }, deps()),
+    );
+
+    expect(err.exit).toBe(2);
+    expect(existsSync(approvalPath(scratch))).toBe(false);
+  });
+
   it('seals every bundle artifact plus the bound test files', async () => {
     const result = await approve({ root: scratch, change: CHANGE, yes: true }, deps());
     expect(result.approved).toBe(true);

@@ -81,6 +81,8 @@ export interface OverviewInput {
   oracles: readonly Oracle[];
   /** The relative paths the seal will cover (the P1 files-to-seal list). */
   relpaths: readonly string[];
+  /** Exact current bytes for every schema-derived artifact/test in the seal. */
+  reviewedFiles?: readonly OracleSource[];
 }
 
 /**
@@ -90,7 +92,8 @@ export interface OverviewInput {
  * A zero-oracle (refactor) bundle says so and the caller skips the oracle walk.
  */
 export function renderOverview(input: OverviewInput, style: SurfaceStyle): string {
-  const { change, type, decision, proposal, requirements, oracles, relpaths } = input;
+  const { change, type, decision, proposal, requirements, oracles, relpaths, reviewedFiles } =
+    input;
   const lines: string[] = [];
 
   const tier = decision ? decision.tier : 'not computed';
@@ -132,6 +135,15 @@ export function renderOverview(input: OverviewInput, style: SurfaceStyle): strin
   lines.push(rule(`Files to seal (${relpaths.length})`, style));
   for (const rel of relpaths) lines.push(`  ${rel}`);
   lines.push('');
+
+  if (reviewedFiles && reviewedFiles.length > 0) {
+    lines.push(rule('Reviewed file contents', style));
+    for (const file of reviewedFiles) {
+      lines.push(`── ${file.relpath} ──`);
+      lines.push(file.content.replace(/\s+$/, ''));
+      lines.push('');
+    }
+  }
 
   return lines.join('\n');
 }

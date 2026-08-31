@@ -180,7 +180,12 @@ function tryLoadOracles(changeDir: string): Oracle[] | undefined {
   }
 }
 
-function schemaPreApprovalPaths(
+/**
+ * Resolve the schema-declared review artifacts for a change.  This is the sole
+ * source of truth for approval membership: a schema extension is trusted only
+ * when it is present here, never because a command recognizes its filename.
+ */
+export function schemaPreApprovalPaths(
   changeDir: string,
   bundle: ReturnType<typeof loadSchemaBundle>,
 ): string[] {
@@ -381,8 +386,18 @@ export async function computeHashScope(
 ): Promise<string[]> {
   const covered = new Set<string>();
 
-  for (const artifact of CORE_ARTIFACTS) {
-    covered.add(join(changeRel, artifact));
+  const type = readChangeType(changeDir);
+  const schemaPath = join(root, 'openspec', 'schemas', schemaForType(type), 'schema.yaml');
+  if (existsSync(schemaPath)) {
+    const schema = loadSchemaBundle(schemaPath);
+    for (const artifact of schemaPreApprovalPaths(changeDir, schema)) {
+      covered.add(join(changeRel, artifact));
+    }
+  } else {
+    // Compatibility for the retired P1/P2 direct command cores.  P4R terminal
+    // approval independently requires the resolved schema before it calls this
+    // helper, so this fallback can never mint a new P4R seal.
+    for (const artifact of CORE_ARTIFACTS) covered.add(join(changeRel, artifact));
   }
   for (const abs of markdownFilesUnder(join(changeDir, 'specs'))) {
     covered.add(relative(root, abs));
