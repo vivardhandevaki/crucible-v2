@@ -167,6 +167,7 @@ export function createAdapterClient(options: AdapterClientOptions): AdapterClien
       if (!parsed.success) {
         throw schemaError(manifest, 'resolve', parsed.error);
       }
+      assertResolveGrounding(manifest, parsed.data.results);
       const byTarget = indexResults(parsed.data.results);
       // Join back in INPUT order; a target the adapter dropped is fail-closed.
       return targets.map((target) => {
@@ -215,6 +216,32 @@ export function createAdapterClient(options: AdapterClientOptions): AdapterClien
       });
     },
   };
+}
+
+/** The resolve protocol is binary: found carries one grounded file; missing carries none. */
+function assertResolveGrounding(
+  manifest: AdapterManifest,
+  results: readonly ResolveResult[],
+): void {
+  for (const result of results) {
+    if (
+      result.status === 'found' &&
+      (result.targetFile === undefined || result.targetFile.length === 0)
+    ) {
+      throw transportError(
+        manifest,
+        'resolve',
+        `adapter reported found without targetFile for requested target: ${result.target}`,
+      );
+    }
+    if (result.status === 'missing' && result.targetFile !== undefined) {
+      throw transportError(
+        manifest,
+        'resolve',
+        `adapter reported missing with targetFile for requested target: ${result.target}`,
+      );
+    }
+  }
 }
 
 /** Distinct targets in first-appearance order (deterministic dedupe). */

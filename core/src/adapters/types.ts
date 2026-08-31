@@ -18,19 +18,14 @@ export type AdapterVerb = 'resolve' | 'run';
 // Batch dry-run collection: does each target exist / collect? No execution.
 
 /** A single `resolve` result: `found` (with the resolved file) or `missing`. */
-export const resolveResultSchema = z.discriminatedUnion('status', [
-  z.strictObject({
-    target: z.string().min(1),
-    status: z.literal('found'),
-    // A found target without a grounded file is not usable for approval. The
-    // protocol is deliberately binary: found WITH targetFile, or missing.
-    targetFile: z.string().min(1),
-  }),
-  z.strictObject({
-    target: z.string().min(1),
-    status: z.literal('missing'),
-  }),
-]);
+export const resolveResultSchema = z.strictObject({
+  target: z.string().min(1),
+  status: z.enum(['found', 'missing']),
+  // The envelope preserves this optional field so the conformance runner can
+  // attribute grounding defects independently. The client below the transport
+  // boundary still rejects found-without-file and missing-with-file fail-closed.
+  targetFile: z.string().optional(),
+});
 export type ResolveResult = z.infer<typeof resolveResultSchema>;
 
 // ─── run ──────────────────────────────────────────────────────────────────

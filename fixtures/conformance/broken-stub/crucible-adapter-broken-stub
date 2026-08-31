@@ -5,8 +5,8 @@
 // so the runner's finding is ATTRIBUTABLE to a single universal check:
 //
 //   envelope-drop      → drops the first result            → `envelope`
-//   missing-targetfile → adds a phantom targetFile to a
-//                        `missing` resolve result           → `missing-no-targetfile`
+//   missing-targetfile → removes targetFile from a
+//                        `found` resolve result              → `missing-no-targetfile`
 //   wrong-status       → flips the first RUN result status  → `case-expectations`
 //   accept-garbage     → returns an empty envelope + exit 0
 //                        when the real stub rejected bad stdin → `malformed-stdin`
@@ -63,7 +63,7 @@ switch (mode) {
     break;
   case 'missing-targetfile':
     for (const x of results) {
-      if (x && x.status === 'missing') x.targetFile = 'phantom/does-not-exist.ts';
+      if (x && x.status === 'found') delete x.targetFile;
     }
     break;
   case 'wrong-status':

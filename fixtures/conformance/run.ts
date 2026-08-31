@@ -228,11 +228,20 @@ function evaluateCases(
     const results = checkEnvelope(c, requested, spawnResult, checks.envelope);
     if (results === undefined) continue;
 
-    // 3 — missing-no-targetfile (resolve only): a `missing` result must not
-    // carry a targetFile (a phantom path is seal poison; design §2 resolve).
+    // 3 — missing-no-targetfile (resolve only): resolve is binary. A `found`
+    // result must carry its grounded file, while a `missing` result must not
+    // carry a phantom path. Either defect is seal poison.
     if (c.verb === 'resolve') {
       for (const r of results) {
         const rec = r as Record<string, unknown>;
+        if (rec['status'] === 'found' && typeof rec['targetFile'] !== 'string') {
+          checks.missingNoTargetFile.findings.push({
+            check: 'missing-no-targetfile',
+            case: c.name,
+            target: String(rec['target']),
+            detail: 'a `found` resolve result has no grounded targetFile',
+          });
+        }
         if (rec['status'] === 'missing' && rec['targetFile'] !== undefined) {
           checks.missingNoTargetFile.findings.push({
             check: 'missing-no-targetfile',
