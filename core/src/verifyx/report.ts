@@ -34,6 +34,7 @@ export const CHECK_NAMES = [
   'diff-cap',
   'oracles',
   'regression',
+  'suites',
   'reproduction',
   'review',
   'approval',
@@ -42,6 +43,13 @@ export type CheckName = (typeof CHECK_NAMES)[number];
 
 /** A check's binary outcome. `skip`/`error`/`void` all fold to `fail` upstream. */
 export type CheckStatus = 'pass' | 'fail';
+
+/** Process outcome for one configured ordinary suite (unit/build/lint/typecheck). */
+export interface DeclaredSuiteResult {
+  name: string;
+  status: CheckStatus;
+  message?: string;
+}
 
 /** One machine-readable check finding: which check, the exact subject, a message. */
 export const verifyFindingSchema = z.strictObject({
@@ -228,6 +236,65 @@ export function regressionCheck(results: readonly OracleResult[]): CheckResult {
     }
   }
   return { name: 'regression', status: findings.length === 0 ? 'pass' : 'fail', findings };
+}
+
+/**
+ * Turn configured ordinary-suite outcomes into one attributable check. Unknown,
+ * duplicated, omitted, or malformed results are red rather than silently
+ * skipping a declared suite.
+ */
+export function suitesCheck(
+  declared: Record<string, string>,
+  results: readonly DeclaredSuiteResult[],
+): CheckResult {
+  const expected = Object.keys(declared).sort();
+  const findings: VerifyFinding[] = [];
+  const byName = new Map<string, DeclaredSuiteResult>();
+  for (const result of results) {
+    if (
+      typeof result?.name !== 'string' ||
+      result.name.length === 0 ||
+      (result.status !== 'pass' && result.status !== 'fail') ||
+      (result.message !== undefined && typeof result.message !== 'string')
+    ) {
+      findings.push({
+        check: 'suites',
+        id: 'suite-output',
+        message: 'suite runner returned malformed output',
+      });
+      continue;
+    }
+    if (!Object.hasOwn(declared, result.name)) {
+      findings.push({
+        check: 'suites',
+        id: result.name,
+        message: `suite runner returned undeclared suite ${result.name}`,
+      });
+      continue;
+    }
+    if (byName.has(result.name)) {
+      findings.push({
+        check: 'suites',
+        id: result.name,
+        message: `suite runner returned duplicate result for ${result.name}`,
+      });
+      continue;
+    }
+    byName.set(result.name, result);
+  }
+  for (const name of expected) {
+    const result = byName.get(name);
+    if (!result) {
+      findings.push({ check: 'suites', id: name, message: `suite ${name} returned no result` });
+    } else if (result.status === 'fail') {
+      findings.push({
+        check: 'suites',
+        id: name,
+        message: `suite ${name} failed${result.message ? `: ${result.message}` : ''}`,
+      });
+    }
+  }
+  return { name: 'suites', status: findings.length === 0 ? 'pass' : 'fail', findings };
 }
 
 /**

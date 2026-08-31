@@ -54,6 +54,7 @@ import {
   diffCapCheck,
   oraclesCheck,
   regressionCheck,
+  suitesCheck,
   reproductionCheck,
   routingFor,
   routingWithOverride,
@@ -63,6 +64,7 @@ import {
   type OverrideReport,
   type ReportExtras,
   type ReviewReport,
+  type DeclaredSuiteResult,
   type VerifyReport,
 } from '../verifyx/report.js';
 import { collectArchivedRequirementIds, collectRegressionSuite } from '../regression/regression.js';
@@ -93,6 +95,8 @@ export interface VerifyDeps {
    * (the adapter client's `run`). skip→fail is coerced in the client, not here.
    */
   run: (oracles: readonly Oracle[]) => Promise<OracleResult[]>;
+  /** Execute every configured ordinary deterministic suite. The CLI owns process spawning. */
+  runSuites?: (suites: Record<string, string>) => Promise<DeclaredSuiteResult[]>;
   /**
    * Run a bugfix's reproduction oracles against the MERGE-BASE checkout (a git
    * worktree at the diff base, the new tests carried onto the old source) and join
@@ -246,6 +250,16 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   // Check 2 — diff cap (config-only; independent of the lint gate). A breach is a
   // red verdict naming the tier + cap (design §2). Present only on the config path.
   if (capCheck) checks.push(capCheck);
+
+  // Declared unit/build/lint/typecheck suites are independent from oracle
+  // traceability. Run all of them and preserve their configured names in the
+  // report, so a routine suite failure is actionable rather than an anonymous
+  // non-zero command. The real CLI always supplies this edge; legacy core-only
+  // callers remain process-free. Once a runner is invoked, missing output for a
+  // declared suite is a red, fail-closed finding in `suitesCheck`.
+  if (options.config && deps.runSuites) {
+    checks.push(suitesCheck(options.config.suites, await deps.runSuites(options.config.suites)));
+  }
 
   // Checks 3 & 4 — oracle run + regression run, ONLY when the lint gate is green.
   // Running tests against unresolved or uncovered bindings is meaningless; a red

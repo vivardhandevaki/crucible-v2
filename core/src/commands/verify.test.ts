@@ -83,7 +83,15 @@ beforeEach(() => {
 afterEach(() => rmSync(scratch, { recursive: true, force: true }));
 
 function deps(overrides: Partial<VerifyDeps> = {}): VerifyDeps {
-  return { resolve: resolveAllFound, run: runAllPass, ...overrides };
+  return {
+    resolve: resolveAllFound,
+    run: runAllPass,
+    runSuites: async (suites) =>
+      Object.keys(suites)
+        .sort()
+        .map((name) => ({ name, status: 'pass' as const })),
+    ...overrides,
+  };
 }
 
 /** Seal an approval.yaml over the given relpaths so the hash check has something to verify. */
@@ -153,6 +161,52 @@ describe('verify — red source: oracle failure', () => {
     expect(oracles?.findings).toHaveLength(1);
     expect(oracles?.findings[0]?.check).toBe('oracles');
     expect(oracles?.findings[0]?.id).toBe('ORC-greeting-001');
+  });
+});
+
+describe('P4R-05 verify — declared deterministic suites', () => {
+  it('runs every declared suite and attributes a failure to its suite name', async () => {
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: loadEnforcementConfig(scratch) },
+      deps({
+        runSuites: async (suites) => {
+          expect(suites).toEqual({ unit: 'npm test' });
+          return [{ name: 'unit', status: 'fail', message: 'exit 1' }];
+        },
+      }),
+    );
+
+    expect(report.verdict).toBe('fail');
+    expect(report.checks.find((check) => check.name === 'suites')).toEqual({
+      name: 'suites',
+      status: 'fail',
+      findings: [
+        {
+          check: 'suites',
+          id: 'unit',
+          message: 'suite unit failed: exit 1',
+        },
+      ],
+    });
+  });
+
+  it('produces byte-stable reports for identical verification inputs', async () => {
+    const first = await verify({ root: scratch, change: CHANGE }, deps());
+    const second = await verify({ root: scratch, change: CHANGE }, deps());
+
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+  });
+
+  it('fails closed when a configured suite has no result', async () => {
+    const report = await verify(
+      { root: scratch, change: CHANGE, config: loadEnforcementConfig(scratch) },
+      { resolve: resolveAllFound, run: runAllPass, runSuites: async () => [] },
+    );
+
+    expect(report.verdict).toBe('fail');
+    expect(report.checks.find((check) => check.name === 'suites')?.findings).toEqual([
+      { check: 'suites', id: 'unit', message: 'suite unit returned no result' },
+    ]);
   });
 });
 
