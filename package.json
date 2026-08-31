@@ -16,6 +16,7 @@
     "pretest": "npm run build && npm run package",
     "test": "vitest run",
     "test:watch": "vitest",
+    "pretypecheck": "npm run build",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "package": "npm run package --workspace @crucible/core",
