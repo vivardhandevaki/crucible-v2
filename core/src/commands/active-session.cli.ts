@@ -3,6 +3,7 @@ import { loadPinnedAdapterClient } from '../adapters/runtime.js';
 import { CheckFailure, preconditionError } from '../util/errors.js';
 import { renderReport } from '../verifyx/report.js';
 import { validateProposalBundle } from './bundle.js';
+import { preflightAmendment } from './amend-preflight.js';
 import { preflightImplementation } from './implement-preflight.js';
 import { renderStatus, status } from './status.js';
 
@@ -25,15 +26,9 @@ export function registerActiveSessionCommands(program: Command): void {
     .action((change: string) => writeImplementationInstructions(program, change));
   program
     .command('amend')
-    .description('Intent amendment is unavailable until P4R-06')
+    .description('Validate an active-session intent/oracle amendment before human re-seal')
     .argument('<change>', 'the approved change name')
-    .action((change: string) => {
-      throw preconditionError(
-        'AMEND_NOT_AVAILABLE',
-        `Intent amendment for ${change} is not available in the thin lifecycle scaffold.`,
-        'Run `crucible status <change>`; P4R-06 adds amendment and human re-sealing.',
-      );
-    });
+    .action(async (change: string) => writeAmendmentInstructions(program, change));
 }
 
 /** P4R-05: never issue code-authoring instructions before a current human seal. */
@@ -41,6 +36,21 @@ function writeImplementationInstructions(program: Command, change: string): void
   const preflight = preflightImplementation({ root: process.cwd(), change });
   if (program.opts().json === true) process.stdout.write(JSON.stringify(preflight) + '\n');
   else process.stdout.write(`${preflight.instruction}\n`);
+}
+
+async function writeAmendmentInstructions(program: Command, change: string): Promise<void> {
+  const root = process.cwd();
+  const adapter = loadPinnedAdapterClient(root);
+  const result = await preflightAmendment(
+    { root, change },
+    { resolve: (targets) => adapter.resolve(targets) },
+  );
+  if (program.opts().json === true) process.stdout.write(JSON.stringify(result) + '\n');
+  else {
+    if (result.report) process.stdout.write(renderReport(result.report, 'amend') + '\n');
+    process.stdout.write(result.instruction + '\n');
+  }
+  if (result.report?.verdict === 'fail') throw new CheckFailure();
 }
 
 function writeInstructions(

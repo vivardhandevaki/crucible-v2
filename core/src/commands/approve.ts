@@ -31,7 +31,16 @@ import { loadOracles, type Oracle } from '../artifacts/oracles.js';
 import { loadProposal } from '../artifacts/proposal.js';
 import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
 import { collectArchivedRequirementIds } from '../regression/regression.js';
-import { sealBundle, serializeApproval, type Ack } from '../artifacts/approval.js';
+import {
+  amendApproval,
+  loadApproval,
+  sealBundle,
+  serializeApproval,
+  verifyApproval,
+  type Ack,
+  type Approval,
+} from '../artifacts/approval.js';
+import { hashFile } from '../hash/hash.js';
 import {
   checkStaleness,
   readGenerationIfPresent,
@@ -157,6 +166,8 @@ export interface ApproveOptions {
   width?: number;
   /** Emit ANSI color in the render? Default false (stable bytes for tests). */
   color?: boolean;
+  /** Append a human-reviewed amendment generation to an existing approval. */
+  amend?: boolean;
 }
 
 /** approve outcome: `approved` is false only when the human declined/aborted. */
@@ -189,6 +200,32 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
       'NO_CHANGE',
       `No change bundle found at ${changeRel}.`,
       `Run \`crucible propose ${change} "<intent>"\` to scaffold the bundle first.`,
+    );
+  }
+
+  const approvalPath = join(changeDir, 'approval.yaml');
+  const existingApproval: Approval | undefined = existsSync(approvalPath)
+    ? loadApproval(approvalPath)
+    : undefined;
+  if (existingApproval && options.amend !== true) {
+    throw preconditionError(
+      'APPROVAL_EXISTS',
+      `Cannot approve ${change}: approval.yaml already exists. Direct sealed edits require amendment, not a replacement seal.`,
+      `Run \`crucible amend ${change}\` to validate the changed intent/oracle bundle, then ask a human to run \`crucible approve --amend ${change}\`.`,
+    );
+  }
+  if (options.amend === true && !existingApproval) {
+    throw preconditionError(
+      'NO_APPROVAL',
+      `Cannot amend-approve ${change}: no prior approval.yaml exists.`,
+      `Run \`crucible approve ${change}\` for the initial human seal.`,
+    );
+  }
+  if (options.amend === true && existingApproval && verifyApproval(root, existingApproval).valid) {
+    throw preconditionError(
+      'NO_AMENDMENT',
+      `Cannot amend-approve ${change}: no sealed intent or oracle input has changed.`,
+      `Continue ordinary implementation work and run \`crucible verify ${change}\`.`,
     );
   }
 
@@ -304,10 +341,14 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
     relpath,
     content: readFileSync(join(root, relpath), 'utf8'),
   }));
-  const overview = renderOverview(
+  const baseOverview = renderOverview(
     { change, type, decision, proposal, requirements, oracles, relpaths, reviewedFiles },
     style,
   );
+  const overview =
+    options.amend === true && existingApproval
+      ? `${renderApprovalDelta(root, existingApproval, relpaths)}\n\n${baseOverview}`
+      : baseOverview;
 
   // ── The seal, factored so both the --yes fast path and the interactive path
   // end here. `acks` is present only on a critical seal; the ledger re-stamps on
@@ -330,20 +371,27 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
       ? [...acked.entries()].map(([oracle, at]) => ({ oracle, at }))
       : undefined;
 
-    const approval = sealBundle(root, finalRelpaths, {
-      version: APPROVAL_VERSION,
-      change,
-      approved_by: deps.approvedBy(),
-      approved_at: deps.now(),
-      ...(acks ? { acks } : {}),
-    });
-    writeFileSync(join(changeDir, 'approval.yaml'), serializeApproval(approval), 'utf8');
+    const approval =
+      options.amend === true && existingApproval
+        ? amendApproval(root, finalRelpaths, deps.now(), existingApproval)
+        : sealBundle(root, finalRelpaths, {
+            version: APPROVAL_VERSION,
+            change,
+            approved_by: deps.approvedBy(),
+            approved_at: deps.now(),
+            ...(acks ? { acks } : {}),
+          });
+    writeFileSync(approvalPath, serializeApproval(approval), 'utf8');
 
     // Audit event last (design §3 / invariant 1 — never read to gate).
     appendStateEvent(
       statePath,
       change,
-      { at: deps.now(), cmd: 'approve', summary: `sealed ${finalRelpaths.length} file(s)` },
+      {
+        at: deps.now(),
+        cmd: options.amend === true ? 'approve --amend' : 'approve',
+        summary: `${options.amend === true ? 'amended' : 'sealed'} ${finalRelpaths.length} file(s)`,
+      },
       'approved',
     );
     recordSnapshotType(statePath, type);
@@ -663,4 +711,30 @@ function buildRegenPayload(change: string, changeRel: string, changedIds: string
     'scenario. Do not touch other artifacts or other oracles’ tests — a stale bound',
     'test is a bug.',
   ].join('\n');
+}
+
+/** A deterministic file-level delta shown before the current amendment bundle. */
+function renderApprovalDelta(
+  root: string,
+  prior: Approval,
+  currentRelpaths: readonly string[],
+): string {
+  const current = new Set(currentRelpaths);
+  const changed: string[] = [];
+  const removed: string[] = [];
+  const added: string[] = [];
+  for (const [path, priorHash] of Object.entries(prior.files)) {
+    if (!current.has(path)) removed.push(path);
+    else if (hashFile(join(root, path)) !== priorHash) changed.push(path);
+  }
+  for (const path of current) if (!(path in prior.files)) added.push(path);
+
+  const lines = [
+    'APPROVED-TO-CURRENT DELTA',
+    `Prior approval: ${prior.approved_by} at ${prior.approved_at}; amendment generation ${prior.amendments.length + 1}.`,
+  ];
+  for (const path of changed.sort()) lines.push(`  ~ ${path}`);
+  for (const path of added.sort()) lines.push(`  + ${path}`);
+  for (const path of removed.sort()) lines.push(`  - ${path}`);
+  return lines.join('\n');
 }

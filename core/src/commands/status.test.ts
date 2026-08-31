@@ -110,14 +110,14 @@ describe('status — derives phase + next command at each fixture stage (design 
     expect(report.next).toBe(`crucible verify ${CHANGE}`);
   });
 
-  it('approval-void: a sealed file changed since approval → re-approve, mismatch named', () => {
+  it('approval-void: a sealed file changed since approval → amend, mismatch named', () => {
     sealApproval();
     // Break the seal by appending to a sealed artifact.
     const proposal = join(scratch, PROPOSAL_REL);
     writeFileSync(proposal, readFileSync(proposal, 'utf8') + '\nedited after approval\n', 'utf8');
     const report = status(options(), deps());
     expect(report.phase).toBe('approval-void');
-    expect(report.next).toBe(`crucible approve ${CHANGE}`);
+    expect(report.next).toBe(`crucible amend ${CHANGE}`);
     expect(report.voidMismatches).toContain(PROPOSAL_REL);
   });
 });

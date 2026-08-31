@@ -11,6 +11,7 @@ import { approve, type ApproveDeps } from './approve.js';
 interface CliOptions {
   yes?: boolean;
   approvedBy?: string;
+  amend?: boolean;
 }
 
 export function registerApprove(program: Command): void {
@@ -18,6 +19,7 @@ export function registerApprove(program: Command): void {
     .command('approve')
     .description('Render and human-seal a schema-complete proposal bundle')
     .argument('<change>', 'the proposal change name')
+    .option('--amend', 'append a human-reviewed amendment generation to an existing approval')
     .option('--yes', 'non-interactively seal; requires --approved-by')
     .requiredOption('--approved-by <identity>', 'reviewer identity when using --yes')
     .action(async (change: string, options: CliOptions) => {
@@ -30,6 +32,7 @@ export function registerApprove(program: Command): void {
           root,
           change,
           yes: options.yes === true,
+          amend: options.amend === true,
           requireSchema: true,
           width: process.stdout.columns ?? 80,
           color: false,
