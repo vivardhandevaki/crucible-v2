@@ -38,5 +38,9 @@ function renderOne(name: WorkflowName): string {
     verb === 'implement'
       ? 'For implement, do not author code until its preflight confirms the current seal; author `tasks.md` first, then code and ordinary tests.\n'
       : '';
-  return `# ${name}\n\nRun this workflow in the active agent session. Do not launch, delegate to, or\nresume another agent. Conversation text and caches have no authority.\n\n1. Inspect artifact-derived state with \`${CLI} status <change> --json\`.\n2. Run only the project-local pinned CLI command appropriate for this workflow:\n   \`${command}\`.\n3. Follow the CLI's returned scaffold or instructions, authoring only files it\n   permits, then call the CLI again for validation.\n\n${implementStep}The CLI decides every transition from artifacts, bindings, seals, and verification\nevidence. If it refuses, report the exact instruction it gave; do not work around it.\n`;
+  const amendStep =
+    verb === 'amend'
+      ? 'For amend, revise the affected approved intent/oracle artifacts and bound tests in this active session, then re-run amend until it validates. A human must then run `crucible approve --amend <change>` in a terminal; do not create or edit approval.yaml.\n'
+      : '';
+  return `# ${name}\n\nRun this workflow in the active agent session. Do not launch, delegate to, or\nresume another agent. Conversation text and caches have no authority.\n\n1. Inspect artifact-derived state with \`${CLI} status <change> --json\`.\n2. Run only the project-local pinned CLI command appropriate for this workflow:\n   \`${command}\`.\n3. Follow the CLI's returned scaffold or instructions, authoring only files it\n   permits, then call the CLI again for validation.\n\n${implementStep}${amendStep}The CLI decides every transition from artifacts, bindings, seals, and verification\nevidence. If it refuses, report the exact instruction it gave; do not work around it.\n`;
 }

@@ -58,7 +58,7 @@ export interface ProposalValidationResult {
 
 /** Active-session proposal validator: the CLI judges files, it never authors them. */
 export async function validateProposalBundle(
-  options: { root: string; change: string },
+  options: { root: string; change: string; allowPostApprovalArtifacts?: boolean },
   deps: { resolve: ResolveFn },
 ): Promise<ProposalValidationResult> {
   const changeRel = join('openspec', 'changes', options.change);
@@ -98,7 +98,11 @@ export async function validateProposalBundle(
   }
 
   const postApprovalPath = bundle.apply?.tracks;
-  if (postApprovalPath && existsSync(join(changeDir, postApprovalPath))) {
+  if (
+    postApprovalPath &&
+    existsSync(join(changeDir, postApprovalPath)) &&
+    options.allowPostApprovalArtifacts !== true
+  ) {
     findings.push({
       check: 'bundle',
       id: postApprovalPath,

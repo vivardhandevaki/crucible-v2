@@ -336,42 +336,75 @@ describe('approve — writes a correct approval.yaml on confirm (invariant 6)', 
     expect(existsSync(approvalPath(scratch))).toBe(true);
   });
 
-  it('a written seal recomputes identically across runs (invariant 12)', async () => {
+  it('refuses a replacement seal once a bundle has entered the approved lifecycle', async () => {
     await approve({ root: scratch, change: CHANGE, yes: true }, deps());
-    const approval = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
-    const again = await approve({ root: scratch, change: CHANGE, yes: true }, deps());
-    expect(again.approved).toBe(true);
-    const approval2 = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
-    expect(approval2.files).toEqual(approval.files);
+
+    const error = await catchCrucible(() => approve({ root: scratch, change: CHANGE, yes: true }, deps()));
+
+    expect(error.code).toBe('APPROVAL_EXISTS');
   });
 });
 
-describe('approve — idempotence on an unchanged bundle', () => {
-  it('re-approve on an unchanged bundle rewrites byte-identical seal content', async () => {
-    await approve({ root: scratch, change: CHANGE, yes: true }, deps());
-    const first = readFileSync(approvalPath(scratch), 'utf8');
-
-    const result = await approve({ root: scratch, change: CHANGE, yes: true }, deps());
-    const second = readFileSync(approvalPath(scratch), 'utf8');
-
-    expect(result.approved).toBe(true);
-    // Same clock + approver + unchanged files → identical seal bytes.
-    expect(second).toBe(first);
-  });
-
-  it('re-seals with new hashes when a covered file changed between approvals', async () => {
+describe('approve — sealed lifecycle boundary', () => {
+  it('rejects a direct sealed edit until it is explicitly amended', async () => {
     await approve({ root: scratch, change: CHANGE, yes: true }, deps());
     const before = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
 
     // Edit a covered artifact, then re-approve.
     const proposal = join(scratch, CHANGE_REL, 'proposal.md');
     writeFileSync(proposal, readFileSync(proposal, 'utf8') + '\nappended line\n');
-    await approve({ root: scratch, change: CHANGE, yes: true }, deps());
+    const error = await catchCrucible(() => approve({ root: scratch, change: CHANGE, yes: true }, deps()));
     const after = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
 
-    expect(after.files[join(CHANGE_REL, 'proposal.md')]).not.toBe(
-      before.files[join(CHANGE_REL, 'proposal.md')],
+    expect(error.code).toBe('APPROVAL_EXISTS');
+    expect(after).toEqual(before);
+  });
+});
+
+describe('approve --amend — P4R-06 human re-seal', () => {
+  it('shows the approved-to-current delta and appends a fresh seal generation', async () => {
+    await approve({ root: scratch, change: CHANGE, yes: true, requireSchema: true }, deps());
+    const before = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
+    writeFileSync(join(scratch, CHANGE_REL, 'design.md'), '# Design\n\nAmended intent.\n');
+
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: true, requireSchema: true, amend: true },
+      deps({ now: () => '2026-08-31T01:00:00Z' }),
     );
+    const after = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
+
+    expect(result.approved).toBe(true);
+    expect(result.render).toContain('APPROVED-TO-CURRENT DELTA');
+    expect(result.render).toContain(join(CHANGE_REL, 'design.md'));
+    expect(after.approved_by).toBe(before.approved_by);
+    expect(after.approved_at).toBe(before.approved_at);
+    expect(after.amendments).toHaveLength(1);
+    expect(after.amendments[0]!.at).toBe('2026-08-31T01:00:00Z');
+    expect(after.files[join(CHANGE_REL, 'design.md')]).not.toBe(before.files[join(CHANGE_REL, 'design.md')]);
+  });
+
+  it('a declined amendment leaves the old approval authoritative and void', async () => {
+    await approve({ root: scratch, change: CHANGE, yes: true, requireSchema: true }, deps());
+    const before = readFileSync(approvalPath(scratch), 'utf8');
+    writeFileSync(join(scratch, CHANGE_REL, 'design.md'), '# Design\n\nAmended intent.\n');
+
+    const result = await approve(
+      { root: scratch, change: CHANGE, yes: false, requireSchema: true, amend: true },
+      deps({ confirm: () => Promise.resolve(false) }),
+    );
+
+    expect(result.approved).toBe(false);
+    expect(readFileSync(approvalPath(scratch), 'utf8')).toBe(before);
+  });
+
+  it('refuses --amend when no sealed intent or oracle bytes changed', async () => {
+    await approve({ root: scratch, change: CHANGE, yes: true, requireSchema: true }, deps());
+
+    const error = await catchCrucible(() =>
+      approve({ root: scratch, change: CHANGE, yes: true, requireSchema: true, amend: true }, deps()),
+    );
+
+    expect(error.code).toBe('NO_AMENDMENT');
   });
 });
 
@@ -386,10 +419,11 @@ describe('approve — appends a state event (design §3)', () => {
     expect(state).toContain('2026-07-23T00:00:00Z');
   });
 
-  it('appends a second event on re-approve rather than clobbering the log', async () => {
+  it('appends the amendment event rather than clobbering the approval log', async () => {
     await approve({ root: scratch, change: CHANGE, yes: true }, deps());
+    writeFileSync(join(scratch, CHANGE_REL, 'design.md'), '# Design\n\nAmended intent.\n');
     await approve(
-      { root: scratch, change: CHANGE, yes: true },
+      { root: scratch, change: CHANGE, yes: true, amend: true },
       deps({ now: () => '2026-07-24T00:00:00Z' }),
     );
     const state = readFileSync(statePath(scratch), 'utf8');

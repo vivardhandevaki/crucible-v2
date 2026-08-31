@@ -188,8 +188,7 @@ function nextCommand(phase: StatusPhase, change: string): string {
     case 'proposed':
       return `crucible approve ${change}`;
     case 'approval-void':
-      // The seal is void; re-review and re-seal before anything downstream runs.
-      return `crucible approve ${change}`;
+      return `crucible amend ${change}`;
     case 'approved':
       return `crucible implement ${change}`;
     case 'implemented':
