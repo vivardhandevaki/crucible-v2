@@ -5,7 +5,7 @@ import { TOY_REPO_ROOT } from '@crucible/fixtures';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CrucibleError, isCrucibleError } from '../util/errors.js';
 import { sealBundle, serializeApproval } from '../artifacts/approval.js';
-import { renderStatus, status, type StatusDeps, type StatusOptions } from './status.js';
+import { status, type StatusDeps, type StatusOptions } from './status.js';
 
 // `status` is the on-demand dashboard (charter §State & Audit; design §9). It
 // DERIVES the phase from the artifacts on disk — never from state.yaml's recorded
