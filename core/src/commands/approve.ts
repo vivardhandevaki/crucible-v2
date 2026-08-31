@@ -147,8 +147,6 @@ export interface ApproveOptions {
    * omitted → no tier, and the critical ack regime is off.
    */
   config?: EnforcementConfig;
-  /** Explicit upward-only tier force from the approval command. */
-  forcedTier?: TierName;
   /** Model id for the regeneration session (convenience; opaque here). */
   model?: string;
   /** Render width (design §8: the CLI passes `process.stdout.columns`). Default 80. */
@@ -191,14 +189,6 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
   }
 
   // Parse the bundle. Missing artifact → exit 2 (loaders); malformed → exit 3.
-  if (existsSync(join(changeDir, 'tasks.md'))) {
-    throw preconditionError(
-      'TASKS_PREAPPROVAL',
-      'Cannot approve ' + change + ': tasks.md exists before approval.',
-      'Remove the unapproved tasks.md, then re-run the proposal gate before approval.',
-    );
-  }
-
   // The proposal's Unspecified/Seams are surfaced prominently in the overview.
   const proposal = loadProposal(join(changeDir, 'proposal.md'));
   // The pinned change type (charter §Change Types): a FEATURE requires a spec
@@ -263,7 +253,6 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
         specDelta: requirements.length > 0,
         touchedPaths: facts.touchedPaths,
         diffLines: facts.diffLines,
-        ...(options.forcedTier !== undefined ? { forced: options.forcedTier } : {}),
       },
       options.config,
     );
@@ -317,7 +306,6 @@ export async function approve(options: ApproveOptions, deps: ApproveDeps): Promi
       approved_by: deps.approvedBy(),
       approved_at: deps.now(),
       ...(acks ? { acks } : {}),
-      ...(decision ? { minimum_tier: decision.tier } : {}),
     });
     writeFileSync(join(changeDir, 'approval.yaml'), serializeApproval(approval), 'utf8');
 

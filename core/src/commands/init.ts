@@ -41,14 +41,13 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { CI_REVIEW_TEMPLATE_PATH, renderCiTemplateForAdapter } from '@crucible/ci-templates';
+import { ciTemplatePathForAdapter } from '@crucible/ci-templates';
 import { SCHEMA_BUNDLE_NAMES, schemaBundleDir } from '@crucible/schemas';
 import {
   ADAPTER_LOCK_RELPATH,
@@ -65,12 +64,6 @@ import {
 } from '../framework/pin.js';
 import { invalidInputError } from '../util/errors.js';
 
-import {
-  MANAGED_SKILL_NAMES,
-  renderManagedSkill,
-  renderPinnedLauncher,
-  validateManagedSkill,
-} from '../session/skills.js';
 // core/src/commands/init.ts (or core/dist/commands/init.js) → core/ → assets/,
 // the same resolution `review/rubric.ts` uses for the shipped rubric default.
 const assetsRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets');
@@ -81,12 +74,9 @@ export const GITIGNORE_LINES = [
   '.crucible/local.yaml',
   '.crucible/transcripts/',
   '.crucible/verdicts/',
-  '.crucible/sessions/',
-  '.crucible/bin/',
 ] as const;
 
 /** The files that carry Crucible's managed agent block (charter §267). */
-export { MANAGED_SKILL_NAMES } from '../session/skills.js';
 export const MANAGED_BLOCK_FILES = ['AGENTS.md', 'CLAUDE.md'] as const;
 
 const MANAGED_BEGIN =
@@ -105,9 +95,6 @@ export interface InitAnswers {
   runners: string[];
   paths: string[];
   unitCommand: string;
-  ciReviewMode?: 'advisory' | 'required';
-  humanReviewMode?: 'advisory' | 'required';
-  localReviewMode?: 'required' | 'advisory' | 'off';
 }
 
 /** The one injected decision edge: overwrite a conflicting existing file?
@@ -141,7 +128,7 @@ export interface InitOptions {
 }
 
 /** What init did to one target path. `skipped` = a conflict the caller declined. */
-export type InitActionKind = 'created' | 'updated' | 'removed' | 'unchanged' | 'skipped';
+export type InitActionKind = 'created' | 'updated' | 'unchanged' | 'skipped';
 export interface InitAction {
   relpath: string;
   kind: InitActionKind;
@@ -201,7 +188,7 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
   await writeFullFile(
     root,
     join('.crucible', 'settings.yaml'),
-    renderSettingsYaml(answers),
+    readAsset('settings.default.yaml'),
     deps,
     apply,
   );
@@ -248,46 +235,15 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
   await writeFullFile(
     root,
     join('.github', 'workflows', 'crucible.yml'),
-    renderCiTemplateForAdapter(answers.adapter, answers.humanReviewMode ?? 'required'),
+    readFileSync(ciTemplatePathForAdapter(answers.adapter), 'utf8'),
     deps,
     apply,
   );
 
-  const reviewWorkflow = join('.github', 'workflows', 'crucible-review.yml');
-  if ((answers.ciReviewMode ?? 'required') === 'required') {
-    await writeFullFile(
-      root,
-      reviewWorkflow,
-      readFileSync(CI_REVIEW_TEMPLATE_PATH, 'utf8'),
-      deps,
-      apply,
-    );
-  } else {
-    await removeFullFile(root, reviewWorkflow, deps, apply);
-  }
-
   // 6. The managed agent block — teach a conversational agent to DRIVE the CLI
-  //
   //    (charter §267). Marker-delimited, replaced in place on re-run.
   await ensureManagedBlock(root, 'AGENTS.md', managedBlock(), deps, apply);
   await ensureManagedBlock(root, 'CLAUDE.md', claudeBridgeBlock(), deps, apply);
-  for (const name of MANAGED_SKILL_NAMES) {
-    const skill = renderManagedSkill(name);
-    validateManagedSkill(skill, name);
-    for (const hostRoot of ['.agents', '.claude']) {
-      await writeFullFile(root, join(hostRoot, 'skills', name, 'SKILL.md'), skill, deps, apply);
-    }
-  }
-  if (options.frameworkPin !== undefined) {
-    const frameworkRoot = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
-    await writeFullFile(
-      root,
-      join('.crucible', 'bin', 'crucible.mjs'),
-      renderPinnedLauncher(options.frameworkPin, frameworkRoot),
-      deps,
-      apply,
-    );
-  }
 
   // 7. gitignore the personal layer + the caller-minted transcript/verdict trees.
   ensureGitignore(root, apply);
@@ -368,24 +324,6 @@ async function writeFullFile(
   if (await deps.confirmOverwrite(relpath, current, desired)) {
     writeFileSync(abs, desired, 'utf8');
     apply({ relpath, kind: 'updated' });
-  } else {
-    apply({ relpath, kind: 'skipped' });
-  }
-}
-
-/** Remove a whole-file managed surface only through init's normal confirmation edge. */
-async function removeFullFile(
-  root: string,
-  relpath: string,
-  deps: InitDeps,
-  apply: (a: InitAction) => void,
-): Promise<void> {
-  const abs = join(root, relpath);
-  if (!existsSync(abs)) return;
-  const current = readFileSync(abs, 'utf8');
-  if (await deps.confirmOverwrite(relpath, current, '')) {
-    rmSync(abs);
-    apply({ relpath, kind: 'removed' });
   } else {
     apply({ relpath, kind: 'skipped' });
   }
@@ -588,16 +526,7 @@ trajectory:
 
 audit:
   sample_rate: 0.1 # of auto-merges → weekly digest
-
-review:
-  ci_mode: ${answers.ciReviewMode ?? 'required'}
-  human_mode: ${answers.humanReviewMode ?? 'required'}
 `;
-}
-
-function renderSettingsYaml(answers: InitAnswers): string {
-  const base = readAsset('settings.default.yaml').replace(/\s*$/, '\n');
-  return `${base}\nreview:\n  local_mode: ${answers.localReviewMode ?? 'advisory'}\n`;
 }
 
 /**

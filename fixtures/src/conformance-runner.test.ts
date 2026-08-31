@@ -106,7 +106,7 @@ describe('conformance runner — a deliberately-broken variant fails attributabl
   // Each break mode is orthogonal: it trips exactly one universal check.
   const modes: { mode: string; check: string }[] = [
     { mode: 'envelope-drop', check: 'envelope' },
-    { mode: 'missing-targetfile', check: 'envelope' },
+    { mode: 'missing-targetfile', check: 'missing-no-targetfile' },
     { mode: 'wrong-status', check: 'case-expectations' },
     { mode: 'accept-garbage', check: 'malformed-stdin' },
   ];

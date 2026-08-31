@@ -22,44 +22,16 @@ import { invalidInputError } from '../util/errors.js';
 export const AGENT_PROVIDERS = ['codex', 'claude-code'] as const;
 export type AgentProvider = (typeof AGENT_PROVIDERS)[number];
 
-export const CODEX_SANDBOX_MODES = ['danger-full-access'] as const;
-export type CodexSandboxMode = (typeof CODEX_SANDBOX_MODES)[number];
-export type ConvenienceConfigLayer = 'settings' | 'local';
-
-export interface ConvenienceConfig {
-  agent?: {
-    provider?: AgentProvider;
-    codex_sandbox?: CodexSandboxMode;
-  };
-  models: Record<string, string>;
-  notify: Record<string, unknown>;
-  review?: { local_mode?: LocalReviewMode };
-}
-
-export const LOCAL_REVIEW_MODES = ['required', 'advisory', 'off'] as const;
-export type LocalReviewMode = (typeof LOCAL_REVIEW_MODES)[number];
-
-const settingsAgentSchema = z.strictObject({ provider: z.enum(AGENT_PROVIDERS) });
-const localAgentSchema = z.strictObject({
-  provider: z.enum(AGENT_PROVIDERS).optional(),
-  codex_sandbox: z.enum(CODEX_SANDBOX_MODES).optional(),
+const convenienceSchema = z.strictObject({
+  agent: z.strictObject({ provider: z.enum(AGENT_PROVIDERS) }).optional(),
+  models: z.record(z.string(), z.string()).default({}),
+  notify: z.record(z.string(), z.unknown()).default({}),
 });
-const reviewSchema = z.strictObject({ local_mode: z.enum(LOCAL_REVIEW_MODES).optional() });
 
-const convenienceSchema = (layer: ConvenienceConfigLayer) =>
-  z.strictObject({
-    agent: (layer === 'local' ? localAgentSchema : settingsAgentSchema).optional(),
-    models: z.record(z.string(), z.string()).default({}),
-    notify: z.record(z.string(), z.unknown()).default({}),
-    review: reviewSchema.optional(),
-  });
+export type ConvenienceConfig = z.infer<typeof convenienceSchema>;
 
 /** Parse + validate one convenience file's YAML text. Empty → empty config. */
-export function parseConvenienceFile(
-  yamlText: string,
-  source: string,
-  layer: ConvenienceConfigLayer = 'settings',
-): ConvenienceConfig {
+export function parseConvenienceFile(yamlText: string, source: string): ConvenienceConfig {
   let data: unknown;
   try {
     data = parseYaml(yamlText);
@@ -72,7 +44,7 @@ export function parseConvenienceFile(
   }
 
   // An empty file (null) is a valid, empty convenience config.
-  const result = convenienceSchema(layer).safeParse(data ?? {});
+  const result = convenienceSchema.safeParse(data ?? {});
   if (!result.success) {
     throw invalidInputError(
       'INVALID_CONVENIENCE_CONFIG',
@@ -80,24 +52,7 @@ export function parseConvenienceFile(
       'Only `agent`, `models`, and `notify` are allowed in settings.yaml / local.yaml.',
     );
   }
-  const parsedAgent = result.data.agent;
-  const agent =
-    parsedAgent === undefined
-      ? undefined
-      : {
-          ...(parsedAgent.provider !== undefined ? { provider: parsedAgent.provider } : {}),
-          ...('codex_sandbox' in parsedAgent && parsedAgent.codex_sandbox !== undefined
-            ? { codex_sandbox: parsedAgent.codex_sandbox }
-            : {}),
-        };
-  return {
-    ...(agent ? { agent } : {}),
-    models: result.data.models,
-    notify: result.data.notify,
-    ...(result.data.review?.local_mode === undefined
-      ? {}
-      : { review: { local_mode: result.data.review.local_mode } }),
-  };
+  return result.data;
 }
 
 /**
@@ -108,36 +63,24 @@ export function mergeConvenience(
   base: ConvenienceConfig,
   override: ConvenienceConfig,
 ): ConvenienceConfig {
-  const agent =
-    base.agent !== undefined || override.agent !== undefined
-      ? { ...base.agent, ...override.agent }
-      : undefined;
   return {
-    ...(agent ? { agent } : {}),
+    ...((override.agent ?? base.agent) ? { agent: override.agent ?? base.agent } : {}),
     models: { ...base.models, ...override.models },
     notify: deepMerge(base.notify, override.notify),
-    ...(base.review !== undefined || override.review !== undefined
-      ? { review: { ...base.review, ...override.review } }
-      : {}),
   };
 }
 
 /** Read + merge `.crucible/settings.yaml` then `.crucible/local.yaml`. */
 export function loadConvenienceConfig(configRoot: string): ConvenienceConfig {
   const dir = join(configRoot, '.crucible');
-  const settings = readIfPresent(join(dir, 'settings.yaml'), 'settings');
-  const local = readIfPresent(join(dir, 'local.yaml'), 'local');
+  const settings = readIfPresent(join(dir, 'settings.yaml'));
+  const local = readIfPresent(join(dir, 'local.yaml'));
   return mergeConvenience(settings, local);
 }
 
 const EMPTY: ConvenienceConfig = { models: {}, notify: {} };
 
-/** Local workflow-only review mode; omission preserves the old advisory behavior. */
-export function localReviewMode(config: ConvenienceConfig): LocalReviewMode {
-  return config.review?.local_mode ?? 'advisory';
-}
-
-function readIfPresent(path: string, layer: ConvenienceConfigLayer): ConvenienceConfig {
+function readIfPresent(path: string): ConvenienceConfig {
   let text: string;
   try {
     text = readFileSync(path, 'utf8');
@@ -149,7 +92,7 @@ function readIfPresent(path: string, layer: ConvenienceConfigLayer): Convenience
       'Check the file permissions on the convenience config.',
     );
   }
-  return parseConvenienceFile(text, path, layer);
+  return parseConvenienceFile(text, path);
 }
 
 function isNotFound(err: unknown): boolean {

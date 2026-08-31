@@ -23,7 +23,6 @@ import { propose, type ProposeDeps } from './propose.js';
 import { parseTypeName, type ChangeType } from '../changetype/changetype.js';
 import { CheckFailure, invalidInputError } from '../util/errors.js';
 
-import { openspecExecutable } from './openspec-runner.js';
 /** Model used when convenience config routes nothing to `models.propose`. */
 
 /** Register the real `propose` subcommand on the program. */
@@ -106,8 +105,8 @@ function liveDeps(root: string): ProposeDeps {
 function scaffoldViaOpenSpec(root: string, change: string, schema: string): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(
-      process.execPath,
-      [openspecExecutable(), 'new', 'change', change, '--schema', schema, '--json'],
+      'npx',
+      ['openspec', 'new', 'change', change, '--schema', schema, '--json'],
       {
         cwd: root,
         stdio: ['ignore', 'ignore', 'pipe'],
@@ -120,7 +119,7 @@ function scaffoldViaOpenSpec(root: string, change: string, schema: string): Prom
         invalidInputError(
           'SCAFFOLD_FAILED',
           `Could not spawn the OpenSpec CLI to scaffold ${change}: ${cause.message}`,
-          'Rebuild or reinstall this Crucible checkout before running propose.',
+          'Ensure the pinned @fission-ai/openspec devDependency is installed (npm install).',
         ),
       ),
     );

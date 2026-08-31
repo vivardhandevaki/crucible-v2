@@ -46,6 +46,7 @@ describe('toy repo — valid change bundle', () => {
     'proposal.md',
     'design.md',
     'oracles.md',
+    'tasks.md',
     join('specs', 'greeting', 'spec.md'),
   ];
 

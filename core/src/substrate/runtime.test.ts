@@ -39,23 +39,4 @@ describe('agent runtime selection', () => {
     );
     expect(selectAgentRuntime(config, 'review', factories).model).toBe('custom-reviewer');
   });
-
-  it('passes the local-only Codex sandbox opt-in to the Codex substrate', () => {
-    let sandbox: string | undefined;
-    const config = parseConvenienceFile(
-      'agent: { provider: codex, codex_sandbox: danger-full-access }',
-      'local',
-      'local',
-    );
-    const runtime = selectAgentRuntime(config, 'propose', {
-      codex: (options) => {
-        sandbox = options.sandbox;
-        return codex;
-      },
-      'claude-code': () => claude,
-    });
-
-    expect(runtime.substrate).toBe(codex);
-    expect(sandbox).toBe('danger-full-access');
-  });
 });

@@ -26,17 +26,11 @@ export interface RunResult {
 }
 
 /** A normalized `resolve` result (found | missing; targetFile grounded in P3-06). */
-export type ResolveResult =
-  | {
-      target: string;
-      status: 'found';
-      targetFile: string;
-    }
-  | {
-      target: string;
-      status: 'missing';
-      candidateFile?: string;
-    };
+export interface ResolveResult {
+  target: string;
+  status: 'found' | 'missing';
+  targetFile?: string;
+}
 
 // Build output can be large; give spawnSync headroom over its 1MB default.
 export const MAX_BUFFER = 64 * 1024 * 1024;

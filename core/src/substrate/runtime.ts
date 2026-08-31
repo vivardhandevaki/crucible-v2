@@ -6,7 +6,7 @@ import {
   type ConvenienceConfig,
 } from '../config/convenience.js';
 import { ClaudeCodeSubstrate } from './claude-code.js';
-import { CodexSubstrate, type CodexSubstrateOptions } from './codex.js';
+import { CodexSubstrate } from './codex.js';
 import type { AgentSubstrate, SubstrateRole } from './types.js';
 
 export interface AgentRuntime {
@@ -16,7 +16,7 @@ export interface AgentRuntime {
 }
 
 export interface RuntimeFactories {
-  codex: (options: CodexSubstrateOptions) => AgentSubstrate;
+  codex: () => AgentSubstrate;
   'claude-code': () => AgentSubstrate;
 }
 
@@ -34,7 +34,7 @@ const DEFAULT_MODELS: Record<AgentProvider, Record<SubstrateRole, string>> = {
 };
 
 const DEFAULT_FACTORIES: RuntimeFactories = {
-  codex: (options) => new CodexSubstrate(options),
+  codex: () => new CodexSubstrate(),
   'claude-code': () => new ClaudeCodeSubstrate(),
 };
 
@@ -52,11 +52,6 @@ export function selectAgentRuntime(
   return {
     provider,
     model: config.models[role] ?? DEFAULT_MODELS[provider][role],
-    substrate:
-      provider === 'codex'
-        ? factories.codex(
-            config.agent?.codex_sandbox ? { sandbox: config.agent.codex_sandbox } : {},
-          )
-        : factories['claude-code'](),
+    substrate: factories[provider](),
   };
 }

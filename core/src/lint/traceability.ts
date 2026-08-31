@@ -41,8 +41,6 @@ export interface TargetResolution {
    * optionals admit explicit `undefined`) is assignable under
    * `exactOptionalPropertyTypes` — the tracer wires the real client here. */
   targetFile?: string | undefined;
-  /** A missing target's adapter-grounded pre-approval authoring location. */
-  candidateFile?: string | undefined;
 }
 
 /**

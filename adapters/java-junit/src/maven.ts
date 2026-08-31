@@ -5,9 +5,8 @@
 //            normalized result per requested target. A build failure BEFORE any
 //            test runs (a compile error) yields ALL requested targets `error`
 //            with the build-log tail as the message (fail-closed, attributable).
-//   resolve: `mvn test-compile`, then Maven's evaluated test outputs and test
-//            dependency classpath feed the bundled Launcher-API helper (P3-03),
-//            which classifies each target; the helper's
+//   resolve: `mvn test-compile` to produce the classpath, then the bundled
+//            Launcher-API helper (P3-03) classifies each target; the helper's
 //            three-way vocabulary is folded to the wire's found | missing. The
 //            targetFile grounding (design §2) lands in P3-06.
 //
@@ -29,10 +28,9 @@ import {
   type ResolveResult,
   type RunResult,
 } from './reports.js';
-import { assembleTestClasspath, mavenDependencyClasspath } from './test-classpath.js';
 import { invokeResolve } from './resolve.js';
-import { candidateTargetFile, groundTargetFile } from './source-file.js';
-import { mavenTestOutputDirectories, mavenTestSourceRoots } from './source-roots.js';
+import { groundTargetFile } from './source-file.js';
+import { mavenTestSourceRoots } from './source-roots.js';
 import { splitTarget, WireError } from './wire.js';
 
 export type { ResolveResult, RunResult } from './reports.js';
@@ -105,10 +103,7 @@ export function resolveMaven(opts: MavenResolveOptions): ResolveResult[] {
     );
   }
 
-  const classpath = assembleTestClasspath(
-    mavenTestOutputDirectories(opts.cwd, opts.mvnBin),
-    mavenDependencyClasspath({ cwd: opts.cwd, ...(opts.mvnBin ? { mvnBin: opts.mvnBin } : {}) }),
-  );
+  const classpath = [join(opts.cwd, 'target', 'classes'), join(opts.cwd, 'target', 'test-classes')];
   const classified = invokeResolve({
     jarPath: opts.jarPath,
     classpath,
@@ -120,20 +115,10 @@ export function resolveMaven(opts: MavenResolveOptions): ResolveResult[] {
   // `unsupported` (parameterized / dynamic templates) → `missing`, which fails
   // closed at propose time per the addressable-subset rule (invariant 11).
   return classified.map((r) => {
+    if (r.classification !== 'found') return { target: r.target, status: 'missing' };
     const className = r.className ?? splitTarget(r.target).className;
-    if (r.classification === 'missing') {
-      const candidateFile = candidateTargetFile({ root: opts.cwd, className, sourceRoots });
-      return {
-        target: r.target,
-        status: 'missing' as const,
-        ...(candidateFile ? { candidateFile } : {}),
-      };
-    }
-    if (r.classification === 'unsupported') return { target: r.target, status: 'missing' as const };
     const targetFile = groundTargetFile({ root: opts.cwd, className, sourceRoots });
-    if (targetFile === undefined)
-      throw new WireError('resolved target cannot be grounded: ' + r.target);
-    return { target: r.target, status: 'found' as const, targetFile };
+    return { target: r.target, status: 'found', ...(targetFile ? { targetFile } : {}) };
   });
 }
 

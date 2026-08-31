@@ -5,12 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { SETTINGS_YAML_PATH } from '@crucible/fixtures';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isCrucibleError } from '../util/errors.js';
-import {
-  loadConvenienceConfig,
-  localReviewMode,
-  mergeConvenience,
-  parseConvenienceFile,
-} from './convenience.js';
+import { loadConvenienceConfig, mergeConvenience, parseConvenienceFile } from './convenience.js';
 
 function exitOf(fn: () => unknown): number {
   try {
@@ -23,18 +18,6 @@ function exitOf(fn: () => unknown): number {
 }
 
 describe('parseConvenienceFile', () => {
-  it.each(['required', 'advisory', 'off'] as const)('accepts local review mode %s', (mode) => {
-    expect(localReviewMode(parseConvenienceFile(`review: { local_mode: ${mode} }`, 'inline'))).toBe(
-      mode,
-    );
-  });
-
-  it('defaults omitted local review mode to advisory and rejects malformed policy', () => {
-    expect(localReviewMode(parseConvenienceFile('', 'inline'))).toBe('advisory');
-    expect(exitOf(() => parseConvenienceFile('review: { local_mode: disabled }', 'inline'))).toBe(
-      3,
-    );
-  });
   it('parses models and notify', () => {
     const cfg = parseConvenienceFile(
       'models: { propose: opus }\nnotify: { slack: "#x" }',
@@ -64,41 +47,9 @@ describe('parseConvenienceFile', () => {
   it('rejects a non-string model id', () => {
     expect(exitOf(() => parseConvenienceFile('models: { propose: 5 }', 'inline'))).toBe(3);
   });
-
-  it('accepts the Codex danger-full-access opt-in only in local.yaml', () => {
-    const local = parseConvenienceFile(
-      'agent: { codex_sandbox: danger-full-access }',
-      'local.yaml',
-      'local',
-    );
-    expect(local.agent?.codex_sandbox).toBe('danger-full-access');
-
-    expect(
-      exitOf(() =>
-        parseConvenienceFile(
-          'agent: { codex_sandbox: danger-full-access }',
-          'settings.yaml',
-          'settings',
-        ),
-      ),
-    ).toBe(3);
-  });
-
-  it('fails closed on unsupported Codex sandbox modes', () => {
-    expect(
-      exitOf(() =>
-        parseConvenienceFile('agent: { codex_sandbox: workspace-write }', 'local.yaml', 'local'),
-      ),
-    ).toBe(3);
-  });
 });
 
 describe('mergeConvenience — local overrides settings', () => {
-  it('permits local review mode to be personally overridden', () => {
-    const settings = parseConvenienceFile('review: { local_mode: required }', 'settings');
-    const local = parseConvenienceFile('review: { local_mode: off }', 'local', 'local');
-    expect(localReviewMode(mergeConvenience(settings, local))).toBe('off');
-  });
   it('local wins per key; settings-only keys survive', () => {
     const settings = parseConvenienceFile(
       'models: { propose: opus, review: opus }\nnotify: { slack: "#team" }',
@@ -113,20 +64,6 @@ describe('mergeConvenience — local overrides settings', () => {
     expect(merged.models.review).toBe('opus'); // settings-only survives
     expect(merged.notify.slack).toBe('#team'); // settings-only survives
     expect(merged.notify.desktop).toBe(true); // local-only added
-  });
-
-  it('keeps the team provider when local.yaml supplies only the Codex sandbox opt-in', () => {
-    const settings = parseConvenienceFile('agent: { provider: codex }', 'settings', 'settings');
-    const local = parseConvenienceFile(
-      'agent: { codex_sandbox: danger-full-access }',
-      'local',
-      'local',
-    );
-
-    expect(mergeConvenience(settings, local).agent).toEqual({
-      provider: 'codex',
-      codex_sandbox: 'danger-full-access',
-    });
   });
 });
 
@@ -162,14 +99,6 @@ describe('loadConvenienceConfig — file merge order', () => {
     writeFileSync(join(root, '.crucible', 'settings.yaml'), 'notify: { slack: "#team" }\n');
     const cfg = loadConvenienceConfig(root);
     expect(cfg.notify.slack).toBe('#team');
-  });
-
-  it('does not permit the sandbox opt-in in committed settings.yaml', () => {
-    writeFileSync(
-      join(root, '.crucible', 'settings.yaml'),
-      'agent: { provider: codex, codex_sandbox: danger-full-access }\n',
-    );
-    expect(exitOf(() => loadConvenienceConfig(root))).toBe(3);
   });
 });
 

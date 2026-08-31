@@ -12,11 +12,13 @@ The framework and this repository support both OpenAI Codex and Claude Code.
 - `docs/charter.md`: founding architecture and source of truth.
 - `docs/design/`: stable contracts, phase designs, and the real-substrate runbook.
 - `docs/tasks/`: test-first, model-tiered work orders.
-- `core/`: deterministic workflow engine and agent substrates.
+- `core/`: deterministic workflow engine and generated agent-skill definitions.
 - `adapters/`: standalone JSON-over-stdin/stdout test adapters.
 - `schemas/`, `fixtures/`, `ci-templates/`: shipped workflow assets and executable proofs.
 
-Phases 1–3 and the P3-09 doctor hash-repair follow-up are complete. Phase 4 validation is next.
+Phases 1–3 are complete. Phase 4 validation was halted after exposing an
+architectural failure; Phase 4R is the active framework reset. See
+`docs/design/phase-4r-reset.md` and `docs/tasks/phase-4r.md`.
 
 ## Agent prerequisites
 
@@ -26,7 +28,8 @@ For Codex:
 codex --version
 ```
 
-Authenticate Codex before running a live Crucible command. New `crucible init` projects select Codex by default.
+Open Codex in the initialized project and use the generated Crucible skills.
+Crucible's CLI does not authenticate or launch Codex.
 
 For Claude Code:
 
@@ -34,24 +37,19 @@ For Claude Code:
 claude --version
 ```
 
-Authenticate Claude Code before selecting it. Existing Crucible projects with no explicit provider retain the Claude Code default.
+Open Claude Code in the initialized project and use the generated Crucible
+skills/commands. Crucible's CLI does not launch Claude Code.
 
-Select the provider in team settings or override it locally:
+During `crucible init`, select which agent-tool surfaces to install. Tool
+selection is convenience and cannot change validation or merge decisions:
 
 ```yaml
-# .crucible/settings.yaml or .crucible/local.yaml
-agent:
-  provider: codex # codex | claude-code
-
-models:
-  propose: optional-provider-model
-  implement: optional-provider-model
-  review: optional-provider-model
+# .crucible/settings.yaml
+agent_tools:
+  - codex
+  - claude-code
 ```
 
-An explicit role model is opaque to Crucible and overrides that provider's built-in default.
-
-Codex defaults to isolated `workspace-write`; only a gitignored `.crucible/local.yaml` may set `agent.codex_sandbox: danger-full-access` for a host that cannot nest that sandbox. Crucible never falls back automatically, this setting cannot affect CI or a merge decision, and it gives the child process full machine access.
 ## Working with an agent
 
 Start Codex, Claude Code, or another coding agent in the repository and ask it to read `AGENTS.md`, the current task, and every file named by the task's `Reads:` field. The canonical workflow is:

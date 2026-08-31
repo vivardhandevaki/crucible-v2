@@ -71,15 +71,6 @@ export function registerInit(program: Command): void {
         process.stdout.write(`  skipped  ${rel} (kept your version)\n`);
       const unchanged = byKind('unchanged').length;
       if (unchanged > 0) process.stdout.write(`  unchanged ${unchanged} file(s)\n`);
-      const requiredChecks = [
-        'verify',
-        ...(answers.ciReviewMode === 'required' ? ['judge'] : []),
-        ...(answers.humanReviewMode === 'required' ? ['route'] : []),
-      ];
-      process.stdout.write(
-        `\nConfigure GitHub required checks: ${requiredChecks.join(', ')}. ` +
-          'Crucible never reads or writes API keys.\n',
-      );
       process.stdout.write(
         `\nCrucible is set up. Next: \`crucible propose <change> "<intent>"\`.\n`,
       );
@@ -107,9 +98,6 @@ export function detectAnswers(root: string): InitAnswers {
       runners: ['junit'],
       paths: ['**/*.java'],
       unitCommand: 'mvn test',
-      ciReviewMode: 'required',
-      humanReviewMode: 'required',
-      localReviewMode: 'advisory',
     };
   }
   if (hasGlob('build.gradle')) {
@@ -118,9 +106,6 @@ export function detectAnswers(root: string): InitAnswers {
       runners: ['junit'],
       paths: ['**/*.java'],
       unitCommand: 'gradle test',
-      ciReviewMode: 'required',
-      humanReviewMode: 'required',
-      localReviewMode: 'advisory',
     };
   }
   throw preconditionError(
@@ -202,46 +187,7 @@ async function confirmAnswers(detected: InitAnswers): Promise<InitAnswers> {
   const adapter = (await ask(`Adapter name [${detected.adapter}]: `)).trim() || detected.adapter;
   const unitCommand =
     (await ask(`Unit-test command [${detected.unitCommand}]: `)).trim() || detected.unitCommand;
-  const ciReviewMode = readMode(
-    await ask(`PR AI review [${detected.ciReviewMode ?? 'required'}] (required|advisory): `),
-    detected.ciReviewMode ?? 'required',
-  );
-  const humanReviewMode = readMode(
-    await ask(
-      `Independent human review [${detected.humanReviewMode ?? 'required'}] (required|advisory): `,
-    ),
-    detected.humanReviewMode ?? 'required',
-  );
-  const localReviewMode = readLocalMode(
-    await ask(
-      `Local fresh review [${detected.localReviewMode ?? 'advisory'}] (required|advisory|off): `,
-    ),
-    detected.localReviewMode ?? 'advisory',
-  );
-  return { ...detected, adapter, unitCommand, ciReviewMode, humanReviewMode, localReviewMode };
-}
-
-function readMode(input: string, fallback: 'required' | 'advisory'): 'required' | 'advisory' {
-  const value = input.trim() || fallback;
-  if (value === 'required' || value === 'advisory') return value;
-  throw invalidInputError(
-    'INVALID_REVIEW_MODE',
-    `Invalid review mode ${JSON.stringify(value)}.`,
-    'Choose required or advisory and rerun crucible init.',
-  );
-}
-
-function readLocalMode(
-  input: string,
-  fallback: 'required' | 'advisory' | 'off',
-): 'required' | 'advisory' | 'off' {
-  const value = input.trim() || fallback;
-  if (value === 'required' || value === 'advisory' || value === 'off') return value;
-  throw invalidInputError(
-    'INVALID_LOCAL_REVIEW_MODE',
-    `Invalid local review mode ${JSON.stringify(value)}.`,
-    'Choose required, advisory, or off and rerun crucible init.',
-  );
+  return { ...detected, adapter, unitCommand };
 }
 
 /**

@@ -14,25 +14,29 @@ Verification effort is conserved, not eliminated. If humans stop reading code, t
 
 The human-in-the-loop moves from **approving code** to **approving artifacts**. One human gate, placed where leverage is highest: at the end of `propose`, before any implementation exists. Reviewing declarative artifacts (scenarios, oracles, scope) is far cheaper than reviewing procedural code — and exploits *recognition over recall*: humans are bad at enumerating edge cases from scratch, but good at spotting the missing one in a list the propose agent generates.
 
-## The Workflow — Five Stateless Commands
+## The Workflow — Artifact-Derived CLI, Agent Skills
 
 ```
-explore ──► propose ──► approve ──► implement ──► verify ──► [push → CI → merge]
-(optional)              ★ HUMAN                   (advisory      (enforced
-                          GATE                     locally)       in CI)
+init ──► propose ──► approve ──► implement ──► verify ──► archive ──► PR
+        (agent skill)   ★ HUMAN    (agent skill)  (deterministic) (complete)
+                        TERMINAL
 ```
 
-Every command is stateless, reads only artifacts, and **refuses to run if its precondition artifact is missing or invalid**. The state machine from V1 survives intact — but it is *experienced* as five intuitive commands instead of work-order ceremony.
-
-There are two local execution modes for the agent-authored steps. **Headless mode** retains the original contract: `propose` and `implement` invoke a fresh `AgentSubstrate` role. **Session-native mode** (ratified P4-10) lets an already-active Codex or Claude Code session author propose/revise and implement work directly, but only after the pinned CLI has emitted the stage's strict handoff and only until the CLI judges the resulting files. Session-native work is not an `AgentSubstrate` invocation; conversation history, a skill, a checkpoint, and agent self-report carry no authority. `approve`, hashes, verification, tiering, target-branch CI, and merge routing are identical in both modes.
+Every CLI command is stateless, reads only artifacts, and **refuses to run if
+its precondition artifact is missing or invalid**. Generated agent skills are
+thin steering surfaces inside the user's active Codex/Claude session: they ask
+the project-local CLI what is allowed, author files, and return them to the CLI
+for validation. The CLI never spawns an agent. Conversation history, skill
+prose, caches, and agent self-report have no authority.
 
 | Command | Actor | Produces | Precondition |
 |---|---|---|---|
 | `explore` | Agent + human | Ephemeral notes, options, tradeoffs | — (optional) |
-| `propose` | Agent | Proposal, spec deltas, design, **oracles (declarative + bound test code)**, explicit "unspecified / out-of-scope" section, **"seams" enumeration** (external systems touched, contracts crossed, concurrent changes in flight) | — |
+| `propose` | Agent via generated skill in the active session | Proposal, all schema-required pre-approval/custom artifacts, **oracles (declarative + bound test code)**, explicit out-of-scope and seams sections | Initialized project |
 | `approve` | **Human** | Approval artifact containing content-hashes of every approved artifact | Complete proposal bundle |
-| `implement` | Agent (separate context) | **tasks.md (generated as its first action)**, then code + passing local checks | Valid approval artifact |
-| `verify` | Deterministic script (+ adversarial-review agent as one input) | Machine-parseable verdict | Implementation exists |
+| `implement` | Agent via generated skill in the same active session | **tasks.md (generated as its first action)**, then code + ordinary tests | Valid approval artifact |
+| `verify` | Deterministic script | Machine-parseable verdict; no LLM/API key | Implementation exists |
+| `archive` | Deterministic CLI, usually invoked by a skill after human confirmation | Synced canonical specs + complete archived change | Valid seal + green verify |
 
 ### Key design decisions inside the loop
 
@@ -40,7 +44,10 @@ There are two local execution modes for the agent-authored steps. **Headless mod
 2. **Oracles are written at propose-time, before approval.** The human gate covers them. After approval, oracle paths are **immutable for the implement step** — any diff touching them fails CI. This preserves V1's "oracles precede implementation" with zero added ceremony.
 3. **Traceability linter** enforces three-way integrity: every SHALL/scenario in the spec delta ↔ at least one oracle ID ↔ an executable check that actually exists and is collected by the runner. A requirement without an oracle fails the build — it is a wish, not a spec.
 4. **Approval is tamper-evident, not ceremonial.** The approval artifact stores content-hashes; CI re-verifies them. Any post-approval edit to spec or oracles silently invalidates the approval — no protected paths or CODEOWNERS needed for small teams (both remain available as optional hardening for larger orgs).
-5. **`verify` is a script, not an agent.** Deterministic checks (oracles, tests, traceability, diff caps) run as code and exit 0/1. The adversarial-review agent supplies only the judgment layer that can't be mechanized — its fail-closed, machine-parseable verdict is *one input* to the runner. Agent self-report is never a completion signal.
+5. **`verify` is a script, not an agent.** Deterministic checks (oracles,
+   tests, traceability, seals, concrete policy) run as code and exit 0/1. AI
+   review is a separate optional check: `off`, `advisory`, or `required`.
+   Agent self-report is never a completion signal.
 
 ## Two Venues, One Truth: Local vs. CI
 
@@ -50,9 +57,9 @@ The split is **feedback vs. enforcement** — not feature-specific vs. generic.
 |---|---|---|
 | Purpose | Fast iteration loop | Trust |
 | Authority | **Advisory** (dev machine is agent-controlled, inherently untrusted) | **Enforcing** (Crucible-maintained GitHub Actions; full hermetic sandboxing is a parked hardening milestone) |
-| What runs | `verify` (and optional `verify --review`) | The same deterministic `verify` checks, **including all feature-specific oracles + unit + regression suites**, plus a separately transported adversarial-review verdict |
-| Plus | — | Static suite (types, lint, SAST, CVE/dependency scan, secret scan), traceability lint, oracle-immutability check, approval-hash check, tier recomputation, **trajectory checks**, detached adversarial reviewer, scoped mutation testing |
-| Outcome | Green = ready to push | Deterministic risk routing: low-risk auto-merges; risk paths (auth, money, migrations, public API, deps, concurrency) route to human |
+| What runs | Same `verify` command | Same `verify` command re-run in CI, **including all feature-specific oracles + unit + regression suites** |
+| Plus | — | Static suite, traceability, oracle immutability, approval hash, adapter pins, and concrete repository policies |
+| Outcome | Green = ready to archive/submit | Required `verify` result supplies merge authority; optional `ai-review` follows `off|advisory|required` policy |
 
 If CI only ran generic checks, local verification would be the only place oracles execute — on hardware the implementing agent controls. Re-running oracles in CI is what keeps V1's core property alive: **the only path to green is through the code.**
 
@@ -64,9 +71,9 @@ V2 is a **layer over OpenSpec's artifact format** (specs/ as current truth, chan
 
 ## What Survives From V1 Unchanged
 
-- Command-invoked roles stay stateless; session-native roles use explicit CLI handoffs whose validity is re-derived from artifacts and preconditions, never messages or self-report.
+- Stateless CLI operations; hand-offs are artifacts, not messages; direction emerges from preconditions even though one interactive agent conversation may author multiple stages.
 - "Done" = artifact exists and validates — never agent self-report.
-- CI as the sole authority; agents cannot modify oracles, specs, gates, or harness (enforced via hashing + immutability checks now; full hermetic/pinned/network-restricted sandbox parked as a hardening milestone).
+- Deterministic CI verify as merge authority; agents cannot silently modify sealed oracles/specs or select the config/verifier that judges their PR.
 - Deterministic risk routing + random audit sampling of auto-merges.
 - **The ratchet (dual-trigger in V2):** every escaped *defect*'s postmortem ships a gate commit (new oracle, rubric line, or rule); every *agent failure* (escalation loop, budget blowout, trajectory violation) ships a harness commit (prompt fix, context-boundary change, tool addition). Defects ratchet the gates; agent failures ratchet the harness. The system only gets stricter.
 - Convenience and enforcement remain separate layers; deleting the tooling leaves the workflow enforced, just tedious.
@@ -87,24 +94,24 @@ V2 is a **layer over OpenSpec's artifact format** (specs/ as current truth, chan
 | # | Feature | What it does | Guarantee preserved / how |
 |---|---|---|---|
 | 1 | **`crucible status`** | The `git status` of the loop: active change, artifact state, what's blocked on what, exact next command. Corollary: every precondition failure names its fix ("no approval artifact — run `crucible approve`"). | None at risk — errors teach the workflow instead of documentation |
-| 2 | **Change tiers (proportional ceremony)** | Trivial / standard / critical tiers scale the ritual: trivial = one-paragraph proposal + auto-generated oracles; critical = full bundle + blocking mutation testing. | **Tier is computed from the diff against risk-routing globs, never declared.** Claim "trivial," touch `auth/`, CI recomputes and fails you. *(Strategy details pending — see Open Items.)* |
+| 2 | **Concrete deterministic policy (Phase 4R)** | Required artifacts, oracle coverage, sealed inputs, configured suites, size caps, and protected trust paths are checked directly. Tier-dependent ceremony is parked until the thin lifecycle is qualified. | Every active rule is observable and recomputed; no label supplied by an agent changes enforcement. |
 | 3 | **`approve` as the flagship experience** | The one human touchpoint gets disproportionate investment: the whole bundle rendered as a single readable review surface (scenarios, unspecified/out-of-scope, spec-delta diff, scope map) with inline edit-and-re-hash. | Strengthens the gate — a review that reads like a well-organized PRD gets *more* attention, not less |
 | 4 | **`crucible amend`** | Cheap mid-implementation spec fixes: human approves just the delta, hashes re-seal, implementation continues. | Keeps "ambiguity is fixed upstream" viable — it only survives if fixing upstream is a thirty-second operation; otherwise people batch fixes or route around the gate |
-| 5 | **`crucible override` (honest escape hatch)** | Works instantly at 2am, but is *loud*: writes an override artifact, forces human PR review, auto-files a ratchet issue that stays open until a retroactive proposal lands. | Replaces "theoretically impossible to bypass" (which gets forked silently) with "visible and self-repairing." Visibility is a stronger enforcement mechanism than prohibition |
+| 5 | **Override automation (parked)** | Phase 4R ships no merge-gate bypass while the ordinary lifecycle is being re-qualified. | Avoids designing exceptional lanes before the normal path is proven. |
 | 6 | **`verify --watch`** | Scoped to affected oracles; sub-second where possible. Local loop feels like TDD red-green. | If local verify is slow, nobody runs it and CI becomes the first place failures appear — the slowest possible feedback loop |
 | 7 | **Progressive adoption + brownfield `init`** | `init` detects the stack, writes risk-routing defaults + CI workflow; only governs paths touched by new changes. Adoption in layers: propose/approve → oracles + traceability → CI enforcement → routing. | Each layer is independently valuable; the framework never demands faith up front. Full guarantees apply once fully adopted — partial adoption is honest about being partial |
 | 8 | **Meet developers where they are** | Agent workflows for OpenAI Codex, Claude Code, Cursor, etc. (OpenSpec's existing surface) driving the CLI; CLI remains the substrate of record. Plus `crucible why <failure>`: trace any red check to the exact oracle, rubric line, or rule that fired. | Transparency makes people trust a gate instead of resenting it; the CLI-as-substrate keeps chat agents unable to bypass anything |
 
 ## Modifications from V1
 
-- **Diff caps become tier defaults, not a universal ≤400.** Hard caps force artificial change-splitting — its own correctness hazard. Propose may declare a stacked-change plan for legitimately large work; cap applies per stack entry.
+- **Diff-cap/tier strategy is parked for Phase 4R.** A repository may configure a concrete size policy, but proportional ceremony and stacked-change mechanics return only through a later design.
 - **The 10% audit sample becomes a weekly digest**, not per-PR interruptions. Same statistical guarantee, batched attention.
-- **Adversarial reviewer verdicts must be actionable:** fail = rubric line + evidence + suggested remediation, machine-parseable so the implement agent can respond next iteration. A bare "rejected" is a DX black hole and wastes iteration budget.
+- **AI-review verdicts must be actionable when enabled:** fail = rubric line + evidence + suggested remediation, machine-parseable so the implement agent can respond. A bare "rejected" is invalid.
 - **Escalation resolution is one command**, folded into `amend`: agent files the escalation artifact, human resolves with spec patch + delta-approval, loop resumes. "Stop on ambiguity" stays; un-stopping becomes trivial.
 
 ## Exclusions from the user-facing surface
 
-- **Work-order manifests, iteration budgets, sandbox configs** still exist — as internal machinery under `.crucible/`, never hand-written by users. V1's mistake wasn't having them; it was making people see them.
+- **Conversational work orders, session checkpoints, iteration budgets, and Crucible-selected agent sandboxes** are not part of the reset workflow.
 - **Any second approval ceremony.** One gate, forever. "Just one more sign-off" is how V1 happened.
 
 ---
@@ -115,7 +122,7 @@ V2 is language-, framework-, and tech-agnostic via an **adapter architecture** (
 
 ## The Split
 
-**Core (100% agnostic):** artifact schemas, state machine + preconditions, approval hashing, traceability *semantics* (SHALL ↔ oracle ID ↔ existing check), risk routing, tiers, CI contract, CLI. The core never imports a test framework — it only speaks the adapter protocol.
+**Core (100% agnostic):** artifact schemas, artifact-derived preconditions, approval hashing, traceability *semantics* (SHALL ↔ oracle ID ↔ existing check), deterministic verify, CI trust contract, generated-skill definitions, and CLI. The core never imports a test framework — it only speaks the adapter protocol.
 
 **Adapter (all tech knowledge):** implements a small interface:
 
@@ -130,7 +137,7 @@ V2 is language-, framework-, and tech-agnostic via an **adapter architecture** (
 
 Oracle bindings become adapter-mediated: the artifact declares `runner: pytest, target: tests/auth/test_lockout.py::test_five_failures`; core hands it to whichever adapter claimed the `pytest` runner. Identical oracle format for a Rust repo — just `runner: cargo-test`.
 
-## Capability Negotiation
+## Historical Capability/Tier Negotiation — Parked for Phase 4R
 
 Not every stack has mature mutation-testing or architecture-rule tooling. Adapters **declare capabilities** (`unit`, `property`, `contract`, `mutation`, `arch-rules`, `sast`, ...); tiers and risk routes **declare requirements** ("critical tier requires `mutation`"). When a required capability is missing, the framework degrades **loudly and honestly** — e.g., route the PR to human review with "mutation unavailable for this stack" — never silently skip. The guarantee model stays truthful across ecosystems of different maturity, and adapter authors get a visible gap list.
 
@@ -162,7 +169,7 @@ Arbitrary shell strings in config ("custom checks") are a bypass vector — an a
 - **The check code** = real test files in the suite, written by the propose agent *before* approval, referenced by the bindings. Not part of the artifact, but inside the approval hash and immutable post-approval.
 - **Division of review labor:** the human reads scenarios line-by-line, spot-checks the test code, and relies on the traceability linter to guarantee every pointer resolves.
 
-## Tier Computation Rules (settled invariants; tier definitions still parked)
+## Historical Tier Computation Rules — Parked for Phase 4R
 
 - **Nobody selects the tier.** The propose agent *suggests* one (UX nicety); the CLI recomputes it deterministically from observable facts (normative spec delta present? touched paths vs. risk globs? diff size?); CI recomputes again. Disagreement between claim and recomputation = fail.
 - **Oracles are triggered by spec deltas, not code changes.** A pure refactor changes no promised behavior → no spec delta → no new oracles. Its correctness criterion *is* the accumulated regression suite + an untouched spec.
@@ -191,16 +198,28 @@ Key insight: unit tests carry no trust, and that's fine — their job is helping
 
 - **`crucible approve`** writes a committed file (`changes/<name>/approval.yaml`): SHA-256 content-hash of each artifact in the review bundle and each bound test file, plus who/when. CI recomputes; any mismatch voids the approval.
 - **`crucible amend`** (mid-implementation spec fix): shows the diff between approved state and current artifacts; human confirms; a delta entry with new hashes is appended to approval.yaml. A thirty-second re-seal, not a fresh ceremony. Escalation resolution folds into this same flow.
-- **`crucible override "reason"`** (the 2am hatch): writes an override artifact permitting gate bypass; CI sees it and forces human PR review + auto-files a ratchet issue that stays open until a retroactive proposal lands. Instant to use, impossible to use quietly.
+- **Override/escalation automation is parked in Phase 4R.** Changing approved intent uses `amend` plus a new human seal; the reset MVP has no merge-gate bypass.
 
-## CI Posture for v2.0 (simplified)
+## CI Posture for the Phase 4R Reset
 
-Crucible **maintains** the GitHub Actions workflows (generated by `init`, kept current by `crucible doctor`). The required-check set includes `verify`, `review`, and `route`, plus SAST, CVE/dependency scan, and secret scan. `verify` runs oracles + unit + regression + traceability + approval-hash + tier recomputation without a reviewer credential. `review` is a detached target-branch-owned workflow: a credentialed agent judges an inert, core-prepared request, then a separate credential-free core step validates its strict verdict. Branch protection requires both checks, so splitting their transport does not make review optional. Full hermetic sandboxing (containers and network restriction for ordinary project execution) is parked as a hardening milestone — the hash/immutability mechanisms and the detached review boundary carry the tamper-evidence burden until then.
+Deterministic `verify` is credential-free and required: current oracles, archived
+regression oracles, declared suites, traceability, approval hashes, immutable
+oracle inputs, adapter pins, and concrete repository policy. AI review is a
+separate `off|advisory|required` check and the default never requires an API
+key. A candidate never selects its own enforcement config, framework pin,
+adapter pin, or historical harness input.
 
-## Adversarial Reviewer — Design
+The preferred GitHub authority is a ruleset-required workflow stored outside
+the candidate repository and run on the restricted `pull_request` event.
+Repositories without that capability receive either a future GitHub App or an
+honestly advisory repository-local workflow; `doctor --ci` reports which grade
+is actually installed. `pull_request_target` does not execute candidate code by
+default.
+
+## Optional AI Reviewer — Design
 
 - **Rubric:** versioned YAML checklist at `.crucible/rubric.yaml` — each line an ID + criterion + what evidence constitutes failure (e.g. `R-007: implementation embeds a decision the approved spec does not determine`). A TCB path: hash-pinned, immutable to the implement agent; the ratchet appends lines to it (postmortem concludes "the reviewer could have caught this class but had no criterion" → new line → every future review checks for it).
-- **`crucible review`:** stateless command, fresh agent context. Inputs: diff + spec delta + oracles + rubric. Output: strict JSON verdict — `pass` | `fail`; on fail: rubric line ID + evidence pointer + suggested remediation. **Fail-closed:** malformed output = fail. Locally, the existing fresh `AgentSubstrate` path remains optional through `verify --review`. In CI, review is always required but uses the P4-14 detached transport: target-branch core prepares and binds the request, a credentialed fresh agent emits only a schema-constrained verdict, and credential-free core performs the authoritative verdict judgment.
+- **`ai-review`:** independent agent context. Inputs: diff + spec delta + oracles + rubric. Output: strict JSON verdict — `pass` | `fail`; on fail: rubric line ID + evidence pointer + suggested remediation. In `required` mode malformed/missing output is red; in `advisory` mode findings never block; in `off` mode no model call occurs. It is never an input that changes deterministic `verify`.
 - **Default rubric ships small (~12 lines):** vacuous-test smells, oracle-adjacent code weakening, swallowed errors, unjustified dependency additions, concurrency red flags, secret patterns, spec-conformance gaps oracles can't see.
 - **DX:** users never configure it to start; they *encounter* it only through actionable failure messages via `crucible why`, and *edit* it only via the ratchet.
 - **Deferred:** the rubric's own regression eval suite (fixture diffs with known verdicts, re-run on model/rubric change) — parked alongside hermetic sandboxing as hardening.
@@ -208,7 +227,7 @@ Crucible **maintains** the GitHub Actions workflows (generated by `init`, kept c
 ## The Approve Session — Validation, Editing & the "One Rich Gate"
 
 - **During approve, nothing is sealed yet** — so re-validation is not hash-based. Inline edits re-run the same validators propose ran: schema checks + binding resolution. Editing a scenario's *expected behavior* marks its oracle "scenario changed after test authored"; the propose agent regenerates the bound test and the human sees that test diff before confirming. Hashes seal the *final* state — they detect tampering after the seal, not during review.
-- **TDD/BDD alignment — one rich gate, not two.** At approve, the BDD scenarios *and* their executable test code both already exist on disk, both inside the review surface — implementation starts from red. No second gate after oracle-code authoring: it would show nothing gate #1 doesn't already contain, and moving oracle-test authoring into implement would hand the judges' pens to the judged. Instead, gate #1 is made rich: scenario and bound test render **side-by-side**; critical tier may require explicit per-oracle test acknowledgment (a strictness knob *inside* the gate); and mutation testing is the mechanical backstop against vacuous tests that no amount of human reading guarantees.
+- **TDD/BDD alignment — one rich gate, not two.** At approve, the BDD scenarios *and* their executable test code already exist on disk and appear in the review surface; implementation starts from red. No second gate follows oracle-code authoring. Scenario and bound test render side-by-side, and deterministic red-on-base/collection checks backstop the review.
 
 ## Editing Artifacts — Pre- vs. Post-Approval
 
@@ -225,7 +244,11 @@ Crucible **maintains** the GitHub Actions workflows (generated by `init`, kept c
 
 Three extractions + set arithmetic: (a) every normative statement in the spec delta (SHALL/scenario IDs); (b) every oracle ID with its SHALL-link and binding; (c) the set of actually-collectible test targets, via adapter dry-run resolution (no execution). Checks: every SHALL has ≥1 oracle (else "requirement without oracle — a wish"); every oracle points at an existing SHALL (else orphan); every binding resolves (else broken pointer). Failures name the exact missing link. Milliseconds; no tests run.
 
-## Tier Computation — Operational Details
+## Historical Tier Design — Parked for Phase 4R
+
+The following tier material records the P2/P3 design but is not an active Phase
+4R contract. No reset task may port tier-dependent ceremony, routing, mutation,
+or override behavior without a later ratified design after P4R exit.
 
 - Recomputed deterministically at propose, approve, implement, and CI. Agent's suggestion is a UX nicety; claim ≠ recomputation → fail.
 - Inputs: spec-delta presence, risk-glob matches, diff size. (*Glob* = `.gitignore`-style wildcard path pattern: `payments/**` = everything under payments/, any depth.)
@@ -252,23 +275,22 @@ Three rules keep the table honest: a risk-glob match always dominates (a "trivia
 
 The Crucible schema bundle ships change *types*, each with its own artifact sequence and verify rules: **`feature`** (full bundle), **`bugfix`** (slim proposal + **mandatory reproduction oracle** + a red-on-base/green-on-fix verify rule: the new test must *fail* on the pre-fix commit and *pass* on the fix — CI-checked, no honor system), **`refactor`** (thin bundle; no spec delta permitted). `crucible propose` infers the type from the description and says so; `--type` overrides.
 
-## State & Audit — state.yaml
+## State and Audit in Phase 4R
 
-- `changes/<name>/state.yaml`: append-style event log + current snapshot (computed tier with its inputs, phase, verify history, escalation index, timestamps). **Artifacts are the truth; state.yaml is a derived cache and audit trail.** Every crucible command writes it as its last step; `status` recomputes state from the artifacts + hashes and rewrites the file if reality diverges. Editing state.yaml changes nothing — status and CI derive from artifacts, never labels.
-- Agent-backed events record `execution_mode: headless | session-native`. Headless events may index a Crucible-captured transcript; session-native events deliberately do not pretend to own the host product's conversation transcript. This provenance is audit-only and is never read by approval, tiering, verify, routing, or CI.
-- CI runs in an ephemeral checkout and can't commit state back; its audit contribution lives where CI naturally writes — check annotations and the verdict JSON attached to the PR. Local file + PR records together form the complete trail.
+- `status` derives phase and allowed next actions from artifacts, adapter-grounded bindings, seals, and verification evidence. There is no committed workflow-state file.
+- Any performance cache is gitignored, disposable, and forbidden as an enforcement input. Git history, approval generations, archived change artifacts, and CI checks form the audit record.
 
-## Escalation — Three Enforcement Layers (honestly graded)
+## Historical Escalation Design — Parked for Phase 4R
 
 1. **Instructed** (soft): the implement agent's static context: on any decision not derivable from the approved spec, stop and run `crucible escalate`.
 2. **Structural** (hard): `escalate` writes escalation.yaml and ends the run; while it exists unresolved, `crucible implement` refuses to resume. Resolution flows through `amend` (spec patch + delta-approval).
 3. **Detected** (backstop): rubric line R-007-style ("implementation embeds a decision the spec doesn't determine"), trajectory checks, and downstream oracles/postmortems — each slip ratchets a new rubric line. Improvisation can't be *prevented* with certainty; it is made detectable, unprofitable, and progressively rarer.
 
-## Static Context Surfaces
+## Agent Skill Surfaces
 
-- **Command-invoked agents** (propose / implement / review): role prompts live in `.crucible/context/` — versioned files loaded by the CLI at invocation. TCB: hash-covered, immutable to the implement agent.
-- **Interactive agents** (OpenAI Codex and Claude Code): `init` writes the canonical managed workflow block into `AGENTS.md`, a compatibility bridge into `CLAUDE.md`, and a hub plus command-specific Crucible skills under `.agents/skills/` and `.claude/skills/`. Skills contain procedure, never enforcement: the hub asks the pinned CLI for valid actions; command skills execute the CLI's handoffs and stop on its exit status.
-- **Session-native authoring boundary (P4-10, amended P4-11):** only propose/create, pre-approval revise, and implement are session-native initially. Their skills may edit files only after `crucible session ...` returns the applicable handoff and must return the result to the CLI for judgment. They never invoke `codex exec`, `claude -p`, an OpenSpec skill, or an ambient OpenSpec executable. The CLI alone invokes its packaged OpenSpec runtime for scaffold/status/instructions, suppresses OpenSpec's apply-time `tasks.md` instruction until approval, and derives any oracle-test write paths from adapter `candidateFile` results. `review`, `amend`, and approve-time regeneration remain independent fresh-context roles until separately ratified.
+- `init` renders one provider-neutral workflow definition into supported Codex, Claude Code, and later tool-specific skills/commands. These wrappers drive the project-local pinned CLI inside the already-active session.
+- The CLI supplies deterministic scaffolding, artifact instructions, status, validation, sealing, verification, and archive operations. It never invokes an agent binary.
+- Skill text and conversation history are convenience surfaces. Hash-covered artifacts and CLI judgment remain the authority.
 
 ## Notify Hooks
 
@@ -343,7 +365,7 @@ The system SHALL lock an account after 5 consecutive failed login attempts.
 
 **The `target` is an opaque string** minted in the runner's native addressing scheme (pytest node ID; `jest: src/auth.test.ts#locks account after 5 failures`; `cargo-test: auth::lockout::fifth_failure_locks`). Core never interprets it. The adapter claiming the runner honors exactly two verbs over targets:
 
-- **`resolve(targets[]) → {target: found | missing}`** — batch dry-run collection, no execution. Powers the linter and propose-time validation. A `found` result MUST name the existing project-relative `targetFile` that approval seals. A `missing` result MAY name a project-relative `candidateFile`: the pinned adapter's deterministic, build-model-grounded location where a propose author may create or repair that target. `candidateFile` is authoring guidance only; it never makes a missing target resolvable, never enters a seal by itself, and is ignored by lint/verify.
+- **`resolve(targets[]) → {target: found | missing}`** — batch dry-run collection, no execution. Powers the linter and propose-time validation.
 - **`run(targets[]) → results[]`** — execute, return normalized results.
 
 **Normalized result schema** (the only shape core ever parses):
@@ -389,12 +411,10 @@ Per-verb complexity, honestly graded for the JVM:
 
 - **`detect`** — trivial: file existence + Maven-vs-Gradle pick.
 - **`run`** — easy: execute with test filters (`gradle test --tests ...` / Surefire `-Dtest=...`), parse the JUnit XML reports both tools emit natively, translate to the normalized JSON.
-- **`resolve`** — the one honest wrinkle: the JVM lacks pytest-style `--collect-only` ergonomics, so the adapter bundles a small helper (~100 lines) on the JUnit Platform Launcher API — the official discovery mechanism — to enumerate tests without executing. Discovery is where ecosystems differ most; `resolve` exists as its own verb precisely to quarantine that difference inside the adapter. The helper runs on the build tool's evaluated test-execution classpath, including project outputs and test-scope/runtime dependencies; compiled-output conventions alone are insufficient for framework-backed integration tests. Classpath evaluation may resolve dependencies and compile tests, but it never invokes a test goal/task. An unavailable, malformed, or incomplete classpath is a broken judge and fails closed rather than reclassifying an unloadable class as `missing`.
+- **`resolve`** — the one honest wrinkle: the JVM lacks pytest-style `--collect-only` ergonomics, so the adapter bundles a small helper (~100 lines) on the JUnit Platform Launcher API — the official discovery mechanism — to enumerate tests without executing. Discovery is where ecosystems differ most; `resolve` exists as its own verb precisely to quarantine that difference inside the adapter.
 - **`scope`** — skipped for v2.0 (optional in the protocol): local verify runs the full regression suite instead — slower local loop, zero correctness cost, CI is full-suite anyway. Add module-level diff mapping later when suite size hurts.
 
 **The addressable-subset rule:** we control both sides of the seam — the propose agent writes the oracle tests the adapter must address. So the harness requires oracle-bound tests to be plainly addressable (concrete `Class#method`; no `@TestFactory` dynamic tests or exotic parameterized naming *for oracle targets*). The adapter handles only the well-behaved subset; the implement agent's own unit tests can be as exotic as it likes — nothing addresses those by target.
-
-For pre-approval authoring, the adapter may return `candidateFile` only when it can derive one without guessing runner syntax or project layout. The reference JVM adapter first reuses a project-contained configured test source that already declares the target class; otherwise it maps a syntactically addressable class to one deterministic test source root reported by Maven's/Gradle's evaluated build model. Absolute paths, traversal, paths outside the project, malformed targets, and unsupported target kinds yield no candidate. Core remains runner-agnostic and authorizes only the exact candidate paths returned by the hash-pinned adapter.
 
 Realistic build estimate: a few days — thin CLI wrapper (any language) + Launcher-API discovery helper + XML normalization + conformance fixtures (a tiny sample Maven/Gradle project with known-good and deliberately-broken tests). A few hundred lines total, and a natural first dogfooding candidate.
 
@@ -414,39 +434,23 @@ Realistic build estimate: a few days — thin CLI wrapper (any language) + Launc
 
 | File | Contains | Committed? | Protection |
 |---|---|---|---|
-| `crucible.yaml` | **Enforcement only:** risk globs, tiers, adapters, suites, trajectory, audit | Yes | Risk-globbed critical + **target-branch evaluation** |
-| `.crucible/settings.yaml` | Team convenience: `agent.provider`, `models:` routing, team notify channels | Yes | Normal change flow; *not* in risk globs |
-| `.crucible/local.yaml` | Personal: provider/model overrides, Codex sandbox opt-in, and notify hooks | No (gitignored) | None needed — can't affect anyone |
+| `crucible.yaml` | **Enforcement only:** concrete policy, adapters, suites, AI-review mode | Yes | **Target-branch evaluation** |
+| `.crucible/settings.yaml` | Team convenience: installed agent-tool surfaces and team notify channels | Yes | Normal change flow; never enforcement |
+| `.crucible/local.yaml` | Personal notify/tool convenience | No (gitignored) | None needed — cannot affect merge |
 
-**Boundary test (mechanical):** if editing it could change what merges, it goes in crucible.yaml; otherwise it can't go there. This is why one combined file failed: globs match files, not sections — a combined file would route a Slack-webhook edit to critical-tier human review (disproportionate ceremony), and personal settings don't belong in commits at all.
+**Boundary test (mechanical):** if editing it could change what merges, it goes in crucible.yaml; otherwise it cannot go there. Combining enforcement with notifications or personal tool settings would let convenience affect merge policy and would put personal settings in commits.
 
 ## crucible.yaml — Reference Shape
 
 ```yaml
-risk:
-  critical:                    # any match → tier critical, human review
-    - "src/**/auth/**"
-    - "src/**/payments/**"
-    - "db/migrations/**"
-    - "**/pom.xml"             # dependency changes
-    - "**/build.gradle*"
-    - ".github/workflows/**"   # CI is TCB
-    - "AGENTS.md"               # canonical agent instructions
-    - "CLAUDE.md"               # compatibility bridge
-    - ".agents/**"              # shared agent skills/instructions
-    - ".codex/**"               # Codex project configuration
-    - ".claude/**"              # Claude Code project configuration
-    - ".crucible/**"           # harness is TCB (settings.yaml carved out below)
-    - "openspec/schemas/**"    # workflow definition is TCB
-    - "crucible.yaml"          # this file governs itself
-  exempt:
-    - ".crucible/settings.yaml"
-    - ".crucible/local.yaml"
-
-tiers:
-  trivial:  { diff_cap: 150 }
-  standard: { diff_cap: 400 }  # per stacked entry
-  critical: { diff_cap: 400, mutation: blocking }
+policy:
+  maximum_diff_lines: 500
+  protected_paths:
+    - ".github/workflows/**"
+    - ".crucible/framework.lock.json"
+    - ".crucible/adapters.lock.yaml"
+    - "openspec/schemas/**"
+    - "crucible.yaml"
 
 adapters:
   java-junit: { runners: [junit], paths: ["**/*.java"] }
@@ -454,24 +458,23 @@ adapters:
 suites:
   unit: "mvn test"             # the project's standard invocation, recorded at init
 
-trajectory:
+verification:
   require_local_verify: true
-  iteration_budget: 12
 
-audit:
-  sample_rate: 0.10            # of auto-merges → weekly digest
+ai_review:
+  mode: off                    # off | advisory | required
 ```
 
 ## The Target-Branch Rule
 
 **CI evaluates enforcement config from the branch being merged *into*, never from the PR branch.** One-sentence mental model: *the rules that judge you are the rules already on main.* Consequences:
 
-- An agent (or human) editing globs/caps in a PR achieves nothing for that PR — the edit only becomes law after it merges, and since crucible.yaml is in its own risk globs, that merge requires a human.
+- An agent or human editing policy in a PR achieves nothing for that PR — the edit only becomes law after it independently merges.
 - Team config updates on main apply **instantly to all open PRs** — new risk knowledge isn't blocked by stale per-change seals (the flaw of hash-covering config).
-- Known costs, accepted: local `verify` reads the working tree, so on a config-editing branch local behavior differs from CI's — `status` prints "config differs from main; CI judges by main's rules." And using a new glob takes two PRs (config first, governed change second) — a feature, not a bug: rule changes get reviewed in isolation from the code that benefits from them.
+- Known costs, accepted: local `verify` reads the working tree, so on a config-editing branch local behavior may differ from CI's — `status` prints "config differs from main; CI judges by main's rules." A rule change takes effect for subsequent PRs, not itself.
 - Convenience files are exempt by construction: read from the working tree, incapable of affecting enforcement.
-- The CI reviewer workflow, prompt, rubric, exact framework pin, action/CLI version, model selection, permission profile, output schema, and credential-failure policy are enforcement inputs and therefore come only from the target branch. A PR cannot select or edit the harness that reviews itself.
-- Reviewer-model drift guard (v2.0-light): the verdict JSON pins the reviewing model's identity; the audit digest flags drift. The initial detached CI transport fixes the provider/model in the maintained target-branch workflow; general user-configurable review-model enforcement remains deferred.
+- The framework/verifier and adapter pins are target inputs too. A candidate pin edit cannot select the judge for that candidate.
+- Enforcement-grade GitHub transport uses a ruleset-required trusted workflow or a future expected-source GitHub App. A repository-local workflow without that protection is labeled advisory by `doctor --ci`.
 
 ## .crucible/rubric.yaml — The Reviewer's Law
 
@@ -544,6 +547,11 @@ lines:
 ---
 
 # Worked Examples — Three End-to-End Flows
+
+> **Historical P2/P3 examples.** Their tier, routing, post-merge archive, and
+> always-required reviewer details are parked. The normative Phase 4R example
+> and acceptance sequence are in `docs/design/phase-4r-reset.md` §§1–11 and
+> P4R-13/P4R-14. These examples remain only as feature/oracle design evidence.
 
 ## Example 1 — Standard feature: "Lock accounts after 5 failed logins"
 
@@ -631,7 +639,7 @@ Your commands are `propose → approve → implement`, plus `amend` when reality
 
 ## Foundational build decisions
 
-- **Agent execution substrates:** OpenAI Codex and Claude Code are invoked headlessly with Crucible role prompts from `.crucible/context/`. Provider-specific command lines are isolated behind the frozen `AgentSubstrate` interface; one runtime resolver selects provider and role model from convenience config. New projects select Codex; missing provider config preserves the legacy Claude Code behavior.
+- **Agent authoring surfaces:** `init` renders provider-neutral Crucible workflows into Codex and Claude Code skills/commands. They run in the user's active session and drive the project-local CLI. The CLI never invokes an agent or selects an agent sandbox/model for authoring.
 - **Agent entry surfaces, one engine:** the CLI is always the substrate of record. Optional editor, slash-command, or future skill wrappers only drive it. Interactive agents distill decided intent into `crucible propose`; command-invoked roles start fresh. `approve` remains a human act on every surface.
 - **Implementation language:** TypeScript/Node — same ecosystem as OpenSpec, npm-ready later, appropriate for an orchestration-heavy/compute-light tool.
 - **Repo layout:** monorepo — `core/`, `schemas/`, `adapters/stub/`, `adapters/java-junit/`, `fixtures/`, `ci-templates/` — so the protocol and its consumers version together while fluid.
@@ -649,13 +657,17 @@ Your commands are `propose → approve → implement`, plus `amend` when reality
 
 **Phase 3 — Real adapter:** conformance fixtures (Maven + Gradle sample projects, known-good and deliberately-broken) → `java-junit` (detect, run via JUnit XML, resolve via Launcher-API helper; scope skipped) → stub retired to the conformance suite.
 
-**Phase 4 — Validation project:** the Spring Boot product, end-to-end, instrumented. Design remnants (backlog A) get finalized just-in-time in whichever phase first needs them.
+**Phase 4 — Validation experiment (halted):** Spring/Notes dogfooding exposed that reactive session, review, CI-authority, upgrade, and archive recovery mechanisms had displaced the ordinary product workflow. The final state is preserved as evidence, not a release.
+
+**Phase 4R — Framework reset:** restore the stable pre-expansion tree; rebuild the OpenSpec-like active-session skills, terminal-only approval, deterministic verify, complete pre-PR archive, retained distribution/adapter fixes, and trusted CI from named red consumer tests.
+
+**Phase 5 — Fresh validation:** only after generic and Spring Phase 4R lifecycles and a manual UX walkthrough are green, validate a new production consumer and collect release evidence.
 
 ## Success criteria — headline + instruments
 
 **Headline:** a production-grade, consumer-ready product shipped end-to-end through Crucible.
 
-**Instruments** (recorded as the project runs — state.yaml and CI already capture most of this; the bar is set at the eval, not the demo): gate-review minutes per change · escalation count + resolution time · auto-merge rate · override count (target ≈ 0) · escaped defects post-merge (each one a ratchet commit) · local verify latency · human minutes per merged change overall. At project end these numbers are the evidence — not an anecdote — for whether Crucible delivers conserved-verification-effort with better DX.
+**Instruments** (recorded from approval artifacts, Git, and CI rather than committed workflow state): gate-review minutes · amendment count/time · local and CI verify latency · deterministic failure causes · archive/submit friction · human minutes per merged change · escaped defects. At project end these numbers, plus the executable consumer matrix, decide whether Crucible delivers conserved verification effort with better DX.
 
 **Explicit v2.0 non-goals:** everything in Backlog Category C (hermetic sandboxing, harness eval suite, trajectory checks phase 2, merge-queue scaling, native non-test runners, canary/SLO, org hardening) and Category D (further adapters, community certification, distribution).
 
@@ -664,7 +676,9 @@ Your commands are `propose → approve → implement`, plus `amend` when reality
 ## Backlog
 
 ### Settled log (for the record)
-Oracle artifact schema & binding spec · tier definitions (trivial/standard/critical) · naming (Crucible, oracles) · config format (three-layer + target-branch rule) · adversarial reviewer (rubric, verdict schema, enumerated-blocking) · adapter protocol core (verbs, manifest, transport, lifecycle, `java-junit` first) · approval/amend/override semantics · change-type templates · state.yaml semantics · escalation layers · notify hooks · OpenSpec integration mechanics · one-rich-gate TDD resolution.
+Oracle artifact schema & binding spec · naming (Crucible, oracles) · three config ownership layers + target-branch rule · adapter protocol core · human approval hashes · amendment/re-seal · OpenSpec integration · one-rich-gate TDD resolution · Phase 4R CLI/skill separation · complete pre-PR archive · deterministic verify versus optional AI review.
+
+Historical tier, override, committed-state, trajectory, mutation, routing, and ratchet designs are parked inputs, not active reset contracts.
 
 ### A. Remaining design decisions (small, concrete)
 1. Adapter capability taxonomy — finalize the enum (`unit`, `property`, `contract`, `integration`, `mutation`, `arch-rules`, `sast`, `scope`, ...) and the tier/route → required-capability mapping.
@@ -699,100 +713,3 @@ Oracle artifact schema & binding spec · tier definitions (trivial/standard/crit
 24. Community adapter certification process around the conformance suite.
 25. `generic-command` escape-hatch adapter (hashed config, loud tier/routing downgrade).
 26. Upstream rubric-line distribution channel via `crucible doctor`.
-
-## P4-15 Amendment — Explicit Advisory CI Review
-
-P4-15 supersedes P4-14 only where P4-14 says CI review is unconditionally required. Target-branch `crucible.yaml` owns the strict enforcement field `review.ci_mode: advisory|required`; absence means `required`. `verify` and `route` are always required. In `required` mode the detached reviewer remains required and fail-closed exactly as P4-14 specifies. In `advisory` mode no CI reviewer runs, no secret is read, and no reviewer verdict exists; local review remains advisory and may not be represented as merge evidence. A missing credential never selects advisory mode. Oracles, regression, traceability, approval seals, tier computation, and routing are identical in both modes.
-
-
-## P4-16 Amendment — Framework Source Upgrades Are Bootstrap Changes
-
-A product framework-pin upgrade changes the judge itself, not product behavior. It therefore uses the isolated pin/workflow-only rollout already defined by P4-14, not a fabricated OpenSpec change or product oracle. The evidence is the merged framework commit and its own green framework CI, the exact committed source pin, deterministic `init`-managed bytes, the old target branch checks, and explicit human review of the isolated TCB diff. Agent self-report remains irrelevant.
-
-This is a narrow bootstrap lane, not an exemption for product or enforcement changes. The PR contains no product source, product tests, OpenSpec change bundle, `crucible.yaml`, convenience config, or unrelated edits. A policy change such as `review.ci_mode` follows in a separate target-config PR after the new framework is on the target branch. After P4-24, the base-owned mechanical workflow judges the pin PR and candidate workflow bytes cannot execute for that PR. Earlier `pull_request`-triggered templates did not provide that property; the one P4-24 bootstrap remains an explicitly human-reviewed legacy transition, not evidence that PR-owned workflows were target-owned. A local launcher mismatch never permits fallback to an ambient or new CLI for an ordinary change.
-
-## P4-17 Amendment — Durable Per-Change Tier Floor (ratified 2026-08-10)
-
-The settled `--tier critical` force-up is enforcement input, not a transient display preference. `crucible approve --tier <trivial|standard|critical>` computes the ordinary fact-based tier first, takes the maximum, applies that effective tier's approval ceremony, and records the effective result as `approval.yaml.minimum_tier`. The field is an upward-only floor: local verify and CI recompute from their own diff facts and enforcement config, then take the maximum of that computation and the approved floor. No flag or artifact value can force a tier down.
-
-New authoritative approvals record `minimum_tier`; older approvals without it remain readable. A malformed value fails closed. An effective critical tier requires a complete, unique acknowledgment for every current oracle before approval is valid, including when the critical result comes from the final implementation diff rather than the pre-implementation approval diff. Thus a planned enforcement-config edit can be approved critically before implementation, while an unplanned risk-path edit cannot inherit a standard ceremony and merely route human afterward.
-
-This amendment does not make a declared tier authoritative over facts, include `crucible.yaml` in its own target-branch policy evaluation, or create a direct-config/no-change lane. CI still reads risk globs and caps from the target branch, computes the final PR diff independently, runs every oracle and regression check, and routes an effective critical change to human review. The implement agent may change an enforcement-config path only when the approved bundle explicitly specifies that behavior and a critical floor was sealed; the bundle, bound tests, adapter lock, and framework lock remain immutable goalposts.
-
-## P4-18 Amendment — Explicit Project Review Posture (ratified 2026-08-10)
-
-P4-18 supersedes P4-15 only where it says `route` is unconditionally required. Deterministic CI verification is unconditional and unchanged. Target-branch `crucible.yaml` independently owns `review.ci_mode` and `review.human_mode`, each `advisory|required` and each defaulting to `required` when absent. The four combinations install exactly the applicable checks: `verify` always, the detached judge only for required CI review, and `route` only for required independent human review. An omitted gate is absent rather than skipped or synthesized green. Secret presence never selects policy.
-
-Critical-tier computation, durable floors, per-oracle acknowledgments, and the `routing: human` risk signal remain unchanged in advisory-human mode; the report must disclose that the human recommendation is not enforced. Overrides still require independent human review and fail closed when that gate is unavailable. Init asks explicitly, writes the committed policy and matching managed workflows, and prints the external branch-protection changes; it never reads credentials or silently mutates GitHub settings. Target-branch policy/workflow congruence is mechanically checked. This permits a consciously weaker solo-maintainer posture without misrepresenting it as full Crucible assurance.
-
-## P4-19 Amendment — Independent Local Review Stage (ratified 2026-08-10)
-
-Local review remains advisory merge evidence but becomes a configurable first-class workflow stage. `.crucible/settings.yaml` owns `review.local_mode: required|advisory|off`; it is convenience-only and cannot affect CI. In required mode, a session-native implementation is not locally complete until deterministic verify is green, the intended diff is committed, and a fresh `AgentSubstrate` reviewer returns a valid rubric-bound verdict over the exact base/HEAD/approval/rubric snapshot. Any snapshot change invalidates the verdict.
-
-A red reviewer never edits code or starts an automatic loop. The human reads its enumerated findings and explicitly returns the session to implementation; fixes update only tasks and unsealed code unless ordinary amendment/reapproval is performed. The next attempt reruns deterministic verify and a fresh review. No transcript, checkpoint, state event, local verdict, model identity, or implementing-session self-report becomes enforcement input or substitutes for CI oracles.
-
-## P4-20 Amendment — Session-Native Fresh Review (ratified 2026-08-10)
-
-P4-20 amends P4-19 only where it requires the local reviewer to be launched as a child `AgentSubstrate`. A required local review may instead be performed by a fresh interactive Codex session through an init-managed review skill and CLI-minted handoff. The implementing session must stop at `review-pending`; the human opens a separate conversation and invokes the review skill. The skill never launches `codex exec`, never chooses its own snapshot or verdict path, and never reports success as evidence.
-
-Pinned core remains the authority. It binds the committed base/HEAD, approval, rubric, and caller-minted verdict path before review; after authoring, it reads and judges the strict verdict artifact and revalidates every binding before advancing. Missing, malformed, stale, or rubric-invalid output is red and surfaces its exact finding. Fresh-session separation is an explicit local ceremony rather than a merge-control identity claim: local review remains convenience evidence and cannot affect CI. Headless `crucible review` and the detached CI reviewer remain unchanged.
-
-## P4-21 Amendment — Session-Native Post-Approval Amendment (ratified 2026-08-10)
-
-P4-21 extends session-native authoring to the one post-approval path that changes sealed goalposts. An already-active interactive session may regenerate an approved bundle only after pinned core validates the existing seal and emits a change-scoped amendment handoff. The handoff binds the original approval bytes, the explicit human resolution, and any escalation bytes; conversation history, checkpoint state, and agent self-report remain non-evidence. This authoring role does not require a fresh conversation because the human must inspect and explicitly re-seal the resulting artifact diff before implementation may resume.
-
-Core owns the lifecycle and the authority boundary. It derives the permitted bundle and bound-test paths, resolves any newly introduced binding through the adapter's ordinary candidate/found protocol, re-runs the full bundle and traceability judge, and refuses stale, malformed, unresolved, or out-of-scope results. While regeneration is in progress the old approval remains committed but is expected to be invalid against changed sealed bytes; no implement, review, verify-success, or archive transition may treat that interval as approved. A separate interactive seal step recomputes the hash scope from current artifacts, shows the amendment diff, and only after human confirmation appends the fresh amendment hashes, re-stamps generation, clears the resolved escalation, and restarts implementation from the new approval.
-
-`tasks.md` remains post-approval, unsealed implementation state. Its legitimate presence is ignored by amendment bundle judgment and it is never returned as an amendment write target; pre-approval propose and approve continue to reject it. The init-managed amend skill calls only the pinned `session amend` commands and never launches `codex exec`, selects a broader sandbox, or falls back to headless execution. Existing headless `crucible amend` remains available and receives the same phase-aware `tasks.md` correction; CI, approval hash law, oracle immutability outside amendment, and target-branch enforcement are unchanged.
-
-## P4-22 Amendment — Derived State Is Not a Diff Fact (ratified 2026-08-10)
-
-Diff caps and risk-glob matches judge enforcement-relevant repository changes, not the derived audit cache. Exact active-change and archived-change `state.yaml` files under `openspec/changes/` are therefore excluded from both tier-computation inputs: they contribute neither a touched path nor added/deleted lines. This makes the existing State & Audit law operationally complete: commands may keep committing deterministic audit events, but those events cannot raise a tier, consume a diff budget, alter routing, or block verification.
-
-The exclusion is narrow and structural. Proposal, spec, design, oracle, approval, generation, task, bound-test, implementation, configuration, workflow, framework-lock, and adapter-lock bytes remain ordinary diff facts. A lookalike or nested `state.yaml`, different extension/case, or any path outside an exact Crucible change root remains counted. The raw git diff remains visible to reviewers and history; only the derived tier facts are filtered.
-
-The shared approve/verify/CI diff-facts edge owns this rule. It must parse git output deterministically, fail closed on missing history, tool failure, or malformed non-binary rows, and apply the same filtering in every venue. No command may infer success from `state.yaml`, and no state event or checkpoint becomes approval, verification, or routing evidence.
-
-## P4-23 Amendment — Complete Target Enforcement Snapshot (ratified 2026-08-15)
-
-When CI invokes an enforcement command with `--config-from`, that directory is the complete target-branch enforcement snapshot, not merely a directory containing `crucible.yaml`. It contains the target commit's `crucible.yaml`, `.crucible/framework.lock.json`, required `.github/workflows/crucible.yml`, and the exact presence or absence and bytes of optional `.github/workflows/crucible-review.yml`. Every item is materialized from the same fetched target commit outside the PR working tree. No enforcement check may fill a missing snapshot input from the PR checkout or ambient filesystem.
-
-The main managed workflow is mandatory. The detached review workflow is present exactly when it exists on the target commit; absence is data that the target policy may legitimately require. Missing required paths, unreadable or non-regular entries, target-ref ambiguity, malformed extraction output, or Git/tool failure remain exit 3. Once materialized, the existing strict policy/workflow congruence judge is unchanged: byte drift, a missing required reviewer, or an installed reviewer under advisory policy still fails closed before ordinary verification.
-
-This amendment repairs the CI transport for P4-18 rather than creating a posture-transition exemption. A PR cannot use its own config or workflow edits to satisfy congruence, and a target branch that is genuinely incongruent remains red. Framework and managed-workflow upgrades still use the isolated P4-16 bootstrap lane under the old target harness; ordinary governed policy changes resume only after the corrected target snapshot transport is merged and pinned.
-
-## P4-24 Amendment — Target-Owned Executable CI Contract (ratified 2026-08-15)
-
-The mechanical merge gate is loaded from the pull request's base branch. A candidate branch may supply product code, artifacts, bound tests, configuration, locks, and proposed managed-workflow bytes as data, but it may not select the executable workflow that judges those bytes. The target-owned job checks out the exact event-bound head SHA with persisted credentials disabled, carries no repository secret or write-capable token, and executes the candidate only for deterministic verification and oracle running. Any issue filing, PR commenting, or independent-human routing runs in a separate target-owned job that never executes candidate code.
-
-The target enforcement snapshot is an atomic handoff rather than a shared path convention. One fail-closed bootstrap step binds the exact event base SHA, creates a fresh snapshot directory beneath `RUNNER_TEMP`, materializes the fixed P4-23 layout, strictly parses its nested framework lock, and emits the snapshot path plus repository/commit outputs. Every downstream consumer uses those minted outputs; no consumer reconstructs a path or rereads an alternate lock location. The exact head and base SHAs, not mutable branch names, drive checkout, extraction, diff facts, and review inputs.
-
-Routing is recomputed in a credential-separated job from target config and candidate artifacts/diff data without running candidate code. It never trusts a `GITHUB_OUTPUT`, artifact, filesystem file, or routing string produced by a job that executed candidate tests. A required human route remains red until the independently recomputed decision and non-author approval both pass. Override ratchet filing may occur only from that non-executing job after pinned core validates the payload. Mechanical verification has no write permissions and emits no reviewer observation side effect; detached P4-14 review remains the only CI agent-review transport.
-
-Generated-workflow correctness requires executable consumer evidence. Tests must parse the shipped generic and Java templates, run their exact bootstrap scripts against real Git repositories for all four review postures, pass the minted outputs into every downstream consumer, and exercise missing, malformed, wrong-mode, non-regular, stale, and tool-failure cases. A structural substring assertion is supplemental and cannot satisfy a named consumer acceptance test. Framework CI must run this suite before a template change may be called delivered. The isolated P4-16 upgrade test must additionally prove its strict allowlist and the base-owned post-P4-24 authority edge.
-
-## P4-25 Amendment — Release-Qualified Consumer Authority
-
-The first P4-24 Notes-shaped rollout proved that green framework tests are not release evidence when the ratified acceptance matrix is absent. The merged implementation did not provide an isolated framework-upgrade command, a strict PR classifier, authoritative approval preconditions, the override ratchet in the credential-separated route job, the four-posture worked consumers, or the acceptance manifest. Candidate `init` consequently rewrote enforcement policy and generated agent skills in a lane that permits only the framework lock and managed workflow bytes. The mechanical workflow also treated every no-bundle diff as success, while `verify` and `route` accepted an unapproved bundle. These are enforcement defects, not rollout instructions to work around.
-
-P4-25 makes one target-owned, non-candidate-executing authority stage bind every pull request before candidate code runs. It reads exact event base/head commits, obtains a canonical NUL-safe diff, materializes the complete target snapshot, builds only the target-pinned framework, and classifies the candidate as exactly one of: governed change, isolated framework bootstrap, framework-authority finalization, or archive registration. Every other zero-bundle, zero-diff, mixed-lane, malformed, missing-approval, or tool-failure case is red. Governed CI requires a present valid approval; pre-approval local verification remains available only through the non-CI command path. A framework bootstrap must change the strict framework pin and may additionally change only the managed workflow paths required by the unchanged target review posture. It may not carry product, test, config, settings, skills, schemas, adapters, or OpenSpec change bytes.
-
-Framework upgrades use a dedicated command, not full `init`. The command requires an already initialized, tracked-clean target checkout, preserves `crucible.yaml` and convenience/agent/product bytes exactly, refuses active approvals that seal the old framework lock, validates the candidate framework checkout/source pin, computes the complete intended transaction before writing, and reports the exact allowed diff. Re-running is deterministic. A legacy `pull_request` target cannot acquire `pull_request_target` authority in one ordinary PR because GitHub loads the latter only from the default branch. The command therefore detects that edge and emits a tested, explicit authority-transition plan; it never claims that a candidate-only trigger is already target-owned or asks the operator to merge a missing required check.
-
-The authority handoff is the sole input to mechanical verification and route/ratchet consumers. Mechanical verification has no write permission and invokes a CI-specific verifier that requires the authority classification and valid approvals. Route independently validates the authority manifest, recomputes tier/routing, rejects override in advisory-human mode, and emits strictly parsed ratchet payloads for idempotent issue filing before querying reviews. No candidate-executing output is trusted. Exact-SHA transport handles same-repository and fork heads without assuming the head object is fetchable from the base remote.
-
-Delivery requires an executable acceptance manifest. Every P4-25 acceptance statement names at least one test that framework CI discovers and runs. Exact rendered generic/Java workflows, all four review postures, legacy authority transition, ordinary future upgrade, governed single/multi-change, archive registration, mixed/direct/unapproved attacks, override postures, same-repository/fork topology, every snapshot consumer, malformed/non-regular/stale/missing-output/tool failures, and worked generic/Spring consumers are release blockers. A built-candidate Notes mirror must complete the authority transition, isolated pin, solo-posture change, and a fresh create-note flow before another Notes PR is opened. Structural assertions and `doctor` remain supplemental evidence only.
-
-### P4-25 legacy bootstrap amendment (2026-08-16)
-
-A legacy default branch that lacks P4-25 code cannot produce a target-owned authority decision for the PR that first installs that code. This is a root-of-trust boundary, not a candidate check that can be made trustworthy by convention. The first transition is therefore named `legacy-bootstrap`: it changes only the new pin and the exact dual-trigger bridge, requires an explicit operator acknowledgement, and is governed by a documented manual maintainer comparison of that two-file diff. Its candidate-owned `pull_request` job is deliberately non-authoritative, read-only, secretless, and does not mint a manifest or run CI authority, verification, or route.
-
-Before merging that one PR, the operator temporarily removes `verify` from required GitHub checks. The bridge then exists on the target branch. A fresh clean target checkout at the unchanged bridge pin may create only the final workflow diff; this second PR is classified and judged by the target-owned authority workflow. The upgrade transaction rejects a missing acknowledgement, any non-exact dual-trigger bridge, and any attempt to re-pin an unmerged bridge. No product/config/test/bundle byte is permitted in either phase.
-
-## P4-26: Manual Solo-Posture Root Bootstrap (ratified 2026-08-16)
-
-P4-25 exposed a second root-of-trust boundary in the preserved Notes baseline: its target policy is implicitly required, so the target-owned detached reviewer correctly fails closed without an API credential. A PR cannot use candidate crucible.yaml to select advisory, and it cannot use candidate workflow bytes to suppress the target-owned reviewer. Merging a red judge or treating an empty reviewer batch as advisory would violate the target-branch rule and fail-closed law.
-
-For this one documented legacy shape only, P4-26 defines review-posture-root-bootstrap. It starts from the exact post-P4-25 legacy-bootstrap bridge at its recorded P4-25 pin, with an absent review block and byte-identical required-mode managed workflows. A candidate P4-26 checkout may render one complete manual transaction: the new immutable framework lock; final advisory/advisory main workflow; removal of the detached review workflow; the strict crucible.yaml review block selecting CI and human advisory; and .crucible/settings.yaml selecting required local review. No other path, byte, mode, source pin, existing review block, OpenSpec bundle, product/test, adapter/schema/skill, or untracked-to-tracked file is permitted.
-
-The command requires an explicit acknowledgement and prints that this is not a CI authority result. The operator temporarily removes verify from GitHub required checks, compares the exact generated allowlist and source pin, confirms a fresh local Codex review and deterministic verification, merges the one manual root bootstrap, and restores verify immediately. The resulting target has the final target-owned advisory workflow and no detached reviewer workflow. Future posture changes are ordinary critical governed changes; this lane cannot enable required review, change one review mode without the other, alter product behavior, or become a generic configuration bypass. Every malformed, drifted, repinned, incomplete, or tool-failure condition is red.
