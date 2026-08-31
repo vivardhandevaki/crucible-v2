@@ -19,14 +19,21 @@
 //     manifest (staleness tracking) is stamped in (charter §Editing Artifacts).
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { loadOracles, type Oracle } from '../artifacts/oracles.js';
 import { loadProposal } from '../artifacts/proposal.js';
 import { loadSpecDelta, type SpecRequirement } from '../artifacts/spec-delta.js';
 import { ADAPTER_LOCK_RELPATH } from '../adapters/lockfile.js';
 import { FRAMEWORK_PIN_RELPATH } from '../framework/pin.js';
 import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
-import { type ChangeType, type TypeFacts } from '../changetype/changetype.js';
+import {
+  assertTypeConformance,
+  readChangeType,
+  schemaForType,
+  type ChangeType,
+  type TypeFacts,
+} from '../changetype/changetype.js';
+import { loadSchemaBundle } from '../changetype/schema-bundle.js';
 import {
   aggregate,
   traceabilityCheck,
@@ -38,6 +45,181 @@ import { isCrucibleError, preconditionError } from '../util/errors.js';
 
 /** The core artifacts that always live directly in a change bundle dir. */
 export const CORE_ARTIFACTS = ['proposal.md', 'design.md', 'oracles.md'] as const;
+
+/** Deterministic result of judging an active-session proposal (P4R-03). */
+export interface ProposalValidationResult {
+  report: VerifyReport;
+  phase: 'ready-for-approval' | 'revise';
+  /** Exact schema-declared intent files plus grounded bound test files. */
+  approvalCandidates: string[];
+  /** Agent-facing next action. Never an authorization to choose a test path. */
+  reviseInstruction: string;
+}
+
+/** Active-session proposal validator: the CLI judges files, it never authors them. */
+export async function validateProposalBundle(
+  options: { root: string; change: string },
+  deps: { resolve: ResolveFn },
+): Promise<ProposalValidationResult> {
+  const changeRel = join('openspec', 'changes', options.change);
+  const changeDir = join(options.root, changeRel);
+  if (!existsSync(changeDir) || !existsSync(join(changeDir, '.openspec.yaml'))) {
+    throw preconditionError(
+      'NO_PROPOSAL_BUNDLE',
+      `No OpenSpec proposal bundle found at ${changeRel}.`,
+      `Create it with the packaged OpenSpec workflow, author its artifacts in this active session, then re-run \`crucible propose ${options.change}\`.`,
+    );
+  }
+
+  // The schema pin is the type contract. Reading it here also rejects unknown/
+  // malformed pins before a bundle could be called ready.
+  const type = readChangeTypeForValidation(changeDir);
+  const bundle = loadSchemaBundle(
+    join(options.root, 'openspec', 'schemas', schemaForType(type), 'schema.yaml'),
+  );
+  const report = await judgeBundle(
+    options.change,
+    changeDir,
+    changeRel,
+    deps.resolve,
+    new Set(),
+    type,
+  );
+  const findings: VerifyFinding[] = [];
+  const preApproval = schemaPreApprovalPaths(changeDir, bundle);
+  for (const path of preApproval) {
+    if (!existsSync(join(changeDir, path)) || statSync(join(changeDir, path)).size === 0) {
+      findings.push({
+        check: 'bundle',
+        id: path,
+        message: `${join(changeRel, path)} is required by the pinned schema before approval but is missing or empty`,
+      });
+    }
+  }
+
+  const postApprovalPath = bundle.apply?.tracks;
+  if (postApprovalPath && existsSync(join(changeDir, postApprovalPath))) {
+    findings.push({
+      check: 'bundle',
+      id: postApprovalPath,
+      message: `${join(changeRel, postApprovalPath)} is post-approval work breakdown and must not exist before approval`,
+    });
+  }
+
+  const oracles = tryLoadOracles(changeDir);
+  if (report.checks.find((check) => check.name === 'bundle')?.status === 'pass' && oracles) {
+    assertTypeConformance(type, gatherTypeFacts(changeDir, oracles));
+  }
+  const candidates = new Set(preApproval.map((path) => join(changeRel, path)));
+  if (oracles !== undefined) {
+    const resolutions = await deps.resolve(dedupeTargets(oracles));
+    const byTarget = new Map(
+      resolutions.map((resolution) => [resolution.target, resolution] as const),
+    );
+    for (const target of dedupeTargets(oracles)) {
+      const resolution = byTarget.get(target);
+      const targetFile = resolution?.targetFile;
+      if (
+        resolution?.status !== 'found' ||
+        !targetFile ||
+        !isContainedFile(options.root, targetFile)
+      ) {
+        findings.push({
+          check: 'bundle',
+          id: target,
+          message: `bound target ${target} must resolve as found to a contained test file; revise the oracle binding or test`,
+        });
+      } else {
+        candidates.add(targetFile);
+      }
+    }
+  }
+
+  // Keep schema completeness inside the established `bundle` check: reports are
+  // a frozen machine contract, and a custom artifact is part of the bundle, not
+  // a new kind of verifier.
+  const finalReport = aggregate(
+    options.change,
+    report.checks.map((check) =>
+      check.name === 'bundle' && findings.length > 0
+        ? { ...check, status: 'fail' as const, findings: [...check.findings, ...findings] }
+        : check,
+    ),
+  );
+  const phase = finalReport.verdict === 'pass' ? 'ready-for-approval' : 'revise';
+  return {
+    report: finalReport,
+    phase,
+    approvalCandidates: [...candidates].sort(),
+    reviseInstruction:
+      phase === 'ready-for-approval'
+        ? `Proposal is ready for human approval: run \`crucible approve ${options.change}\` outside the agent session.`
+        : `Revise ${firstFailure(finalReport)} in this active session, then re-run \`crucible propose ${options.change}\`.`,
+  };
+}
+
+function firstFailure(report: VerifyReport): string {
+  for (const check of report.checks) {
+    const finding = check.findings[0];
+    if (finding) return `${finding.id}: ${finding.message}`;
+  }
+  return 'the reported proposal failure';
+}
+
+function readChangeTypeForValidation(changeDir: string): ChangeType {
+  // Lazy import avoidance is not required; this small wrapper makes the pin
+  // validation explicit at the P4R proposal boundary.
+  return readChangeType(changeDir);
+}
+
+function tryLoadOracles(changeDir: string): Oracle[] | undefined {
+  try {
+    return loadOracles(join(changeDir, 'oracles.md'));
+  } catch {
+    return undefined;
+  }
+}
+
+function schemaPreApprovalPaths(
+  changeDir: string,
+  bundle: ReturnType<typeof loadSchemaBundle>,
+): string[] {
+  const postApproval = bundle.apply?.tracks;
+  return bundle.artifacts
+    .filter((artifact) => artifact.generates !== postApproval)
+    .flatMap((artifact) => expandGeneratedPath(changeDir, artifact.generates));
+}
+
+function expandGeneratedPath(changeDir: string, pattern: string): string[] {
+  if (!pattern.includes('*')) return [pattern];
+  const pivot = pattern.indexOf('**');
+  if (pivot < 0) return [];
+  const base = pattern.slice(0, pivot).replace(/\/$/, '');
+  const suffix = pattern
+    .slice(pivot + 2)
+    .replace(/^\//, '')
+    .replace('*', '');
+  const matches = markdownFilesUnder(join(changeDir, base))
+    .filter((file) => suffix.length === 0 || file.endsWith(suffix))
+    .map((file) => relative(changeDir, file));
+  // A declared generated glob is still a required artifact. Preserve the
+  // pattern as a failing candidate when it matches nothing rather than silently
+  // treating an empty custom artifact directory as complete.
+  return matches.length > 0 ? matches : [pattern];
+}
+
+function isContainedFile(root: string, path: string): boolean {
+  if (isAbsolute(path)) return false;
+  const absolute = join(root, path);
+  const rel = relative(root, absolute);
+  return (
+    rel !== '' &&
+    !rel.startsWith('..') &&
+    !isAbsolute(rel) &&
+    existsSync(absolute) &&
+    statSync(absolute).isFile()
+  );
+}
 
 /**
  * Judge an authored bundle (propose/amend): the `bundle` check parses every

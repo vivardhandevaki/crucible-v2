@@ -1,5 +1,8 @@
 import type { Command } from 'commander';
-import { preconditionError } from '../util/errors.js';
+import { loadPinnedAdapterClient } from '../adapters/runtime.js';
+import { CheckFailure, preconditionError } from '../util/errors.js';
+import { renderReport } from '../verifyx/report.js';
+import { validateProposalBundle } from './bundle.js';
 import { renderStatus, status } from './status.js';
 
 /**
@@ -13,7 +16,7 @@ export function registerActiveSessionCommands(program: Command): void {
     .command('propose')
     .description('Show artifact-derived proposal scaffold instructions')
     .argument('<change>', 'the change name')
-    .action((change: string) => writeInstructions(program, change, 'propose'));
+    .action(async (change: string) => writeProposalInstructions(program, change));
   program
     .command('implement')
     .description('Show artifact-derived implementation instructions')
@@ -50,4 +53,35 @@ function writeInstructions(
   };
   if (program.opts().json === true) process.stdout.write(JSON.stringify(instructions) + '\n');
   else process.stdout.write(`${renderStatus(report)}\n${instructions.instruction}\n`);
+}
+
+/**
+ * P4R-03: after the active session authors its files, `propose` judges the
+ * schema-complete proposal and real adapter-grounded tests. It never asks where
+ * a test may be created; that choice belongs to the agent and is validated only
+ * after the fact by resolve.
+ */
+async function writeProposalInstructions(program: Command, change: string): Promise<void> {
+  const root = process.cwd();
+  const current = status({ root, change }, { readMergeBaseConfig: () => undefined });
+  if (current.phase === 'absent') {
+    writeInstructions(program, change, 'propose');
+    return;
+  }
+  if (current.phase !== 'proposed') {
+    throw preconditionError(
+      'PROPOSAL_ALREADY_ADVANCED',
+      `Change ${change} is ${current.phase}; proposal authoring is only available before approval.`,
+      current.next,
+    );
+  }
+
+  const adapter = loadPinnedAdapterClient(root);
+  const result = await validateProposalBundle(
+    { root, change },
+    { resolve: (targets) => adapter.resolve(targets) },
+  );
+  if (program.opts().json === true) process.stdout.write(JSON.stringify(result) + '\n');
+  else process.stdout.write(`${renderReport(result.report)}\n${result.reviseInstruction}\n`);
+  if (result.report.verdict === 'fail') throw new CheckFailure();
 }
