@@ -40,6 +40,7 @@ import {
 import { recordSnapshotTier } from '../state/state.js';
 import { createLiveNotifier } from '../notify/live.js';
 import { CheckFailure } from '../util/errors.js';
+import { runDeclaredSuites } from './suites.js';
 
 /** Register the real `verify` subcommand on the program. */
 export function registerVerify(program: Command): void {
@@ -106,6 +107,7 @@ function liveDeps(root: string, diffBase: string | undefined): VerifyDeps {
   return {
     resolve: (targets) => adapter.resolve(targets),
     run: (oracles) => adapter.run(oracles),
+    runSuites: (suites) => runDeclaredSuites(root, suites),
     diffFacts: () => computeDiffFacts(root, diffBase),
     // The bugfix red-on-base run: check out the merge-base into a throwaway
     // worktree (real git edge) and run the reproduction oracles there. The

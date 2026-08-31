@@ -3,6 +3,7 @@ import { loadPinnedAdapterClient } from '../adapters/runtime.js';
 import { CheckFailure, preconditionError } from '../util/errors.js';
 import { renderReport } from '../verifyx/report.js';
 import { validateProposalBundle } from './bundle.js';
+import { preflightImplementation } from './implement-preflight.js';
 import { renderStatus, status } from './status.js';
 
 /**
@@ -19,9 +20,9 @@ export function registerActiveSessionCommands(program: Command): void {
     .action(async (change: string) => writeProposalInstructions(program, change));
   program
     .command('implement')
-    .description('Show artifact-derived implementation instructions')
+    .description('Preflight the current seal and show active-session implementation instructions')
     .argument('<change>', 'the approved change name')
-    .action((change: string) => writeInstructions(program, change, 'implement'));
+    .action((change: string) => writeImplementationInstructions(program, change));
   program
     .command('amend')
     .description('Intent amendment is unavailable until P4R-06')
@@ -33,6 +34,13 @@ export function registerActiveSessionCommands(program: Command): void {
         'Run `crucible status <change>`; P4R-06 adds amendment and human re-sealing.',
       );
     });
+}
+
+/** P4R-05: never issue code-authoring instructions before a current human seal. */
+function writeImplementationInstructions(program: Command, change: string): void {
+  const preflight = preflightImplementation({ root: process.cwd(), change });
+  if (program.opts().json === true) process.stdout.write(JSON.stringify(preflight) + '\n');
+  else process.stdout.write(`${preflight.instruction}\n`);
 }
 
 function writeInstructions(
