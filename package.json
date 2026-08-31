@@ -18,7 +18,7 @@
     "test:watch": "vitest",
     "pretypecheck": "npm run build",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspace @crucible/schemas && npm run build --workspace @crucible/ci-templates && npm run build --workspaces --if-present",
     "package": "npm run package --workspace @crucible/core",
     "lint": "eslint .",
     "lint:layering": "node scripts/check-layering.mjs",
