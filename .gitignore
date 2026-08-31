@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+core/package/
 *.tsbuildinfo
 
 # JVM conformance fixtures + java-junit helper build outputs (Phase 3).

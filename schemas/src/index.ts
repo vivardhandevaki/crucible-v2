@@ -14,11 +14,15 @@
 // bundle DATA under `crucible*/` is author-controlled and validated by core's
 // `changetype/` TCB (the schema-bundle zod schema), the same split fixtures uses.
 
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // src/index.ts (or dist/index.js) → workspace root.
-const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = existsSync(join(moduleDir, 'assets', 'schemas'))
+  ? join(moduleDir, 'assets', 'schemas')
+  : dirname(moduleDir);
 
 /** The three shipped bundle directory names, in canonical (type) order. */
 export const SCHEMA_BUNDLE_NAMES = ['crucible', 'crucible-bugfix', 'crucible-refactor'] as const;

@@ -122,6 +122,11 @@ Verbs `resolve`/`run` (+ optional `scope`), JSON over stdin/stdout, normalized r
 - Archive validates and atomically moves the entire change directory before the
   feature PR, preserving every Crucible/custom artifact while leaving bound
   tests in the permanent regression suite.
+- A governed project runs only `.crucible/bin/crucible`, whose strict release
+  and package-content pin resolves to built JavaScript beneath
+  `.crucible/framework/`; it never discovers `crucible`, `openspec`, or `npx`
+  from the ambient environment. The package includes Crucible's tested OpenSpec
+  runtime and `doctor` diagnoses package-byte drift.
 - CI reads enforcement config, framework/adapter pins, and historical trust
   inputs from the exact target commit. The candidate cannot choose its own
   judge. The preferred GitHub transport is a ruleset-required trusted workflow;

@@ -7,6 +7,7 @@
 // absolute path so the structural test (crucible-template.test.ts) can assert its
 // invariant-#7 shape without hard-coding paths.
 
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,7 +18,10 @@ export const CI_TEMPLATE_FILE = 'crucible.yml';
 export const JAVA_JUNIT_CI_TEMPLATE_FILE = 'crucible-java-junit.yml';
 
 // src/index.ts (or dist/index.js) → workspace root, where crucible.yml lives.
-const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = existsSync(join(moduleDir, 'assets', 'ci-templates', CI_TEMPLATE_FILE))
+  ? join(moduleDir, 'assets', 'ci-templates')
+  : dirname(moduleDir);
 
 /** Absolute path to the reusable Crucible enforcement workflow. */
 export const CI_TEMPLATE_PATH = join(workspaceRoot, CI_TEMPLATE_FILE);

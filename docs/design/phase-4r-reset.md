@@ -214,6 +214,19 @@ Retain project-local, immutable distribution:
 - installed adapter manifests and executables are version/content-hash pinned;
 - `doctor` detects drift and offers explicit repairs.
 
+*P4R-08 implementation contract:* `.crucible/framework.lock.json` v2 pins
+`@crucible/core` by an exact release and a full package SHA-256. `init` copies
+that built, self-contained release to `.crucible/framework/` and writes the
+only launcher at `.crucible/bin/crucible`; the launcher verifies the lock,
+manifest, and complete package bytes before invoking Node on its built
+JavaScript entrypoint. The release embeds the tested OpenSpec runtime, so no
+consumer `package.json`, `npx`, ambient `crucible`, or ambient `openspec` can
+affect propose/archive. Packaging rejects source-only workspace output and
+produces deterministic bytes; `doctor` reports framework drift but never
+silently replaces the judge. Rationale: the project-local package makes the
+ordinary Java consumer lifecycle independent of ambient Node tooling while
+keeping framework upgrades outside ordinary initialization.
+
 Framework core never imports a test framework.  Adapters remain separate JSON
 executables.  The P4 Maven/Gradle dependency-backed discovery fix may be ported
 only through the java-junit task's focused conformance, failure, no-test-

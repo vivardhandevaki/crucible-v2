@@ -1,7 +1,6 @@
-// Validation-only framework source pin. Phase 4 deliberately defers public
-// distribution, so a governed project records the exact Crucible GitHub commit
-// CI must check out and build. The pin is strict and fail-closed because it
-// selects the harness running the enforcement gate.
+// A governed project records the exact released Crucible package installed in
+// its own tree. The pin is strict and fail-closed because it selects the
+// harness running the enforcement gate.
 
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
@@ -11,27 +10,15 @@ import { invalidInputError, preconditionError } from '../util/errors.js';
 export const FRAMEWORK_PIN_RELPATH = '.crucible/framework.lock.json';
 
 const frameworkPinSchema = z.strictObject({
-  version: z.literal(1),
-  repository: z
+  version: z.literal(2),
+  package: z.literal('@crucible/core'),
+  release: z
     .string()
-    .regex(/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/, 'must be a GitHub owner/repository'),
-  commit: z.string().regex(/^[0-9a-f]{40}$/, 'must be a lowercase 40-character Git commit SHA'),
+    .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, 'must be an exact released version'),
+  content_hash: z.string().regex(/^[0-9a-f]{64}$/, 'must be a lowercase sha256 hash'),
 });
 
 export type FrameworkPin = z.infer<typeof frameworkPinSchema>;
-
-/** Parse the explicit `owner/repository@40-char-sha` CLI override. */
-export function parseFrameworkSource(value: string): FrameworkPin {
-  const match = /^([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)@([0-9a-f]{40})$/.exec(value);
-  if (match === null) {
-    throw invalidInputError(
-      'INVALID_FRAMEWORK_SOURCE',
-      `Invalid validation framework source ${JSON.stringify(value)}.`,
-      'Use owner/repository@<lowercase-40-character-commit-sha>.',
-    );
-  }
-  return { version: 1, repository: match[1]!, commit: match[2]! };
-}
 
 export function parseFrameworkPin(text: string, source: string): FrameworkPin {
   let value: unknown;
@@ -59,7 +46,7 @@ export function loadFrameworkPin(path: string): FrameworkPin {
       throw preconditionError(
         'NO_FRAMEWORK_PIN',
         `No validation framework pin found at ${path}.`,
-        'Re-run `crucible init` from the pinned Crucible source checkout.',
+        'Run `crucible init` from the released Crucible distribution.',
       );
     }
     throw invalidPin(path, `could not be read — ${messageOf(error)}`);
@@ -77,7 +64,7 @@ function invalidPin(source: string, detail: string) {
   return invalidInputError(
     'INVALID_FRAMEWORK_PIN',
     `${source}: invalid validation framework pin — ${detail}`,
-    'Use a GitHub repository and immutable 40-character commit SHA.',
+    'Use an exact @crucible/core release with its immutable content hash.',
   );
 }
 

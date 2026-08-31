@@ -1,10 +1,14 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CI_TEMPLATE_PATH } from '@crucible/ci-templates';
 import { schemaBundleFile } from '@crucible/schemas';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ADAPTER_LOCK_RELPATH, hashAdapterPackage, loadAdapterLock } from '../adapters/lockfile.js';
+import {
+  installFrameworkDistribution,
+  packageFrameworkDistribution,
+} from '../framework/distribution.js';
 import { isCrucibleError } from '../util/errors.js';
 import { loadDefaultRubric } from '../review/rubric.js';
 import { init, type InitAnswers } from './init.js';
@@ -42,7 +46,19 @@ function read(relpath: string): string {
   return readFileSync(join(scratch, relpath), 'utf8');
 }
 function write(relpath: string, text: string): void {
+  mkdirSync(join(scratch, relpath, '..'), { recursive: true });
   writeFileSync(join(scratch, relpath), text, 'utf8');
+}
+
+function packagedFramework(): string {
+  const source = join(scratch, 'framework-source');
+  mkdirSync(join(source, 'dist', 'cli'), { recursive: true });
+  writeFileSync(join(source, 'dist', 'cli', 'bin.js'), 'process.exitCode = 0;\n');
+  writeFileSync(join(source, 'openspec.cjs'), 'process.exitCode = 0;\n');
+  writeFileSync(join(source, 'package.json'), '{"name":"@crucible/core","version":"1.2.3"}\n');
+  const output = join(scratch, 'framework-package');
+  packageFrameworkDistribution({ source, output });
+  return output;
 }
 
 /** Install a clean, fully-initialized Crucible setup into the scratch repo. */
@@ -103,6 +119,20 @@ describe('doctor — a clean install is healthy', () => {
     await expect(doctor({ root: scratch }, { confirmFix: confirmNever })).rejects.toSatisfy(
       (e: unknown) => isCrucibleError(e) && e.exit === 2 && /init/.test(e.hint),
     );
+  });
+});
+
+describe('doctor — project-local framework distribution', () => {
+  it('detects a local framework content mismatch without silently replacing the judge', async () => {
+    await initClean();
+    installFrameworkDistribution({ root: scratch, source: packagedFramework() });
+    write('.crucible/framework/crucible.mjs', 'tampered\n');
+
+    const report = await doctor({ root: scratch }, { confirmFix: confirmNever });
+
+    expect(findingsFor(report, 'framework-distribution')).toHaveLength(1);
+    expect(findingsFor(report, 'framework-distribution')[0]!.severity).toBe('drift');
+    expect(read('.crucible/framework/crucible.mjs')).toBe('tampered\n');
   });
 });
 

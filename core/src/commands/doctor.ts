@@ -40,6 +40,8 @@ import {
   serializeAdapterLock,
 } from '../adapters/lockfile.js';
 import { preconditionError } from '../util/errors.js';
+import { FRAMEWORK_PIN_RELPATH } from '../framework/pin.js';
+import { resolveFrameworkEntrypoint } from '../framework/distribution.js';
 import { loadEnforcementConfig } from '../config/enforcement.js';
 import {
   defaultRubricPath,
@@ -56,7 +58,12 @@ import {
 
 /** Which check produced a finding — the stable category the CLI groups by. */
 export type DoctorCheckId =
-  'schema-bundle' | 'ci-template' | 'openspec-version' | 'adapter-lockfile-hash' | 'rubric-lines';
+  | 'schema-bundle'
+  | 'ci-template'
+  | 'openspec-version'
+  | 'adapter-lockfile-hash'
+  | 'framework-distribution'
+  | 'rubric-lines';
 
 /**
  * A finding's weight. `drift` = a shipped TCB file diverged from its source and
@@ -132,6 +139,7 @@ const CHECKS: readonly ((root: string) => DoctorFinding[])[] = [
   checkCiTemplate,
   checkOpenspecVersion,
   checkAdapterLockfileHash,
+  checkFrameworkDistribution,
   checkRubricLines,
 ];
 
@@ -333,6 +341,30 @@ function checkAdapterLockfileHash(root: string): DoctorFinding[] {
       },
     },
   ];
+}
+
+// --- Check: project-local framework integrity ---------------------------------
+
+/** A framework pin is only trustworthy when its local package can be resolved
+ * and its full content hash still matches. Repair means restoring the exact
+ * release, so doctor reports the drift but never silently recopies a judge. */
+function checkFrameworkDistribution(root: string): DoctorFinding[] {
+  if (!existsSync(join(root, FRAMEWORK_PIN_RELPATH))) return [];
+  try {
+    resolveFrameworkEntrypoint(root);
+    return [];
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    return [
+      {
+        check: 'framework-distribution',
+        id: 'framework-distribution',
+        severity: 'drift',
+        summary: `project-local framework drift: ${detail}`,
+        relpath: FRAMEWORK_PIN_RELPATH,
+      },
+    ];
+  }
 }
 
 // --- Check: upstream rubric-line offers ----------------------------------------

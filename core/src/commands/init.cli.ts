@@ -10,14 +10,11 @@
 // operator explicitly opted out of the prompts by passing the flag; without it,
 // every conflicting file is shown and confirmed one at a time.
 
-import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import type { Command } from 'commander';
-import { parseFrameworkSource, type FrameworkPin } from '../framework/pin.js';
 import { invalidInputError, preconditionError } from '../util/errors.js';
 import {
   init,
@@ -25,8 +22,6 @@ import {
   type ConfirmOverwrite,
   type InitAnswers,
 } from './init.js';
-
-const require = createRequire(import.meta.url);
 
 /** Register the real `init` subcommand on the program. */
 export function registerInit(program: Command): void {
@@ -40,24 +35,20 @@ export function registerInit(program: Command): void {
       'take detected defaults and auto-confirm overwrites (non-interactive)',
       false,
     )
-    .option(
-      '--framework-source <owner/repository@commit>',
-      'validation-only framework source pin (defaults to this Crucible checkout)',
-    )
-    .action(async (opts: { yes?: boolean; frameworkSource?: string }) => {
+    .action(async (opts: { yes?: boolean }) => {
       const root = process.cwd();
       const yes = opts.yes === true;
 
       const detected = detectAnswers(root);
       const answers = yes ? detected : await confirmAnswers(detected);
-      const frameworkPin =
-        opts.frameworkSource === undefined
-          ? detectFrameworkPin()
-          : parseFrameworkSource(opts.frameworkSource);
-
       const adapterPackage = shippedAdapterPackage(answers.adapter);
       const report = await init(
-        { root, answers, frameworkPin, ...(adapterPackage ? { adapterPackage } : {}) },
+        {
+          root,
+          answers,
+          frameworkPackage: { root: shippedFrameworkPackage() },
+          ...(adapterPackage ? { adapterPackage } : {}),
+        },
         { confirmOverwrite: confirmOverwriteEdge(yes) },
       );
 
@@ -118,65 +109,35 @@ export function detectAnswers(root: string): InitAnswers {
 /** Locate first-party packaged bytes without importing adapter implementation code. */
 export function shippedAdapterPackage(name: string): AdapterPackageSource | undefined {
   if (name !== 'java-junit') return undefined;
-  let packageRoot: string;
-  try {
-    packageRoot = dirname(require.resolve('@crucible/adapter-java-junit/package.json'));
-  } catch (error) {
+  const packageRoot = join(shippedFrameworkPackage(), 'adapters', 'java-junit');
+  if (!existsSync(join(packageRoot, 'crucible-adapter.yaml'))) {
     throw invalidInputError(
       'ADAPTER_PACKAGE_UNAVAILABLE',
-      `The shipped java-junit package could not be resolved — ${String(error)}`,
+      `The packaged java-junit adapter is missing at ${packageRoot}.`,
       'Reinstall Crucible with its first-party adapter packages.',
     );
   }
   return {
-    manifestPath: join(packageRoot, 'package', 'crucible-adapter.yaml'),
-    executablePath: join(packageRoot, 'package', 'java-junit.mjs'),
+    manifestPath: join(packageRoot, 'crucible-adapter.yaml'),
+    executablePath: join(packageRoot, 'java-junit.mjs'),
   };
 }
 
-/**
- * Pin this source checkout for the Phase-4 validation workflow. A packaged
- * release will replace this source-bootstrap path once distribution is in
- * scope; until then, refusing an unpinned framework is safer than a CI job
- * silently running whatever `npx` resolves that day.
- */
-export function detectFrameworkPin(): FrameworkPin {
-  const checkout = frameworkCheckoutRoot();
-  let remote: string;
-  let commit: string;
-  try {
-    remote = execFileSync('git', ['-C', checkout, 'remote', 'get-url', 'origin'], {
-      encoding: 'utf8',
-    }).trim();
-    commit = execFileSync('git', ['-C', checkout, 'rev-parse', 'HEAD'], {
-      encoding: 'utf8',
-    }).trim();
-  } catch (error) {
+/** Locate the release package beside built CLI code; never query npm, npx, or PATH. */
+export function shippedFrameworkPackage(): string {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const candidates = [moduleDir, join(moduleDir, '..', '..', 'package')];
+  const packageRoot = candidates.find((candidate) =>
+    existsSync(join(candidate, 'framework-manifest.json')),
+  );
+  if (packageRoot === undefined) {
     throw preconditionError(
-      'FRAMEWORK_SOURCE_UNRESOLVABLE',
-      `Could not determine the Crucible source checkout pin — ${String(error)}.`,
-      'Run `crucible init --framework-source owner/repository@<40-character-commit-sha>`.',
+      'FRAMEWORK_DISTRIBUTION_UNAVAILABLE',
+      'This Crucible executable has no packaged local framework distribution.',
+      'Install a complete built Crucible release; source TypeScript is not executable.',
     );
   }
-  const repository = githubRepository(remote);
-  if (repository === undefined) {
-    throw preconditionError(
-      'FRAMEWORK_SOURCE_UNRESOLVABLE',
-      `Crucible source remote ${JSON.stringify(remote)} is not a GitHub repository.`,
-      'Run `crucible init --framework-source owner/repository@<40-character-commit-sha>`.',
-    );
-  }
-  return parseFrameworkSource(`${repository}@${commit}`);
-}
-
-function frameworkCheckoutRoot(): string {
-  // core/src/commands or core/dist/commands → monorepo root.
-  return dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-}
-
-function githubRepository(remote: string): string | undefined {
-  const match = /github\.com[:/]([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+?)(?:\.git)?$/.exec(remote);
-  return match?.[1];
+  return packageRoot;
 }
 
 /** Let the operator confirm / override the detected adapter + unit command. */

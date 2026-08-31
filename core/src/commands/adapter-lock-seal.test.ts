@@ -32,11 +32,11 @@ describe('computeHashScope — approval-selected lockfiles', () => {
     expect(scope).toContain(ADAPTER_LOCK_RELPATH);
   });
 
-  it('includes the committed framework source pin whenever it exists', async () => {
+  it('includes the committed framework release pin whenever it exists', async () => {
     mkdirSync(join(root, '.crucible'), { recursive: true });
     writeFileSync(
       join(root, FRAMEWORK_PIN_RELPATH),
-      '{\n  "version": 1,\n  "repository": "owner/repo",\n  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n}\n',
+      '{\n  "version": 2,\n  "package": "@crucible/core",\n  "release": "1.2.3",\n  "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n}\n',
       'utf8',
     );
     const changeRel = 'openspec/changes/example';

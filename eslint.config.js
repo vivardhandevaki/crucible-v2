@@ -16,6 +16,7 @@ export default tseslint.config(
     // linting/reformatting it would break hash-stability tests (see its README).
     ignores: [
       '**/dist/**',
+      'core/package/**', // generated self-contained framework release output
       'adapters/*/package/**', // generated, conformance-certified bundle output
       '**/coverage/**',
       'node_modules/**',
