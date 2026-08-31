@@ -231,10 +231,12 @@ function evaluateCases(
     // 3 — missing-no-targetfile (resolve only): resolve is binary. A `found`
     // result must carry its grounded file, while a `missing` result must not
     // carry a phantom path. Either defect is seal poison.
+    const groundingFailures = new Set<string>();
     if (c.verb === 'resolve') {
       for (const r of results) {
         const rec = r as Record<string, unknown>;
         if (rec['status'] === 'found' && typeof rec['targetFile'] !== 'string') {
+          groundingFailures.add(String(rec['target']));
           checks.missingNoTargetFile.findings.push({
             check: 'missing-no-targetfile',
             case: c.name,
@@ -243,6 +245,7 @@ function evaluateCases(
           });
         }
         if (rec['status'] === 'missing' && rec['targetFile'] !== undefined) {
+          groundingFailures.add(String(rec['target']));
           checks.missingNoTargetFile.findings.push({
             check: 'missing-no-targetfile',
             case: c.name,
@@ -260,6 +263,10 @@ function evaluateCases(
     for (const expected of c.expected) {
       const exp = expected as unknown as Record<string, unknown>;
       const target = String(exp['target']);
+      // Grounding is its own universal contract. Once it has rejected this
+      // target, do not double-attribute the inevitable targetFile mismatch to
+      // the golden-case comparison.
+      if (groundingFailures.has(target)) continue;
       const actual = byTarget.get(target) as Record<string, unknown> | undefined;
       if (actual === undefined) {
         // Envelope passed, so every requested target has a result; an expected
