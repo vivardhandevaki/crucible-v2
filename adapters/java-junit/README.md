@@ -32,16 +32,20 @@ fails closed at propose time.
 ## `src/resolve.ts` — wrapper invocation
 
 `invokeResolve(...)` is the thin TypeScript seam that spawns the jar with an
-explicit classpath (the project-under-test's compiled classes appended to the
-fat jar) and fail-closed-validates its JSON output. A spawn failure, non-zero
-exit, non-JSON stdout, or schema violation all throw — a resolve that cannot
-speak is never a clean/empty result. P3-04 grows this into the full stdin/stdout
-wire adapter and its manifest.
+explicit evaluated test-execution classpath and fail-closed-validates its JSON
+output. A spawn failure, non-zero exit, non-JSON stdout, or schema violation all
+throw — a resolve that cannot speak is never a clean/empty result.
+
+For P4R-09, Maven resolves its configured test output directories and
+test-scope dependencies; Gradle serializes the configured root `test` task's
+classpath through a private model task. Both paths may compile or resolve
+dependencies but never execute a project test body. Model, classpath, helper,
+or linkage failures abort discovery rather than becoming `missing` targets.
 
 ## Adapter state through P3-06
 
 - `detect` declines without a JDK and selects Maven or Gradle from project files.
-- `resolve` discovers without execution and grounds found targets only to verified Java source files under build-tool-configured test roots.
+- `resolve` discovers without execution against evaluated Maven/Gradle test classpaths and grounds found targets only to verified Java source files under build-tool-configured test roots.
 - `run` drives Maven Surefire or Gradle test execution and normalizes both XML dialects through the shared reports layer.
 - `npm run package` emits `package/java-junit.mjs` (wrapper + embedded helper jar) and its manifest with byte-stable content across clean builds.
 - Maven and Gradle packaged conformance suites are green, including malformed input, missing targets, skips, and compile-before-test failures.
