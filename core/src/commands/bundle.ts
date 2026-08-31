@@ -58,7 +58,12 @@ export interface ProposalValidationResult {
 
 /** Active-session proposal validator: the CLI judges files, it never authors them. */
 export async function validateProposalBundle(
-  options: { root: string; change: string; allowPostApprovalArtifacts?: boolean },
+  options: {
+    root: string;
+    change: string;
+    allowPostApprovalArtifacts?: boolean;
+    archivedRequirementIds?: ReadonlySet<string>;
+  },
   deps: { resolve: ResolveFn },
 ): Promise<ProposalValidationResult> {
   const changeRel = join('openspec', 'changes', options.change);
@@ -82,7 +87,7 @@ export async function validateProposalBundle(
     changeDir,
     changeRel,
     deps.resolve,
-    new Set(),
+    options.archivedRequirementIds ?? new Set(),
     type,
   );
   const findings: VerifyFinding[] = [];
@@ -208,7 +213,7 @@ function expandGeneratedPath(changeDir: string, pattern: string): string[] {
     .slice(pivot + 2)
     .replace(/^\//, '')
     .replace('*', '');
-  const matches = markdownFilesUnder(join(changeDir, base))
+  const matches = filesUnder(join(changeDir, base))
     .filter((file) => suffix.length === 0 || file.endsWith(suffix))
     .map((file) => relative(changeDir, file));
   // A declared generated glob is still a required artifact. Preserve the
@@ -474,6 +479,18 @@ export function markdownFilesUnder(dir: string): string[] {
     } else if (entry.endsWith('.md')) {
       out.push(full);
     }
+  }
+  return out;
+}
+
+/** All files under `dir` (recursive), absolute paths. Empty if absent. */
+function filesUnder(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const out: string[] = [];
+  for (const entry of readdirSync(dir).sort()) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) out.push(...filesUnder(full));
+    else out.push(full);
   }
   return out;
 }
