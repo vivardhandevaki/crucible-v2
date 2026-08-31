@@ -69,7 +69,6 @@ export async function preflightAmendment(
     change: options.change,
     phase: 'revise',
     report: validation.report,
-    instruction:
-      `Revise the complete dependent intent/oracle bundle in this active session, then re-run \`crucible amend ${options.change}\`.`,
+    instruction: `Revise the complete dependent intent/oracle bundle in this active session, then re-run \`crucible amend ${options.change}\`.`,
   };
 }

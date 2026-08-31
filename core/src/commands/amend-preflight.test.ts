@@ -20,11 +20,10 @@ const SEALED = [
 
 const resolveAllFound: ResolveFn = (targets) =>
   Promise.resolve(
-    targets.map(
-      (target): TargetResolution =>
-        target.startsWith('greeting::')
-          ? { target, status: 'found', targetFile: 'tests/greeting.test.ts' }
-          : { target, status: 'missing' },
+    targets.map((target): TargetResolution =>
+      target.startsWith('greeting::')
+        ? { target, status: 'found', targetFile: 'tests/greeting.test.ts' }
+        : { target, status: 'missing' },
     ),
   );
 
@@ -117,7 +116,9 @@ describe('P4R-06 amendment preflight', () => {
 
     expect(result.phase).toBe('ready-for-reseal');
     expect(result.report?.verdict).toBe('pass');
-    expect(result.instruction).toBe(`Ask a human to run \`crucible approve --amend ${CHANGE}\` in a terminal.`);
+    expect(result.instruction).toBe(
+      `Ask a human to run \`crucible approve --amend ${CHANGE}\` in a terminal.`,
+    );
   });
 
   it('keeps an invalid dependent artifact blocked and names the revise step', async () => {

@@ -714,7 +714,11 @@ function buildRegenPayload(change: string, changeRel: string, changedIds: string
 }
 
 /** A deterministic file-level delta shown before the current amendment bundle. */
-function renderApprovalDelta(root: string, prior: Approval, currentRelpaths: readonly string[]): string {
+function renderApprovalDelta(
+  root: string,
+  prior: Approval,
+  currentRelpaths: readonly string[],
+): string {
   const current = new Set(currentRelpaths);
   const changed: string[] = [];
   const removed: string[] = [];

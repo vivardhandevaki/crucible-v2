@@ -339,7 +339,9 @@ describe('approve — writes a correct approval.yaml on confirm (invariant 6)', 
   it('refuses a replacement seal once a bundle has entered the approved lifecycle', async () => {
     await approve({ root: scratch, change: CHANGE, yes: true }, deps());
 
-    const error = await catchCrucible(() => approve({ root: scratch, change: CHANGE, yes: true }, deps()));
+    const error = await catchCrucible(() =>
+      approve({ root: scratch, change: CHANGE, yes: true }, deps()),
+    );
 
     expect(error.code).toBe('APPROVAL_EXISTS');
   });
@@ -353,7 +355,9 @@ describe('approve — sealed lifecycle boundary', () => {
     // Edit a covered artifact, then re-approve.
     const proposal = join(scratch, CHANGE_REL, 'proposal.md');
     writeFileSync(proposal, readFileSync(proposal, 'utf8') + '\nappended line\n');
-    const error = await catchCrucible(() => approve({ root: scratch, change: CHANGE, yes: true }, deps()));
+    const error = await catchCrucible(() =>
+      approve({ root: scratch, change: CHANGE, yes: true }, deps()),
+    );
     const after = parseApproval(readFileSync(approvalPath(scratch), 'utf8'), 'approval.yaml');
 
     expect(error.code).toBe('APPROVAL_EXISTS');
@@ -380,7 +384,9 @@ describe('approve --amend — P4R-06 human re-seal', () => {
     expect(after.approved_at).toBe(before.approved_at);
     expect(after.amendments).toHaveLength(1);
     expect(after.amendments[0]!.at).toBe('2026-08-31T01:00:00Z');
-    expect(after.files[join(CHANGE_REL, 'design.md')]).not.toBe(before.files[join(CHANGE_REL, 'design.md')]);
+    expect(after.files[join(CHANGE_REL, 'design.md')]).not.toBe(
+      before.files[join(CHANGE_REL, 'design.md')],
+    );
   });
 
   it('a declined amendment leaves the old approval authoritative and void', async () => {
@@ -401,7 +407,10 @@ describe('approve --amend — P4R-06 human re-seal', () => {
     await approve({ root: scratch, change: CHANGE, yes: true, requireSchema: true }, deps());
 
     const error = await catchCrucible(() =>
-      approve({ root: scratch, change: CHANGE, yes: true, requireSchema: true, amend: true }, deps()),
+      approve(
+        { root: scratch, change: CHANGE, yes: true, requireSchema: true, amend: true },
+        deps(),
+      ),
     );
 
     expect(error.code).toBe('NO_AMENDMENT');
