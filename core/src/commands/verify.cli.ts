@@ -27,12 +27,9 @@
 
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import { resolveAgentRuntime } from '../substrate/runtime.js';
 import { loadPinnedAdapterClient } from '../adapters/runtime.js';
 import { verify, type VerifyDeps } from './verify.js';
 import { computeDiffFacts, defaultBase } from './diff-facts.js';
-import { review } from './review.js';
-import { gitHead, reviewModel } from './review.cli.js';
 import { liveWorktreeGit, runReproductionOnBase } from '../reproduction/reproduction.js';
 import { renderReport } from '../verifyx/report.js';
 import {
@@ -55,12 +52,7 @@ export function registerVerify(program: Command): void {
       'the git ref to diff against for tier/cap computation ' +
         '(CI passes origin/<base_ref>; default: merge-base of HEAD and origin/HEAD)',
     )
-    .option(
-      '--review',
-      'also run the adversarial reviewer and include its verdict as a check ' +
-        '(optional locally; the shipped CI workflow always passes this)',
-    )
-    .action(async (change: string, opts: { diffBase?: string; review?: boolean }) => {
+    .action(async (change: string, opts: { diffBase?: string }) => {
       const root = process.cwd();
 
       // Enforcement config: `--config-from` (the CI target-branch checkout) wins,
@@ -69,10 +61,7 @@ export function registerVerify(program: Command): void {
       const configRoot = resolveEnforcementRoot(program.opts().configFrom, root);
       const config: EnforcementConfig = loadEnforcementConfig(configRoot);
 
-      const report = await verify(
-        { root, change, config },
-        liveDeps(root, opts.diffBase, { change, withReview: opts.review === true }),
-      );
+      const report = await verify({ root, change, config }, liveDeps(root, opts.diffBase));
 
       // Best-effort (invariant 11): cache the recomputed tier for `status` to
       // display. Never blocks the verdict — a display cache is convenience.
@@ -112,11 +101,7 @@ export function registerVerify(program: Command): void {
 }
 
 /** The live dependencies for a real verify invocation. */
-function liveDeps(
-  root: string,
-  diffBase: string | undefined,
-  reviewOpts: { change: string; withReview: boolean },
-): VerifyDeps {
+function liveDeps(root: string, diffBase: string | undefined): VerifyDeps {
   const adapter = loadPinnedAdapterClient(root);
   return {
     resolve: (targets) => adapter.resolve(targets),
@@ -137,27 +122,5 @@ function liveDeps(
             loadPinnedAdapterClient(root, worktreePath).run(reproductionOracles),
         },
       ),
-    // The adversarial reviewer (design phase-2.md §5): the whole review-command
-    // flow behind one edge — supplied only under `--review` (the shipped CI
-    // workflow always passes it; locally it is opt-in). Model from convenience
-    // `models.review` (invariant 11 — it shapes the session, never the gate).
-    ...(reviewOpts.withReview
-      ? {
-          review: () =>
-            review(
-              {
-                root,
-                change: reviewOpts.change,
-                model: reviewModel(root),
-                base: diffBase ?? defaultBase(root),
-                head: gitHead(root),
-              },
-              {
-                substrate: resolveAgentRuntime(root, 'review').substrate,
-                now: () => new Date().toISOString(),
-              },
-            ),
-        }
-      : {}),
   };
 }

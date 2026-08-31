@@ -9,19 +9,14 @@
 import { Command } from 'commander';
 import { internalError } from '../util/errors.js';
 import { registerAdapter } from '../commands/adapter-add.cli.js';
-import { registerAmend } from '../commands/amend.cli.js';
-import { registerApprove } from '../commands/approve.cli.js';
+import { registerActiveSessionCommands } from '../commands/active-session.cli.js';
 import { registerArchive } from '../commands/archive.cli.js';
 import { registerDoctor } from '../commands/doctor.cli.js';
 import { registerEscalate } from '../commands/escalate.cli.js';
-import { registerImplement } from '../commands/implement.cli.js';
 import { registerInit } from '../commands/init.cli.js';
 import { registerOverride } from '../commands/override.cli.js';
-import { registerPropose } from '../commands/propose.cli.js';
-import { registerReview } from '../commands/review.cli.js';
 import { registerStatus } from '../commands/status.cli.js';
 import { registerVerify } from '../commands/verify.cli.js';
-import { registerWhy } from '../commands/why.cli.js';
 
 // Placeholder until the version is sourced from package metadata in a later
 // task; kept off package.json imports because that file sits outside rootDir.
@@ -77,19 +72,14 @@ export function buildProgram(): Command {
   }
 
   registerAdapter(program);
-  registerAmend(program);
-  registerApprove(program);
+  registerActiveSessionCommands(program);
   registerArchive(program);
   registerDoctor(program);
   registerEscalate(program);
-  registerImplement(program);
   registerInit(program);
   registerOverride(program);
-  registerPropose(program);
-  registerReview(program);
   registerStatus(program);
   registerVerify(program);
-  registerWhy(program);
 
   return program;
 }

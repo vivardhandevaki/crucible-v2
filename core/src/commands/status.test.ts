@@ -62,7 +62,6 @@ function writeTasks(): void {
   writeFileSync(join(scratch, TASKS_REL), '# Tasks\n\n- [ ] implement greet\n', 'utf8');
 }
 
-
 function deps(overrides: Partial<StatusDeps> = {}): StatusDeps {
   return { readMergeBaseConfig: () => undefined, ...overrides };
 }
@@ -147,7 +146,6 @@ describe('P4R-02 status — interrupted active sessions resume from artifacts on
     expect(existsSync(join(scratch, STATE_REL))).toBe(false);
   });
 });
-
 
 describe('status — config-differs warning (charter §The Target-Branch Rule)', () => {
   it('fires when working-tree crucible.yaml differs from the merge-base', () => {

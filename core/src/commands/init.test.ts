@@ -15,6 +15,7 @@ import {
   type InitReport,
 } from './init.js';
 import { detectAnswers } from './init.cli.js';
+import { WORKFLOW_NAMES } from '../skills/workflow.js';
 
 // TCB: init WRITES the files a project is then governed by (enforcement config,
 // schema bundles, rubric, role prompts, CI workflow). Two properties are pinned
@@ -96,6 +97,12 @@ describe('init — fresh repo → complete working setup', () => {
     expect(read('AGENTS.md')).toContain('crucible propose');
     expect(read('CLAUDE.md')).toContain('Read and follow AGENTS.md');
     expect(read('CLAUDE.md')).not.toContain('crucible propose');
+
+    // Both provider surfaces are generated from the one neutral workflow.
+    for (const name of WORKFLOW_NAMES) {
+      expect(read(join('.codex', 'skills', name, 'SKILL.md'))).toContain('.crucible/bin/crucible');
+      expect(read(join('.claude', 'commands', `${name}.md`))).toContain('.crucible/bin/crucible');
+    }
 
     // gitignore entries.
     const gi = read('.gitignore');
@@ -183,6 +190,16 @@ describe('init — additive surfaces (gitignore, managed block)', () => {
     expect(claude).toContain('# My project notes'); // human content survives
     expect(claude).toContain('Read and follow AGENTS.md');
     expect(claude).toContain('crucible:managed');
+  });
+
+  it('updates only the managed instruction region and preserves human-owned bytes', async () => {
+    const humanPrefix = '# Human instructions\n\nKeep these bytes exactly.\n';
+    writeFileSync(join(scratch, 'AGENTS.md'), humanPrefix, 'utf8');
+
+    await init({ root: scratch, answers: ANSWERS }, { confirmOverwrite: () => true });
+    await init({ root: scratch, answers: ANSWERS }, { confirmOverwrite: confirmNever });
+
+    expect(read('AGENTS.md').startsWith(humanPrefix)).toBe(true);
   });
 
   it('re-running leaves an already-installed managed block unchanged', async () => {

@@ -197,7 +197,6 @@ function nextCommand(phase: StatusPhase, change: string): string {
   }
 }
 
-
 /**
  * The config-differs warning (charter §The Target-Branch Rule; design §2): if the
  * working-tree crucible.yaml differs from the merge-base version CI would enforce,

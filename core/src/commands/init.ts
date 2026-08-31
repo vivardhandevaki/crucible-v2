@@ -221,7 +221,13 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
       deps,
       apply,
     );
-    await writeFullFile(root, join('.claude', 'commands', `${name}.md`), workflow.claude[name], deps, apply);
+    await writeFullFile(
+      root,
+      join('.claude', 'commands', `${name}.md`),
+      workflow.claude[name],
+      deps,
+      apply,
+    );
   }
 
   // 3. Schema bundles — copied verbatim from @crucible/schemas (never generated;
