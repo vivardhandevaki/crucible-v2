@@ -263,6 +263,15 @@ describe('adapter client — fail-closed transport (each → exit 3)', () => {
       (err: unknown) => isCrucibleError(err) && err.exit === 3,
     );
   });
+
+  it('resolve: found without its exact grounded file → exit 3', async () => {
+    const exec: AdapterExec = () =>
+      Promise.resolve(ok(JSON.stringify({ results: [{ target: 't-a', status: 'found' }] })));
+    const client = stubbedClient(exec);
+    await expect(client.resolve(['t-a'])).rejects.toSatisfy(
+      (err: unknown) => isCrucibleError(err) && err.exit === 3,
+    );
+  });
 });
 
 describe('adapter client — real stub, verb reaches the adapter correctly', () => {

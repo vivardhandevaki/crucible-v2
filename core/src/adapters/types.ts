@@ -21,8 +21,9 @@ export type AdapterVerb = 'resolve' | 'run';
 export const resolveResultSchema = z.strictObject({
   target: z.string().min(1),
   status: z.enum(['found', 'missing']),
-  // Present only when `found`; the file the target lives in (unused by lint,
-  // surfaced by `crucible why`). Optional under exactOptionalPropertyTypes.
+  // The envelope preserves this optional field so the conformance runner can
+  // attribute grounding defects independently. The client below the transport
+  // boundary still rejects found-without-file and missing-with-file fail-closed.
   targetFile: z.string().optional(),
 });
 export type ResolveResult = z.infer<typeof resolveResultSchema>;
