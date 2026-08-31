@@ -3,20 +3,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-// P3-08 acceptance: every live role/enforcement path must use the same
-// hash-verifying lockfile runtime. Keeping this source-level dependency test
-// beside the runtime prevents a future command from restoring a fail-closed
-// placeholder or spawning an unpinned judge through a parallel seam.
+// P4R-02: the active-session wrappers no longer execute adapters or launch
+// agents. `verify` is the remaining ordinary CLI path that executes oracle
+// targets, so it alone must use the hash-verifying lockfile runtime.
 
 const CORE_SRC = dirname(dirname(fileURLToPath(import.meta.url)));
-const COMMANDS = [
-  'propose.cli.ts',
-  'approve.cli.ts',
-  'amend.cli.ts',
-  'implement.cli.ts',
-  'verify.cli.ts',
-  'why.cli.ts',
-] as const;
+const COMMANDS = ['verify.cli.ts'] as const;
 
 describe('pinned adapter runtime wiring', () => {
   it.each(COMMANDS)('%s loads the shared pinned-adapter client', (file) => {
@@ -27,7 +19,7 @@ describe('pinned adapter runtime wiring', () => {
     expect(source).not.toContain('NO_ADAPTER_PIN');
   });
 
-  it.each(['verify.cli.ts', 'why.cli.ts'])(
+  it.each(['verify.cli.ts'])(
     '%s roots merge-base reproduction runs in the temporary worktree',
     (file) => {
       const source = readFileSync(join(CORE_SRC, 'commands', file), 'utf8');

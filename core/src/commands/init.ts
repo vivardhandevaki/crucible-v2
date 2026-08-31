@@ -63,6 +63,7 @@ import {
   type FrameworkPin,
 } from '../framework/pin.js';
 import { invalidInputError } from '../util/errors.js';
+import { renderWorkflow, WORKFLOW_NAMES } from '../skills/workflow.js';
 
 // core/src/commands/init.ts (or core/dist/commands/init.js) → core/ → assets/,
 // the same resolution `review/rubric.ts` uses for the shipped rubric default.
@@ -204,6 +205,26 @@ export async function init(options: InitOptions, deps: InitDeps): Promise<InitRe
       root,
       join('.crucible', 'context', `${role}.md`),
       readAsset('context', `${role}.md`),
+      deps,
+      apply,
+    );
+  }
+
+  // 2.5. Provider wrappers are generated from one provider-neutral definition.
+  // They are steering text for an already-active agent, never a launch surface.
+  const workflow = renderWorkflow();
+  for (const name of WORKFLOW_NAMES) {
+    await writeFullFile(
+      root,
+      join('.codex', 'skills', name, 'SKILL.md'),
+      workflow.codex[name],
+      deps,
+      apply,
+    );
+    await writeFullFile(
+      root,
+      join('.claude', 'commands', `${name}.md`),
+      workflow.claude[name],
       deps,
       apply,
     );

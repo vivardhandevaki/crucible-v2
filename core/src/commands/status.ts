@@ -35,9 +35,7 @@ import { loadProposal } from '../artifacts/proposal.js';
 import { loadOracles } from '../artifacts/oracles.js';
 import { loadSpecDelta } from '../artifacts/spec-delta.js';
 import { loadApproval, verifyApproval } from '../artifacts/approval.js';
-import { reconcileState } from '../state/reconcile.js';
-import { renderTierDecision, type TierDecision } from '../tier/tier.js';
-import { readChangeType, type ChangeType } from '../changetype/changetype.js';
+import { type ChangeType, readChangeType } from '../changetype/changetype.js';
 import { preconditionError } from '../util/errors.js';
 
 /** The phases status can derive from artifacts alone (no oracle run — design §9). */
@@ -72,17 +70,8 @@ export interface StatusReport {
   next: string;
   /** Advisory, non-blocking warnings (config-differs). Empty in the clean case. */
   warnings: string[];
-  /** True iff status rewrote state.yaml to reconcile it with the derived phase. */
-  stateReconciled: boolean;
   /** Present only when phase === 'approval-void': the sealed files that changed. */
   voidMismatches?: string[];
-  /**
-   * The tier decision recorded in the snapshot (design phase-2.md §2: "status
-   * display of facts"), when the change has been tier-computed. Displayed, never
-   * enforced (invariant 11) — CI recomputes the authoritative tier. Omitted when
-   * no tier has been recorded yet.
-   */
-  tier?: TierDecision;
   /**
    * The change type, read from the `.openspec.yaml` schema pin (design phase-2.md
    * §4) — derived from the artifact, not the state cache (invariant 1). Omitted for
@@ -105,21 +94,10 @@ export function status(options: StatusOptions, deps: StatusDeps): StatusReport {
 
   const derived = derivePhase(root, changeDir);
 
-  // Reconcile the derived audit trail — but only when the change dir exists (a
-  // never-proposed change has nowhere to write and nothing to reconcile). The
-  // reconciled snapshot carries the recorded tier (if any) for display.
-  let stateReconciled = false;
-  let tier: TierDecision | undefined;
+  // State is not an enforcement input or a recovery mechanism. A resumed session
+  // reads the same artifact truth as a fresh session, without creating a cache.
   let changeType: ChangeType | undefined;
   if (derived.phase !== 'absent') {
-    const result = reconcileState(
-      join(changeDir, 'state.yaml'),
-      change,
-      derived.phase,
-      phasesConsistent,
-    );
-    stateReconciled = result.rewritten;
-    tier = result.state.snapshot.tier;
     // Derive the type from the pin (the artifact), not the state cache (invariant 1).
     changeType = readChangeType(changeDir);
   }
@@ -131,9 +109,7 @@ export function status(options: StatusOptions, deps: StatusDeps): StatusReport {
     phase: derived.phase,
     next: nextCommand(derived.phase, change),
     warnings,
-    stateReconciled,
     ...(derived.voidMismatches ? { voidMismatches: derived.voidMismatches } : {}),
-    ...(tier ? { tier } : {}),
     ...(changeType ? { changeType } : {}),
   };
 }
@@ -222,40 +198,6 @@ function nextCommand(phase: StatusPhase, change: string): string {
 }
 
 /**
- * Whether a state.yaml's recorded phase is consistent with the artifact-derived
- * phase — the predicate reconcileState uses to decide whether to rewrite. Both
- * are mapped to a coarse "rung"; equal rungs are consistent. This lets status
- * leave finer red/green labels it cannot recompute (`implement-red`,
- * `propose-red`) untouched while still repairing an impossible recorded phase
- * (e.g. "approved" over a bundle with no valid seal). An unknown label → rung -1,
- * which never matches → the garbage phase is repaired.
- */
-function phasesConsistent(recorded: string, derived: string): boolean {
-  return rung(recorded) === rung(derived);
-}
-
-/** Coarse ordering shared by the derived phases and the command-written labels. */
-function rung(phase: string): number {
-  switch (phase) {
-    case 'absent':
-      return 0;
-    case 'proposed':
-    case 'propose-red':
-      return 1;
-    case 'approval-void':
-      return 2;
-    case 'approved':
-      return 3;
-    case 'implementing':
-    case 'implemented':
-    case 'implement-red':
-      return 4;
-    default:
-      return -1; // unknown/garbage label → inconsistent with everything → repair
-  }
-}
-
-/**
  * The config-differs warning (charter §The Target-Branch Rule; design §2): if the
  * working-tree crucible.yaml differs from the merge-base version CI would enforce,
  * warn — local verify uses the working tree, but the merge gate uses the target
@@ -301,18 +243,10 @@ export function renderStatus(report: StatusReport): string {
   lines.push(`Phase:  ${report.phase}`);
   if (report.changeType) lines.push(`Type:   ${report.changeType}`);
   lines.push(`Next:   ${report.next}`);
-  if (report.tier) {
-    lines.push('');
-    lines.push(renderTierDecision(report.tier));
-  }
   if (report.voidMismatches && report.voidMismatches.length > 0) {
     lines.push('');
     lines.push('Void seal — these sealed files changed or went missing since approval:');
     for (const rel of report.voidMismatches) lines.push(`  ✗ ${rel}`);
-  }
-  if (report.stateReconciled) {
-    lines.push('');
-    lines.push('(state.yaml reconciled from the artifacts)');
   }
   for (const warning of report.warnings) {
     lines.push('');
