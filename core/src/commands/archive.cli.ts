@@ -16,6 +16,14 @@ import { spawn } from 'node:child_process';
 import type { Command } from 'commander';
 import { archive, type ArchiveDeps, type OpenSpecValidation } from './archive.js';
 import { invalidInputError } from '../util/errors.js';
+import { loadPinnedAdapterClient } from '../adapters/runtime.js';
+import {
+  loadEnforcementConfig,
+  resolveEnforcementRoot,
+  type EnforcementConfig,
+} from '../config/enforcement.js';
+import { verify } from './verify.js';
+import { liveVerifyDeps } from './verify.cli.js';
 
 /** Register the real `archive` subcommand on the program. */
 export function registerArchive(program: Command): void {
@@ -25,17 +33,25 @@ export function registerArchive(program: Command): void {
     .argument('<change>', 'the approved change to archive (openspec/changes/<change>/)')
     .action(async (change: string) => {
       const root = process.cwd();
-      const result = await archive({ root, change }, liveDeps(root));
+      const configRoot = resolveEnforcementRoot(program.opts().configFrom, root);
+      const config = loadEnforcementConfig(configRoot);
+      const result = await archive({ root, change }, liveDeps(root, config));
       process.stdout.write(result.render + '\n');
     });
 }
 
 /** The live dependencies for a real archive invocation. */
-function liveDeps(root: string): ArchiveDeps {
+function liveDeps(root: string, config: EnforcementConfig): ArchiveDeps {
+  const adapter = loadPinnedAdapterClient(root);
   return {
     now: () => new Date().toISOString(),
     validate: (change) => validateViaOpenSpec(root, change),
-    archive: (change) => archiveViaOpenSpec(root, change),
+    resolve: (targets) => adapter.resolve(targets),
+    verify: async (change) => {
+      const report = await verify({ root, change, config }, liveVerifyDeps(root, undefined));
+      return { verdict: report.verdict };
+    },
+    syncAndArchive: (change) => archiveViaOpenSpec(root, change),
   };
 }
 

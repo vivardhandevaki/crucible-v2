@@ -62,7 +62,7 @@ export function registerVerify(program: Command): void {
       const configRoot = resolveEnforcementRoot(program.opts().configFrom, root);
       const config: EnforcementConfig = loadEnforcementConfig(configRoot);
 
-      const report = await verify({ root, change, config }, liveDeps(root, opts.diffBase));
+      const report = await verify({ root, change, config }, liveVerifyDeps(root, opts.diffBase));
 
       // Best-effort (invariant 11): cache the recomputed tier for `status` to
       // display. Never blocks the verdict — a display cache is convenience.
@@ -102,7 +102,7 @@ export function registerVerify(program: Command): void {
 }
 
 /** The live dependencies for a real verify invocation. */
-function liveDeps(root: string, diffBase: string | undefined): VerifyDeps {
+export function liveVerifyDeps(root: string, diffBase: string | undefined): VerifyDeps {
   const adapter = loadPinnedAdapterClient(root);
   return {
     resolve: (targets) => adapter.resolve(targets),
