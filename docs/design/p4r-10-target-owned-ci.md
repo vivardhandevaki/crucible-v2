@@ -1,7 +1,7 @@
 # P4R-10 Target-Owned Deterministic CI
 
-**Status:** P4R-10A ratified and executable boundary tests green. Transport
-implementation remains gated on preserving this contract.
+**Status:** P4R-10A through P4R-10E complete. The red trust-boundary gate landed
+before transport implementation; the final full repository gate is green.
 
 This design refines the logical target-branch law in
 [`phase-4r-reset.md`](phase-4r-reset.md#10-trusted-ci-and-target-branch-law).
@@ -240,3 +240,18 @@ separate, bounded threat model that names the exact non-executable candidate
 data, credentials, cache/runner isolation, source authentication, and executable
 guard tests. Until that design amendment lands, no supported installation path
 may execute candidate-controlled input in `pull_request_target` context.
+
+## Completion evidence
+
+- Exact B/H boundary: 16 non-skipped fixtures covering same-repository, fork,
+  merge-group, malformed, stale, root-collision, and identity substitution.
+- Transport: candidate-archive orchestration and base/candidate filesystem
+  partition tests, plus required-workflow structure/security fixtures.
+- Fallback and diagnostics: advisory generic/Java installation tests and eight
+  organization/App/advisory/absent/inaccessible/stale/spoofable/malformed
+  diagnostic fixtures with byte-stability coverage.
+- Privileged transport: nine direct-checkout, indirect-load, artifact-reuse,
+  local-action, malformed-workflow, and shipped-template fixtures.
+- Repository gate: `npm test` — 92 files, 902 passed, 3 unrelated intentional
+  skips; `npm run typecheck`, `npm run lint`, `npm run lint:layering`, and
+  `npm run format:check` all green on 2026-10-25.
