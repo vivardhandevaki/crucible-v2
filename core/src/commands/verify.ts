@@ -44,7 +44,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadOracles, type Oracle } from '../artifacts/oracles.js';
 import { lintTraceability, type ResolveFn } from '../lint/traceability.js';
-import { loadApproval, verifyApproval } from '../artifacts/approval.js';
+import { loadApproval, verifyApproval, verifyApprovalFiles } from '../artifacts/approval.js';
 import { gatherTypeFacts, loadRequirementsForType } from './bundle.js';
 import { assertTypeConformance, readChangeType } from '../changetype/changetype.js';
 import type { OracleResult } from '../adapters/types.js';
@@ -140,6 +140,20 @@ export interface VerifyOptions {
   /** The change to verify (its bundle lives at openspec/changes/<change>/). */
   change: string;
   /**
+   * Exact base-owned repository root for historical specs and archived oracle
+   * definitions. CI sets this to checkout B; local verify defaults to `root`.
+   */
+  trustRoot?: string;
+  /**
+   * Pre-PR archive location for a current candidate bundle. Its approval still
+   * seals paths beneath `sealedRel`, because archive preserves approval bytes.
+   */
+  changeLocation?: {
+    dir: string;
+    rel: string;
+    sealedRel: string;
+  };
+  /**
    * Enforcement config the tier is computed against (risk globs + diff caps). In
    * CI this is the *target-branch* config (invariant 7), resolved by the CLI via
    * `--config-from`. Supplied together with `deps.diffFacts` to enable the tier /
@@ -157,8 +171,10 @@ export interface VerifyOptions {
  */
 export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<VerifyReport> {
   const { root, change } = options;
-  const changeRel = join('openspec', 'changes', change);
-  const changeDir = join(root, changeRel);
+  const trustRoot = options.trustRoot ?? root;
+  const sealedChangeRel = options.changeLocation?.sealedRel ?? join('openspec', 'changes', change);
+  const changeRel = options.changeLocation?.rel ?? sealedChangeRel;
+  const changeDir = options.changeLocation?.dir ?? join(root, changeRel);
 
   if (!existsSync(changeDir)) {
     throw preconditionError(
@@ -242,7 +258,7 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   // index lets a bugfix/ratchet oracle legally bind an OLD requirement id that
   // lives only in the archived spec (charter §ID grammar; design §1). It is a
   // deterministic filesystem read (like loading the bundle), not an injected edge.
-  const archivedReqIds = collectArchivedRequirementIds(root);
+  const archivedReqIds = collectArchivedRequirementIds(trustRoot);
   const lint = await lintTraceability(requirements, oracles, deps.resolve, archivedReqIds);
   const trace = traceabilityCheck(lint);
   checks.push(trace);
@@ -271,7 +287,7 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   // injected `run` edge in a single batch; results are partitioned back by id so
   // each is attributed to its own check (`oracles` vs `regression`).
   if (trace.status === 'pass') {
-    const regression = collectRegressionSuite(root).oracles;
+    const regression = collectRegressionSuite(trustRoot).oracles;
     const currentIds = new Set(oracles.map((o) => o.id));
     const results = await deps.run([...oracles, ...regression]);
     checks.push(oraclesCheck(results.filter((r) => currentIds.has(r.oracleId))));
@@ -311,7 +327,20 @@ export async function verify(options: VerifyOptions, deps: VerifyDeps): Promise<
   const approvalPath = join(changeDir, 'approval.yaml');
   if (existsSync(approvalPath)) {
     const approval = loadApproval(approvalPath);
-    checks.push(approvalCheck(verifyApproval(root, approval)));
+    if (options.changeLocation) {
+      const prefix = `${sealedChangeRel}/`;
+      checks.push(
+        approvalCheck(
+          verifyApprovalFiles(approval, (relpath) =>
+            relpath === sealedChangeRel || relpath.startsWith(prefix)
+              ? join(changeDir, relpath.slice(sealedChangeRel.length))
+              : join(root, relpath),
+          ),
+        ),
+      );
+    } else {
+      checks.push(approvalCheck(verifyApproval(root, approval)));
+    }
   }
 
   return aggregate(change, checks, extras);

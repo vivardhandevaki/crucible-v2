@@ -102,8 +102,12 @@ export function registerVerify(program: Command): void {
 }
 
 /** The live dependencies for a real verify invocation. */
-export function liveVerifyDeps(root: string, diffBase: string | undefined): VerifyDeps {
-  const adapter = loadPinnedAdapterClient(root);
+export function liveVerifyDeps(
+  root: string,
+  diffBase: string | undefined,
+  trustRoot: string = root,
+): VerifyDeps {
+  const adapter = loadPinnedAdapterClient(trustRoot, root);
   return {
     resolve: (targets) => adapter.resolve(targets),
     run: (oracles) => adapter.run(oracles),
@@ -121,7 +125,7 @@ export function liveVerifyDeps(root: string, diffBase: string | undefined): Veri
           git: liveWorktreeGit(root),
           resolve: (targets) => adapter.resolve(targets),
           runIn: (worktreePath, reproductionOracles) =>
-            loadPinnedAdapterClient(root, worktreePath).run(reproductionOracles),
+            loadPinnedAdapterClient(trustRoot, worktreePath).run(reproductionOracles),
         },
       ),
   };

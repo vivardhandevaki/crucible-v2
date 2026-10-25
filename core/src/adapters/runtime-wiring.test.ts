@@ -15,7 +15,7 @@ describe('pinned adapter runtime wiring', () => {
     const source = readFileSync(join(CORE_SRC, 'commands', file), 'utf8');
 
     expect(source).toContain("from '../adapters/runtime.js'");
-    expect(source).toContain('loadPinnedAdapterClient(root');
+    expect(source).toContain('loadPinnedAdapterClient(trustRoot, root)');
     expect(source).not.toContain('NO_ADAPTER_PIN');
   });
 
@@ -23,7 +23,7 @@ describe('pinned adapter runtime wiring', () => {
     '%s roots merge-base reproduction runs in the temporary worktree',
     (file) => {
       const source = readFileSync(join(CORE_SRC, 'commands', file), 'utf8');
-      expect(source).toContain('loadPinnedAdapterClient(root, worktreePath)');
+      expect(source).toContain('loadPinnedAdapterClient(trustRoot, worktreePath)');
     },
   );
 });

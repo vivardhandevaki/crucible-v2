@@ -108,9 +108,55 @@ The returned machine partition enumerates the base-owned and candidate-owned
 input classes above. Downstream transport accepts that validated value rather
 than reconstructing trust from branch names or `HEAD`.
 
-## Pending subtask decisions
+## P4R-10B: organization-ruleset required workflow
 
-P4R-10B will record the exact trusted-workflow installation and runtime proof.
-P4R-10C will record the non-organization tradeoff and decision only after that
-proof exists. P4R-10D and P4R-10E will then add diagnostics and privileged-event
-guardrails against the selected transports.
+The enforcement-grade template is
+`ci-templates/crucible-required.yml`. It is distributable framework data, but
+it is **not** installed in the candidate repository. An organization or
+enterprise administrator places it at `.github/workflows/crucible-required.yml`
+in a separately trusted workflow repository, makes that repository accessible
+to target repositories, and creates an active organization/enterprise branch
+ruleset with `Require workflows to pass before merging` selecting the exact:
+
+- trusted workflow repository ID;
+- workflow path;
+- immutable workflow commit SHA (and its ref);
+- protected target repository/ref set.
+
+The ruleset workflow rule is the expected source. A candidate-controlled job
+with the same workflow or job display name is not the selected repository/path/
+SHA and cannot satisfy it. The workflow repository should disable ordinary
+Actions execution or retain the template's unconditional `if` behavior as
+described by GitHub's ruleset-workflow troubleshooting guidance.
+
+The template runs one stable check, `Crucible deterministic verify`, on both
+restricted `pull_request` and `merge_group`. It:
+
+1. parses and validates event identities before using them as action inputs;
+2. checks out exact `B`, exact `H`, and the current target ref into distinct
+   directories with `persist-credentials: false`;
+3. makes the already checked-out B object available to H through a local Git
+   fetch, never a candidate credential;
+4. invokes B's hash-checking project-local launcher from the B checkout;
+5. has that launcher re-check the checkout SHAs and target tip before loading
+   base config/adapter/history and executing H code/tests.
+
+The job has only `contents: read`, references no secret, uses no cache, and runs
+on an ephemeral GitHub-hosted image. Official checkout/runtime actions are
+pinned to immutable forty-hex commits. There is no `continue-on-error`, skipped
+verification, or cancelling concurrency. GitHub's active required-workflow rule
+therefore keeps a missing, cancelled, stale, or failed run red.
+
+The base-owned CLI discovers candidate changes as canonical archive directories
+present in H but absent from B. It revalidates each bundle against B's schema and
+adapter, checks schema-complete approval scope, remaps the preserved pre-archive
+seal paths without rewriting approval evidence, and then runs deterministic
+verify. H edits to base historical archives or trust files are ignored for the
+current result.
+
+## P4R-10C decision gate
+
+The required-workflow proof above establishes the enforcement-grade reference.
+The non-organization offering tradeoff and selection are recorded in the next
+implementation step; no repository-local check inherits the grade merely by
+sharing its display name or deterministic verifier.

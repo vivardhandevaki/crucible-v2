@@ -1,4 +1,12 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TOY_REPO_ROOT } from '@crucible/fixtures';
@@ -130,6 +138,76 @@ describe('verify — green path', () => {
   it('the report validates against verifyReportSchema (verdict JSON is a trust boundary)', async () => {
     const report = await verify({ root: scratch, change: CHANGE }, deps());
     expect(() => verifyReportSchema.parse(report)).not.toThrow();
+  });
+});
+
+describe('P4R-10 base/candidate filesystem partition', () => {
+  it('verifies a pre-PR archived H bundle while preserving its active-path approval seal', async () => {
+    writeApproval(scratch, [
+      join(CHANGE_REL, 'proposal.md'),
+      join(CHANGE_REL, 'design.md'),
+      join(CHANGE_REL, 'oracles.md'),
+      join(CHANGE_REL, 'specs', 'greeting', 'spec.md'),
+      'tests/greeting.test.ts',
+    ]);
+    const archivedRel = join('openspec', 'changes', 'archive', `2026-10-25-${CHANGE}`);
+    mkdirSync(join(scratch, archivedRel, '..'), { recursive: true });
+    renameSync(join(scratch, CHANGE_REL), join(scratch, archivedRel));
+    const base = mkdtempSync(join(tmpdir(), 'crucible-verify-base-'));
+
+    try {
+      const report = await verify(
+        {
+          root: scratch,
+          trustRoot: base,
+          change: CHANGE,
+          changeLocation: {
+            dir: join(scratch, archivedRel),
+            rel: archivedRel,
+            sealedRel: CHANGE_REL,
+          },
+        },
+        deps(),
+      );
+      expect(report.verdict).toBe('pass');
+      expect(report.checks.find((check) => check.name === 'approval')?.status).toBe('pass');
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it('reads malformed historical oracle input from B, never a candidate trust-file edit', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'crucible-verify-base-'));
+    const candidateArchive = join(
+      scratch,
+      'openspec',
+      'changes',
+      'archive',
+      '2026-01-01-attacker-edit',
+    );
+    mkdirSync(candidateArchive, { recursive: true });
+    writeFileSync(
+      join(candidateArchive, 'oracles.md'),
+      [
+        '## ORC-bad-001',
+        '```yaml crucible-binding',
+        'requirement: REQ-bad-1',
+        'unknown: rejected',
+        '```',
+        '',
+      ].join('\n'),
+    );
+
+    try {
+      const report = await verify({ root: scratch, trustRoot: base, change: CHANGE }, deps());
+      expect(report.verdict).toBe('pass');
+
+      await expect(verify({ root: scratch, change: CHANGE }, deps())).rejects.toSatisfy(
+        (error: unknown) => isCrucibleError(error) && error.exit === 3,
+      );
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });
 

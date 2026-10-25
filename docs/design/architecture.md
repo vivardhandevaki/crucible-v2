@@ -131,5 +131,10 @@ Verbs `resolve`/`run` (+ optional `scope`), JSON over stdin/stdout, normalized r
   inputs from the exact target commit. The candidate cannot choose its own
   judge. The preferred GitHub transport is a ruleset-required trusted workflow;
   `pull_request_target` candidate execution is not the default.
+- The trusted workflow executes the hash-checked project-local framework from
+  exact base `B`, revalidates exact candidate `H`, and verifies H's complete
+  pre-PR archive while remapping (not rewriting) its preserved active-path seal.
+  *Rationale: archive moves reviewed bytes before the PR, but may not change the
+  approval evidence that sealed them.*
 - Tier-dependent ceremony, routing, override, trajectory, mutation, and ratchet
   automation are parked until the thin reset lifecycle is qualified.
