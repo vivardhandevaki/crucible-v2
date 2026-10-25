@@ -217,3 +217,26 @@ The expected required workflow content hash is computed from the shipped
 template, so changed action pins, events, permissions, job source, or transport
 bytes cannot retain enforcement grade. Repository-local status remains advisory
 even when its last check says `success`.
+
+## P4R-10E: privileged-event rejection
+
+Neither supported template uses `pull_request_target`. The static workflow
+inspector treats a privileged job as unsupported when it:
+
+- checks out a pull-request head/fork/merge ref;
+- fetches or checks out candidate code through `git` or `gh`;
+- downloads candidate/workflow artifacts and then executes shell or local
+  actions;
+- loads a candidate-selected remote script; or
+- otherwise executes a local action or shell step after candidate material
+  entered the privileged workspace.
+
+Malformed workflow YAML also fails closed. `doctor --ci` reports an observed
+local `pull_request_target` candidate-execution path as `unsupported`, grade
+`none`; it cannot be upgraded by a green check or expected display name.
+
+**TODO (not authorized by Phase 4R):** any future exception must first ratify a
+separate, bounded threat model that names the exact non-executable candidate
+data, credentials, cache/runner isolation, source authentication, and executable
+guard tests. Until that design amendment lands, no supported installation path
+may execute candidate-controlled input in `pull_request_target` context.

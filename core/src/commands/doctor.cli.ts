@@ -25,6 +25,7 @@ import {
   type CiProtectionObservation,
   type CiProtectionReport,
 } from '../ci/diagnostics.js';
+import { inspectWorkflowSecurity } from '../ci/workflow-security.js';
 import { CheckFailure, invalidInputError } from '../util/errors.js';
 import { doctor, type ConfirmFix, type DoctorFinding, type DoctorReport } from './doctor.js';
 
@@ -120,6 +121,7 @@ function observeLocalCi(root: string): CiProtectionObservation | unknown {
     } satisfies CiProtectionObservation;
   }
   const bytes = readFileSync(workflowPath);
+  const security = inspectWorkflowSecurity(bytes.toString('utf8'), workflowPath);
   let eventNames: ('pull_request' | 'merge_group' | 'pull_request_target')[] = [];
   try {
     const yaml = parseYaml(bytes.toString('utf8')) as { on?: Record<string, unknown> };
@@ -145,6 +147,8 @@ function observeLocalCi(root: string): CiProtectionObservation | unknown {
       workflow_content_sha256: createHash('sha256').update(bytes).digest('hex'),
       events: eventNames,
       latest_check: 'unknown',
+      privileged_candidate_execution: security.privileged_candidate_execution,
+      security_violations: security.violations.map((violation) => violation.code),
     },
   } satisfies CiProtectionObservation;
 }

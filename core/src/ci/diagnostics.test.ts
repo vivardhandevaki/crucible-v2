@@ -123,6 +123,22 @@ describe('P4R-10D doctor --ci protection grades', () => {
     expect(report).toMatchObject({ grade: 'none', state: 'unsupported' });
   });
 
+  it('reports privileged local candidate execution as unsupported', () => {
+    const report = diagnoseCiProtection({
+      ...required(),
+      installation: {
+        kind: 'repository_local',
+        workflow_path: '.github/workflows/crucible.yml',
+        workflow_content_sha256: hashes.advisory,
+        events: ['pull_request_target'],
+        latest_check: 'success',
+        privileged_candidate_execution: true,
+        security_violations: ['candidate-checkout', 'candidate-execution'],
+      },
+    });
+    expect(report).toMatchObject({ grade: 'none', state: 'unsupported' });
+  });
+
   it('produces byte-stable machine output for identical observations', () => {
     expect(JSON.stringify(diagnoseCiProtection(required()))).toBe(
       JSON.stringify(diagnoseCiProtection(required())),

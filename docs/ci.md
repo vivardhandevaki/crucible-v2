@@ -86,3 +86,14 @@ Unknown fields, stale SHAs, inaccessible evidence, partial rules, repository-
 controlled sources, bypasses, changed workflow bytes, wrong events, and wrong
 check names all fail closed. The command is diagnostic only; it never repairs
 remote rules without explicit administrator action.
+
+## No `pull_request_target` candidate execution
+
+Supported templates do not use `pull_request_target`. Crucible's workflow
+inspector rejects candidate head/fork checkout, indirect `git`/`gh` fetching,
+candidate-selected remote scripts, downloaded artifact reuse, and shell/local-
+action execution after candidate material enters a privileged job.
+
+There is no approved exception. A future exception requires a separately
+ratified bounded threat model and executable guard tests before any supported
+template or installation path may use it.

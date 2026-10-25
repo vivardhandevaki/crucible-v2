@@ -33,6 +33,8 @@ const repositoryLocal = z.strictObject({
   workflow_content_sha256: sha256,
   events,
   latest_check: z.enum(['success', 'failure', 'cancelled', 'missing', 'unknown']),
+  privileged_candidate_execution: z.boolean().optional(),
+  security_violations: z.array(z.string()).optional(),
 });
 
 const githubApp = z.strictObject({
@@ -188,6 +190,9 @@ function diagnoseLocal(
     install.workflow_path === '.github/workflows/crucible.yml' &&
     install.workflow_content_sha256 === expected &&
     hasExactEvents(install.events);
+  const privileged =
+    install.privileged_candidate_execution === true ||
+    install.events.includes('pull_request_target');
   const capabilities = [
     capability(
       'source',
@@ -209,7 +214,25 @@ function diagnoseLocal(
       `Latest local check: ${install.latest_check}; this does not change the protection grade.`,
       'Treat this result only as developer feedback.',
     ),
+    capability(
+      'privileged-event',
+      privileged ? 'fail' : 'pass',
+      privileged
+        ? `Unsupported privileged candidate execution: ${install.security_violations?.join(', ') || 'pull_request_target'}.`
+        : 'No pull_request_target candidate execution was detected.',
+      'Use restricted pull_request/merge_group; a future exception requires a separately ratified bounded threat model.',
+    ),
   ];
+  if (privileged) {
+    return report(
+      'none',
+      'unsupported',
+      common.repository,
+      common.targetBranch,
+      common.targetSha,
+      capabilities,
+    );
+  }
   return report(
     exact ? 'advisory' : 'none',
     exact ? 'valid' : 'partial',
