@@ -116,6 +116,23 @@ describe('buildProgram', () => {
     expect(cap.out()).toContain('--yes');
   });
 
+  it('doctor --help exposes evidence-based CI diagnostics', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['doctor', '--help'], cap.io);
+    expect(code).toBe(0);
+    expect(cap.out()).toContain('--ci');
+    expect(cap.out()).toContain('--ci-observation');
+  });
+
+  it('registers the exact-commit trusted CI transport', async () => {
+    const cap = captureIO();
+    const code = await runProgram(buildProgram(), ['ci', 'verify', '--help'], cap.io);
+    expect(code).toBe(0);
+    expect(cap.out()).toContain('--base-sha');
+    expect(cap.out()).toContain('--candidate-sha');
+    expect(cap.out()).toContain('--target-tip-root');
+  });
+
   it('unknown command against the real program → exit 2 with help + hint', async () => {
     const cap = captureIO();
     const code = await runProgram(buildProgram(), ['frobnicate'], cap.io);

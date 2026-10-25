@@ -5,6 +5,8 @@ import {
   CI_TEMPLATE_PATH,
   JAVA_JUNIT_CI_TEMPLATE_FILE,
   JAVA_JUNIT_CI_TEMPLATE_PATH,
+  REQUIRED_CI_TEMPLATE_FILE,
+  REQUIRED_CI_TEMPLATE_PATH,
   ciTemplatePathForAdapter,
 } from './index.js';
 
@@ -20,11 +22,18 @@ describe('@crucible/ci-templates surface', () => {
     expect(existsSync(CI_TEMPLATE_PATH)).toBe(true);
   });
 
-  it('exposes a distinct java-junit workflow selected only for that adapter', () => {
-    expect(JAVA_JUNIT_CI_TEMPLATE_FILE).toBe('crucible-java-junit.yml');
+  it('uses one advisory workflow that provisions both generic and Java runtimes', () => {
+    expect(JAVA_JUNIT_CI_TEMPLATE_FILE).toBe(CI_TEMPLATE_FILE);
     expect(JAVA_JUNIT_CI_TEMPLATE_PATH.endsWith(JAVA_JUNIT_CI_TEMPLATE_FILE)).toBe(true);
     expect(existsSync(JAVA_JUNIT_CI_TEMPLATE_PATH)).toBe(true);
-    expect(ciTemplatePathForAdapter('java-junit')).toBe(JAVA_JUNIT_CI_TEMPLATE_PATH);
+    expect(JAVA_JUNIT_CI_TEMPLATE_PATH).toBe(CI_TEMPLATE_PATH);
+    expect(ciTemplatePathForAdapter('java-junit')).toBe(CI_TEMPLATE_PATH);
     expect(ciTemplatePathForAdapter('stub')).toBe(CI_TEMPLATE_PATH);
+  });
+
+  it('exposes the separately trusted organization-ruleset workflow', () => {
+    expect(REQUIRED_CI_TEMPLATE_FILE).toBe('crucible-required.yml');
+    expect(REQUIRED_CI_TEMPLATE_PATH.endsWith(REQUIRED_CI_TEMPLATE_FILE)).toBe(true);
+    expect(existsSync(REQUIRED_CI_TEMPLATE_PATH)).toBe(true);
   });
 });

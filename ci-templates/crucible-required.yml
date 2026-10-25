@@ -1,0 +1,151 @@
+# P4R-10B enforcement-grade workflow. Store this file in a separately trusted
+# workflow repository and select that exact repository/path/ref/SHA with an
+# active organization or enterprise ruleset's "Require workflows to pass before
+# merging" rule. Do not copy it into the candidate repository and call it
+# enforcement-grade; the repository-local offering is crucible.yml and is
+# explicitly advisory.
+
+name: Crucible Required Verify
+
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Crucible deterministic verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Derive exact B and H identities
+        id: identities
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          EVENT_SHA: ${{ github.sha }}
+          TARGET_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const event = JSON.parse(fs.readFileSync(process.env.EVENT_PATH, 'utf8'));
+          const eventName = process.env.EVENT_NAME;
+          const targetRepository = process.env.TARGET_REPOSITORY;
+          let baseRepository;
+          let baseRef;
+          let baseSha;
+          let candidateRepository;
+          let candidateSha;
+          if (eventName === 'pull_request') {
+            baseRepository = event.pull_request?.base?.repo?.full_name;
+            baseRef = `refs/heads/${event.pull_request?.base?.ref ?? ''}`;
+            baseSha = event.pull_request?.base?.sha;
+            candidateRepository = event.pull_request?.head?.repo?.full_name;
+            candidateSha = event.pull_request?.head?.sha;
+          } else if (eventName === 'merge_group') {
+            baseRepository = targetRepository;
+            baseRef = event.merge_group?.base_ref;
+            baseSha = event.merge_group?.base_sha;
+            candidateRepository = targetRepository;
+            candidateSha = event.merge_group?.head_sha;
+          } else {
+            throw new Error(`unsupported event ${eventName}`);
+          }
+          const repository = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+          const sha = /^[0-9a-f]{40}$/;
+          const ref = /^refs\/heads\/[A-Za-z0-9._/-]+$/;
+          if (!repository.test(targetRepository) || !repository.test(baseRepository)
+            || !repository.test(candidateRepository) || baseRepository !== targetRepository
+            || !sha.test(baseSha) || !sha.test(candidateSha) || !sha.test(process.env.EVENT_SHA)
+            || !ref.test(baseRef) || baseRef.includes('..') || baseRef.includes('//')) {
+            throw new Error('malformed or substituted GitHub event identity');
+          }
+          const values = {
+            event: eventName,
+            repository: targetRepository,
+            base_repository: baseRepository,
+            base_ref: baseRef,
+            base_sha: baseSha,
+            candidate_repository: candidateRepository,
+            candidate_sha: candidateSha,
+            event_sha: process.env.EVENT_SHA,
+          };
+          for (const [key, value] of Object.entries(values)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
+          }
+          NODE
+
+      - name: Checkout exact base B
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: ${{ steps.identities.outputs.base_repository }}
+          ref: ${{ steps.identities.outputs.base_sha }}
+          path: base
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout exact candidate H
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: ${{ steps.identities.outputs.candidate_repository }}
+          ref: ${{ steps.identities.outputs.candidate_sha }}
+          path: candidate
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout current target tip
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: ${{ steps.identities.outputs.base_repository }}
+          ref: ${{ steps.identities.outputs.base_ref }}
+          path: target-tip
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Make exact B available to H without credentials
+        env:
+          BASE_SHA: ${{ steps.identities.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          git -C "$GITHUB_WORKSPACE/candidate" fetch --no-tags "$GITHUB_WORKSPACE/base" "$BASE_SHA"
+
+      - name: Use pinned Node runtime
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '20'
+
+      - name: Use pinned Java runtime for supported JVM consumers
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify exact H with exact B trust inputs
+        working-directory: base
+        env:
+          EVENT_NAME: ${{ steps.identities.outputs.event }}
+          REPOSITORY: ${{ steps.identities.outputs.repository }}
+          BASE_REPOSITORY: ${{ steps.identities.outputs.base_repository }}
+          BASE_REF: ${{ steps.identities.outputs.base_ref }}
+          BASE_SHA: ${{ steps.identities.outputs.base_sha }}
+          CANDIDATE_REPOSITORY: ${{ steps.identities.outputs.candidate_repository }}
+          CANDIDATE_SHA: ${{ steps.identities.outputs.candidate_sha }}
+          EVENT_SHA: ${{ steps.identities.outputs.event_sha }}
+        run: |
+          set -euo pipefail
+          ./.crucible/bin/crucible --json ci verify \
+            --event "$EVENT_NAME" \
+            --repository "$REPOSITORY" \
+            --base-repository "$BASE_REPOSITORY" \
+            --base-ref "$BASE_REF" \
+            --base-sha "$BASE_SHA" \
+            --candidate-repository "$CANDIDATE_REPOSITORY" \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --event-sha "$EVENT_SHA" \
+            --candidate-root "$GITHUB_WORKSPACE/candidate" \
+            --target-tip-root "$GITHUB_WORKSPACE/target-tip"

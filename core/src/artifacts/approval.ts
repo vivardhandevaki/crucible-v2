@@ -140,9 +140,22 @@ export function amendApproval(
  * (invariant 6). Used by `implement` (precondition) and `verify` (check).
  */
 export function verifyApproval(root: string, approval: Approval): VerifyResult {
+  return verifyApprovalFiles(approval, (relpath) => join(root, relpath));
+}
+
+/**
+ * Recompute a seal through an explicit path resolver. Trusted CI uses this for
+ * a pre-PR archived candidate: bundle paths were sealed under the active-change
+ * prefix before OpenSpec moved the directory, while bound tests remain at their
+ * original candidate paths. The approval bytes never need rewriting.
+ */
+export function verifyApprovalFiles(
+  approval: Approval,
+  resolveRelpath: (relpath: string) => string,
+): VerifyResult {
   const mismatches: string[] = [];
   for (const [rel, sealed] of Object.entries(approval.files)) {
-    if (currentHash(join(root, rel)) !== sealed) {
+    if (currentHash(resolveRelpath(rel)) !== sealed) {
       mismatches.push(rel);
     }
   }

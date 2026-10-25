@@ -13,9 +13,20 @@
 // pure read-only reporter: it emits the findings as JSON and applies nothing (a
 // machine consumer inspects; it does not silently mutate the TCB — design §7).
 
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import type { Command } from 'commander';
-import { CheckFailure } from '../util/errors.js';
+import { parse as parseYaml } from 'yaml';
+import {
+  diagnoseCiProtection,
+  type CiProtectionObservation,
+  type CiProtectionReport,
+} from '../ci/diagnostics.js';
+import { inspectWorkflowSecurity } from '../ci/workflow-security.js';
+import { CheckFailure, invalidInputError } from '../util/errors.js';
 import { doctor, type ConfirmFix, type DoctorFinding, type DoctorReport } from './doctor.js';
 
 /** Register the real `doctor` subcommand on the program. */
@@ -26,9 +37,30 @@ export function registerDoctor(program: Command): void {
       'Check the installed Crucible setup against the shipped sources; offer fixes as diffs',
     )
     .option('-y, --yes', 'auto-confirm every offered fix (non-interactive)', false)
-    .action(async (opts: { yes?: boolean }) => {
+    .option('--ci', 'report the CI protection grade and supporting evidence', false)
+    .option(
+      '--ci-observation <path>',
+      'strict JSON observation of remote ruleset/App/local protection evidence',
+    )
+    .action(async (opts: { yes?: boolean; ci?: boolean; ciObservation?: string }) => {
       const root = process.cwd();
       const json = program.opts().json === true;
+
+      if (opts.ci === true) {
+        const ciReport = diagnoseCiProtection(
+          opts.ciObservation ? readObservation(opts.ciObservation) : observeLocalCi(root),
+        );
+        process.stdout.write(json ? `${JSON.stringify(ciReport)}\n` : renderCiProtection(ciReport));
+        if (ciReport.state !== 'valid') throw new CheckFailure();
+        return;
+      }
+      if (opts.ciObservation) {
+        throw invalidInputError(
+          'CI_OBSERVATION_WITHOUT_DIAGNOSTIC',
+          '--ci-observation is valid only with `crucible doctor --ci`.',
+          'Add --ci, or omit --ci-observation for the ordinary installation doctor.',
+        );
+      }
 
       // Under --json doctor is read-only: it reports, applies nothing. A confirm
       // that always declines keeps the TCB untouched for a machine consumer.
@@ -52,6 +84,113 @@ export function registerDoctor(program: Command): void {
         throw new CheckFailure();
       }
     });
+}
+
+function readObservation(path: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  } catch (cause) {
+    return { malformed_observation: messageOf(cause) };
+  }
+}
+
+/** Local evidence can prove only the candidate-controlled advisory offering. */
+function observeLocalCi(root: string): CiProtectionObservation | unknown {
+  const sha = git(root, ['rev-parse', '--verify', 'HEAD^{commit}']);
+  if (!/^[0-9a-f]{40}$/.test(sha)) {
+    return {
+      version: 1,
+      access: 'inaccessible',
+      repository: repositoryName(root),
+      target_branch: branchName(root),
+      target_sha: '0'.repeat(40),
+      observed_sha: '0'.repeat(40),
+      installation: { kind: 'absent' },
+    } satisfies CiProtectionObservation;
+  }
+  const workflowPath = join(root, '.github', 'workflows', 'crucible.yml');
+  if (!existsSync(workflowPath)) {
+    return {
+      version: 1,
+      access: 'ok',
+      repository: repositoryName(root),
+      target_branch: branchName(root),
+      target_sha: sha,
+      observed_sha: sha,
+      installation: { kind: 'absent' },
+    } satisfies CiProtectionObservation;
+  }
+  const bytes = readFileSync(workflowPath);
+  const security = inspectWorkflowSecurity(bytes.toString('utf8'), workflowPath);
+  let eventNames: ('pull_request' | 'merge_group' | 'pull_request_target')[] = [];
+  try {
+    const yaml = parseYaml(bytes.toString('utf8')) as { on?: Record<string, unknown> };
+    eventNames = Object.keys(yaml.on ?? {})
+      .filter(
+        (name): name is 'pull_request' | 'merge_group' | 'pull_request_target' =>
+          name === 'pull_request' || name === 'merge_group' || name === 'pull_request_target',
+      )
+      .sort();
+  } catch {
+    // Empty events make the strict diagnostic partial; malformed YAML is never healthy.
+  }
+  return {
+    version: 1,
+    access: 'ok',
+    repository: repositoryName(root),
+    target_branch: branchName(root),
+    target_sha: sha,
+    observed_sha: sha,
+    installation: {
+      kind: 'repository_local',
+      workflow_path: '.github/workflows/crucible.yml',
+      workflow_content_sha256: createHash('sha256').update(bytes).digest('hex'),
+      events: eventNames,
+      latest_check: 'unknown',
+      privileged_candidate_execution: security.privileged_candidate_execution,
+      security_violations: security.violations.map((violation) => violation.code),
+    },
+  } satisfies CiProtectionObservation;
+}
+
+function renderCiProtection(report: CiProtectionReport): string {
+  const lines = [
+    `crucible doctor --ci: ${report.grade} (${report.state})`,
+    `  repository: ${report.repository ?? '(unknown)'}`,
+    `  target: ${report.target_branch ?? '(unknown)'}${report.target_sha ? ` @ ${report.target_sha}` : ''}`,
+  ];
+  for (const item of report.capabilities) {
+    const mark = item.status === 'pass' ? '✓' : item.status === 'advisory' ? 'ℹ' : '✗';
+    lines.push(`  ${mark} ${item.capability}: ${item.evidence}`);
+    if (item.status !== 'pass') lines.push(`    remedy: ${item.remediation}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+function repositoryName(root: string): string {
+  const remote = git(root, ['config', '--get', 'remote.origin.url']);
+  const matched = /(?:github\.com[/:])([^/]+\/[^/]+?)(?:\.git)?$/.exec(remote);
+  return matched?.[1] ?? 'local/repository';
+}
+
+function branchName(root: string): string {
+  return git(root, ['branch', '--show-current']) || 'HEAD';
+}
+
+function git(root: string, args: string[]): string {
+  try {
+    return execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function messageOf(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 /** Whether any `drift`-severity finding was not fixed this run. */

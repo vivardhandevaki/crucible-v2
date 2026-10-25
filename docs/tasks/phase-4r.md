@@ -274,12 +274,17 @@ P4R-10 is complete only when P4R-10A through P4R-10E are complete. The split
 keeps the trust decision, GitHub transport, fallback offering, installation
 diagnostic, and rejected privileged transport independently reviewable.
 
+Status: complete (P4R-10A through P4R-10E; as-built contract and evidence in
+`docs/design/p4r-10-target-owned-ci.md`).
+
 Delivery protocol: ratify P4R-10A and land its red executable trust-boundary
 tests before implementing a transport. If current GitHub evidence contradicts
 the preferred design, stop for a design amendment. AI review and framework-
 update UX remain outside every P4R-10 subtask.
 
 #### P4R-10A · Ratify the exact base/candidate trust partition
+
+Status: complete (`3703ffc` red contract, `737c5d9` implementation).
 
 Tier: Fable / Sol security design gate
 
@@ -311,6 +316,8 @@ Non-scope: choosing credentials, AI review, and framework maintenance.
 
 #### P4R-10B · Prove the organization-ruleset required workflow
 
+Status: complete (`bd48a8c`).
+
 Tier: Fable / Sol transport review + Opus / Terra implementation
 
 Depends: P4R-10A
@@ -339,6 +346,8 @@ Acceptance:
 Non-scope: repository-local enforcement claims and LLM credentials.
 
 #### P4R-10C · Decide and deliver the non-organization offering
+
+Status: complete (`e1959b8`; repository-local advisory selected).
 
 Tier: Fable / Sol product and trust decision + Opus / Terra implementation
 
@@ -372,6 +381,8 @@ Non-scope: a marketplace/catalog program or support for unrelated CI vendors.
 
 #### P4R-10D · Add enforcement-grade `doctor --ci` diagnostics
 
+Status: complete (`2de8c0f`).
+
 Tier: Opus / Terra
 
 Depends: P4R-10B, P4R-10C
@@ -400,6 +411,8 @@ Acceptance:
 Non-scope: repairing remote rules without explicit human authorization.
 
 #### P4R-10E · Reject default `pull_request_target` candidate execution
+
+Status: complete (`81b0d57`).
 
 Tier: Fable / Sol security contract + Opus / Terra guardrails
 

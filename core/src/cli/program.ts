@@ -12,6 +12,7 @@ import { registerAdapter } from '../commands/adapter-add.cli.js';
 import { registerActiveSessionCommands } from '../commands/active-session.cli.js';
 import { registerApprove } from '../commands/approve.cli.js';
 import { registerArchive } from '../commands/archive.cli.js';
+import { registerCi } from '../commands/ci.cli.js';
 import { registerDoctor } from '../commands/doctor.cli.js';
 import { registerEscalate } from '../commands/escalate.cli.js';
 import { registerInit } from '../commands/init.cli.js';
@@ -76,6 +77,7 @@ export function buildProgram(): Command {
   registerActiveSessionCommands(program);
   registerApprove(program);
   registerArchive(program);
+  registerCi(program);
   registerDoctor(program);
   registerEscalate(program);
   registerInit(program);
