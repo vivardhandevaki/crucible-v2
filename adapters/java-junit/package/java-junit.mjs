@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { spawnSync as spawnSync5 } from "node:child_process";
+import { spawnSync as spawnSync6 } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync as existsSync3, mkdtempSync as mkdtempSync2, readFileSync as readFileSync4, rmSync as rmSync3, writeFileSync as writeFileSync2 } from "node:fs";
-import { tmpdir as tmpdir2 } from "node:os";
-import { dirname, join as join6 } from "node:path";
+import { existsSync as existsSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync5, rmSync as rmSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { tmpdir as tmpdir3 } from "node:os";
+import { dirname, join as join7 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/detect.ts
@@ -42,8 +42,8 @@ var CRUCIBLE_EMBEDDED_HELPER_JAR = "UEsDBBQACAgIAAAA/lwAAAAAAAAAAAAAAAAUAAQATUVU
 var CRUCIBLE_EMBEDDED_HELPER_SHA256 = "af79f68404ac04212d9e465ed31816060313767c62a18901c293488d132edfb4";
 
 // src/gradle.ts
-import { spawnSync as spawnSync3 } from "node:child_process";
-import { join as join4 } from "node:path";
+import { spawnSync as spawnSync4 } from "node:child_process";
+import { join as join5 } from "node:path";
 
 // src/reports.ts
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -430,12 +430,12 @@ function toRunResult(target, cases) {
   };
 }
 function buildFailureResults(targets, tool, exitStatus, stdout, stderr) {
-  const tail = logTail(stdout, stderr);
+  const tail2 = logTail(stdout, stderr);
   return targets.map((target) => ({
     target,
     status: "error",
     message: `build failed before tests ran (${tool} exit ${String(exitStatus)}):
-${tail}`
+${tail2}`
   }));
 }
 function logTail(stdout, stderr) {
@@ -443,9 +443,143 @@ function logTail(stdout, stderr) {
   return combined.split("\n").slice(-LOG_TAIL_LINES).join("\n");
 }
 
-// src/resolve.ts
+// src/test-classpath.ts
 import { spawnSync } from "node:child_process";
-import { delimiter } from "node:path";
+import { existsSync as existsSync2, mkdtempSync, readFileSync as readFileSync2, rmSync as rmSync2, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join as join2 } from "node:path";
+var MAVEN_DEPENDENCY_PLUGIN = "org.apache.maven.plugins:maven-dependency-plugin:3.11.0:build-classpath";
+var GRADLE_TASK = "cruciblePrintTestClasspath";
+var GRADLE_OUTPUT_PROPERTY = "crucible.test.classpath.output";
+var MAX_BUFFER2 = 10 * 1024 * 1024;
+function parseMavenDependencyClasspath(raw, separator = delimiter) {
+  if (separator.length === 0) throw new WireError("classpath separator must not be empty");
+  if (raw.trim().length === 0) return [];
+  return dedupeEntries(raw.replace(/(?:\r?\n)+$/, "").split(separator), "Maven");
+}
+function parseGradleTestClasspath(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new WireError(`Gradle test classpath output is not JSON: ${messageOf2(error)}`);
+  }
+  if (!Array.isArray(parsed))
+    throw new WireError("Gradle test classpath output must be a JSON array");
+  if (!parsed.every((entry) => typeof entry === "string")) {
+    throw new WireError("Gradle test classpath entries must be strings");
+  }
+  return dedupeEntries(parsed, "Gradle");
+}
+function assembleTestClasspath(outputDirectories, dependencies) {
+  return dedupeEntries([...outputDirectories, ...dependencies], "test");
+}
+function mavenDependencyClasspath(opts) {
+  const scratch = mkdtempSync(join2(tmpdir(), "crucible-maven-classpath-"));
+  const output = join2(scratch, "classpath.txt");
+  const mvnBin = opts.mvnBin ?? "mvn";
+  try {
+    const proc = spawnSync(
+      mvnBin,
+      ["-q", MAVEN_DEPENDENCY_PLUGIN, "-DincludeScope=test", `-Dmdep.outputFile=${output}`],
+      { cwd: opts.cwd, encoding: "utf8", maxBuffer: MAX_BUFFER2 }
+    );
+    if (proc.error) throw new WireError(`could not spawn \`${mvnBin}\`: ${proc.error.message}`);
+    if (proc.status !== 0) {
+      throw new WireError(
+        `\`${mvnBin} ${MAVEN_DEPENDENCY_PLUGIN}\` failed (exit ${String(proc.status)}); cannot resolve test classpath:
+${tail(proc.stdout, proc.stderr)}`
+      );
+    }
+    if (!existsSync2(output)) {
+      throw new WireError("Maven did not write its requested test classpath output file");
+    }
+    const entries = parseMavenDependencyClasspath(readFileSync2(output, "utf8"));
+    for (const entry of entries) {
+      if (!existsSync2(entry)) {
+        throw new WireError(`Maven reported a test dependency that does not exist: ${entry}`);
+      }
+    }
+    return entries;
+  } finally {
+    rmSync2(scratch, { recursive: true, force: true });
+  }
+}
+function gradleTestClasspath(opts) {
+  const scratch = mkdtempSync(join2(tmpdir(), "crucible-gradle-classpath-"));
+  const initScript = join2(scratch, "test-classpath.gradle");
+  const output = join2(scratch, "classpath.json");
+  const gradleBin = opts.gradleBin ?? "gradle";
+  writeFileSync(initScript, gradleClasspathScript(), "utf8");
+  try {
+    const proc = spawnSync(
+      gradleBin,
+      [
+        "-q",
+        "--console=plain",
+        "--init-script",
+        initScript,
+        `-D${GRADLE_OUTPUT_PROPERTY}=${output}`,
+        GRADLE_TASK
+      ],
+      { cwd: opts.cwd, encoding: "utf8", maxBuffer: MAX_BUFFER2 }
+    );
+    if (proc.error) throw new WireError(`could not spawn \`${gradleBin}\`: ${proc.error.message}`);
+    if (proc.status !== 0) {
+      throw new WireError(
+        `\`${gradleBin} ${GRADLE_TASK}\` failed (exit ${String(proc.status)}); cannot resolve test classpath:
+${tail(proc.stdout, proc.stderr)}`
+      );
+    }
+    if (!existsSync2(output)) {
+      throw new WireError("Gradle did not write its requested test classpath output file");
+    }
+    return parseGradleTestClasspath(readFileSync2(output, "utf8"));
+  } finally {
+    rmSync2(scratch, { recursive: true, force: true });
+  }
+}
+function dedupeEntries(entries, tool) {
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const entry of entries) {
+    if (entry.trim().length === 0)
+      throw new WireError(`${tool} test classpath entries must be non-empty`);
+    if (!seen.has(entry)) {
+      seen.add(entry);
+      result.push(entry);
+    }
+  }
+  return result;
+}
+function gradleClasspathScript() {
+  return [
+    "gradle.projectsEvaluated {",
+    `  def outputPath = System.getProperty('${GRADLE_OUTPUT_PROPERTY}')`,
+    "  if (outputPath == null || outputPath.trim().isEmpty()) throw new GradleException('missing Crucible classpath output path')",
+    `  rootProject.tasks.register('${GRADLE_TASK}') {`,
+    "    doLast {",
+    "      def testTask = rootProject.tasks.findByName('test')",
+    "      if (!(testTask instanceof org.gradle.api.tasks.testing.Test)) throw new GradleException('root test task is missing or is not a Test task')",
+    "      def entries = testTask.classpath.files.collect { it.canonicalFile.path }",
+    "      new File(outputPath).text = groovy.json.JsonOutput.toJson(entries)",
+    "    }",
+    "  }",
+    "}",
+    ""
+  ].join("\n");
+}
+function tail(stdout, stderr) {
+  return `${stdout ?? ""}
+${stderr ?? ""}`.trim().slice(-4e3);
+}
+function messageOf2(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// src/resolve.ts
+import { spawnSync as spawnSync2 } from "node:child_process";
+import { delimiter as delimiter2 } from "node:path";
 var CLASSIFICATIONS = /* @__PURE__ */ new Set(["found", "missing", "unsupported"]);
 var ResolveInvocationError = class extends Error {
   name = "ResolveInvocationError";
@@ -481,10 +615,10 @@ function parseResult(value, index) {
 }
 function invokeResolve(opts) {
   const javaBin = opts.javaBin ?? "java";
-  const cp = [opts.jarPath, ...opts.classpath].join(delimiter);
+  const cp = [opts.jarPath, ...opts.classpath].join(delimiter2);
   const sysProps = Object.entries(opts.systemProperties ?? {}).map(([k, v]) => `-D${k}=${v}`);
   const args = [...sysProps, "-cp", cp, "com.crucible.junit.ResolveHelper", ...opts.targets];
-  const proc = spawnSync(javaBin, args, { encoding: "utf8" });
+  const proc = spawnSync2(javaBin, args, { encoding: "utf8" });
   if (proc.error) {
     throw new ResolveInvocationError(`could not spawn \`${javaBin}\`: ${proc.error.message}`);
   }
@@ -517,8 +651,8 @@ ${proc.stdout}`
 }
 
 // src/source-file.ts
-import { existsSync as existsSync2, readFileSync as readFileSync2, realpathSync, statSync } from "node:fs";
-import { isAbsolute, join as join2, relative, resolve, sep } from "node:path";
+import { existsSync as existsSync3, readFileSync as readFileSync3, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join as join3, relative, resolve, sep } from "node:path";
 function groundTargetFile(options) {
   const root = realpathIfPresent(options.root);
   if (root === void 0) return void 0;
@@ -527,11 +661,11 @@ function groundTargetFile(options) {
   const simpleName = parts.pop();
   if (simpleName === void 0 || !isJavaIdentifier(simpleName)) return void 0;
   if (parts.some((part) => !isJavaIdentifier(part))) return void 0;
-  const sourceRel = join2(...parts, `${simpleName}.java`);
+  const sourceRel = join3(...parts, `${simpleName}.java`);
   for (const configuredRoot of options.sourceRoots) {
     const sourceRoot = resolve(options.root, configuredRoot);
-    const candidate = join2(sourceRoot, sourceRel);
-    if (!existsSync2(candidate)) continue;
+    const candidate = join3(sourceRoot, sourceRel);
+    if (!existsSync3(candidate)) continue;
     let canonical;
     try {
       canonical = realpathSync(candidate);
@@ -541,7 +675,7 @@ function groundTargetFile(options) {
     }
     let text;
     try {
-      text = readFileSync2(canonical, "utf8");
+      text = readFileSync3(canonical, "utf8");
     } catch {
       continue;
     }
@@ -615,16 +749,16 @@ function stripCommentsAndLiterals(source) {
 }
 
 // src/source-roots.ts
-import { spawnSync as spawnSync2 } from "node:child_process";
-import { mkdtempSync, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join as join3, resolve as resolve2 } from "node:path";
+import { spawnSync as spawnSync3 } from "node:child_process";
+import { mkdtempSync as mkdtempSync2, readFileSync as readFileSync4, rmSync as rmSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { tmpdir as tmpdir2 } from "node:os";
+import { join as join4, resolve as resolve2 } from "node:path";
 var ROOT_PREFIX = "CRUCIBLE_TEST_SOURCE_ROOT=";
 function mavenTestSourceRoots(cwd, mvnBin = "mvn") {
-  const scratch = mkdtempSync(join3(tmpdir(), "crucible-maven-model-"));
-  const effectivePom = join3(scratch, "effective-pom.xml");
+  const scratch = mkdtempSync2(join4(tmpdir2(), "crucible-maven-model-"));
+  const effectivePom = join4(scratch, "effective-pom.xml");
   try {
-    const proc = spawnSync2(
+    const proc = spawnSync3(
       mvnBin,
       ["-q", "help:effective-pom", `-Doutput=${effectivePom}`, "-Dverbose=false"],
       { cwd, encoding: "utf8" }
@@ -637,9 +771,9 @@ function mavenTestSourceRoots(cwd, mvnBin = "mvn") {
     }
     let root;
     try {
-      root = parseXml(readFileSync3(effectivePom, "utf8"));
+      root = parseXml(readFileSync4(effectivePom, "utf8"));
     } catch (error) {
-      throw new WireError(`could not parse Maven's effective model: ${messageOf2(error)}`);
+      throw new WireError(`could not parse Maven's effective model: ${messageOf3(error)}`);
     }
     const roots = findElements(root, "testSourceDirectory").map((el) => textOf(el).trim());
     for (const execution of findElements(root, "execution")) {
@@ -649,13 +783,46 @@ function mavenTestSourceRoots(cwd, mvnBin = "mvn") {
     }
     return normalizeRoots(cwd, roots);
   } finally {
-    rmSync2(scratch, { recursive: true, force: true });
+    rmSync3(scratch, { recursive: true, force: true });
+  }
+}
+function mavenTestOutputDirectories(cwd, mvnBin = "mvn") {
+  const scratch = mkdtempSync2(join4(tmpdir2(), "crucible-maven-output-model-"));
+  const effectivePom = join4(scratch, "effective-pom.xml");
+  try {
+    const proc = spawnSync3(
+      mvnBin,
+      ["-q", "help:effective-pom", `-Doutput=${effectivePom}`, "-Dverbose=false"],
+      { cwd, encoding: "utf8" }
+    );
+    if (proc.error) throw new WireError(`could not spawn \`${mvnBin}\`: ${proc.error.message}`);
+    if (proc.status !== 0) {
+      throw new WireError(
+        `\`mvn help:effective-pom\` failed (exit ${String(proc.status)}); cannot derive test output directories`
+      );
+    }
+    let root;
+    try {
+      root = parseXml(readFileSync4(effectivePom, "utf8"));
+    } catch (error) {
+      throw new WireError(`could not parse Maven's effective model: ${messageOf3(error)}`);
+    }
+    const build = directElements(root, "build");
+    if (build.length !== 1) {
+      throw new WireError("Maven effective model must contain exactly one project build section");
+    }
+    return [
+      resolve2(cwd, requiredDirectText(build[0], "testOutputDirectory")),
+      resolve2(cwd, requiredDirectText(build[0], "outputDirectory"))
+    ];
+  } finally {
+    rmSync3(scratch, { recursive: true, force: true });
   }
 }
 function gradleTestSourceRoots(cwd, gradleBin = "gradle") {
-  const scratch = mkdtempSync(join3(tmpdir(), "crucible-gradle-model-"));
-  const initScript = join3(scratch, "source-roots.gradle");
-  writeFileSync(
+  const scratch = mkdtempSync2(join4(tmpdir2(), "crucible-gradle-model-"));
+  const initScript = join4(scratch, "source-roots.gradle");
+  writeFileSync2(
     initScript,
     [
       "gradle.projectsEvaluated {",
@@ -674,7 +841,7 @@ function gradleTestSourceRoots(cwd, gradleBin = "gradle") {
     "utf8"
   );
   try {
-    const proc = spawnSync2(
+    const proc = spawnSync3(
       gradleBin,
       ["-q", "--console=plain", "--init-script", initScript, "cruciblePrintTestSourceRoots"],
       { cwd, encoding: "utf8" }
@@ -689,7 +856,7 @@ function gradleTestSourceRoots(cwd, gradleBin = "gradle") {
     if (roots.length === 0) throw new WireError("Gradle reported no configured test source roots.");
     return normalizeRoots(cwd, roots);
   } finally {
-    rmSync2(scratch, { recursive: true, force: true });
+    rmSync3(scratch, { recursive: true, force: true });
   }
 }
 function normalizeRoots(cwd, roots) {
@@ -697,17 +864,29 @@ function normalizeRoots(cwd, roots) {
     ...new Set(roots.filter((root) => root.length > 0).map((root) => resolve2(cwd, root)))
   ].sort();
 }
-function messageOf2(error) {
+function directElements(root, name) {
+  return root.children.filter(
+    (child) => child.type === "element" && child.name === name
+  );
+}
+function requiredDirectText(root, name) {
+  const values = directElements(root, name).map((element) => textOf(element).trim());
+  if (values.length !== 1 || values[0].length === 0) {
+    throw new WireError(`Maven effective model must contain one non-empty <${name}>`);
+  }
+  return values[0];
+}
+function messageOf3(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
 // src/gradle.ts
 function runGradle(opts) {
   if (opts.targets.length === 0) return [];
-  const reportsDir = join4(opts.cwd, "build", "test-results", "test");
+  const reportsDir = join5(opts.cwd, "build", "test-results", "test");
   clearReports(reportsDir);
   const args = ["test", "--rerun-tasks", "-q", "--console=plain", ...buildTestArgs(opts.targets)];
-  const proc = spawnSync3(opts.gradleBin ?? "gradle", args, {
+  const proc = spawnSync4(opts.gradleBin ?? "gradle", args, {
     cwd: opts.cwd,
     encoding: "utf8",
     maxBuffer: MAX_BUFFER
@@ -721,7 +900,7 @@ function runGradle(opts) {
 }
 function resolveGradle(opts) {
   if (opts.targets.length === 0) return [];
-  const proc = spawnSync3(opts.gradleBin ?? "gradle", ["testClasses", "-q", "--console=plain"], {
+  const proc = spawnSync4(opts.gradleBin ?? "gradle", ["testClasses", "-q", "--console=plain"], {
     cwd: opts.cwd,
     encoding: "utf8",
     maxBuffer: MAX_BUFFER
@@ -733,10 +912,10 @@ function resolveGradle(opts) {
 ${logTail(proc.stdout, proc.stderr)}`
     );
   }
-  const classpath = [
-    join4(opts.cwd, "build", "classes", "java", "main"),
-    join4(opts.cwd, "build", "classes", "java", "test")
-  ];
+  const classpath = gradleTestClasspath({
+    cwd: opts.cwd,
+    ...opts.gradleBin ? { gradleBin: opts.gradleBin } : {}
+  });
   const classified = invokeResolve({
     jarPath: opts.jarPath,
     classpath,
@@ -748,7 +927,10 @@ ${logTail(proc.stdout, proc.stderr)}`
     if (r.classification !== "found") return { target: r.target, status: "missing" };
     const className = r.className ?? splitTarget(r.target).className;
     const targetFile = groundTargetFile({ root: opts.cwd, className, sourceRoots });
-    return { target: r.target, status: "found", ...targetFile ? { targetFile } : {} };
+    if (targetFile === void 0) {
+      throw new WireError(`resolved target cannot be grounded: ${r.target}`);
+    }
+    return { target: r.target, status: "found", targetFile };
   });
 }
 function buildTestArgs(targets) {
@@ -762,11 +944,11 @@ function buildTestArgs(targets) {
 }
 
 // src/maven.ts
-import { spawnSync as spawnSync4 } from "node:child_process";
-import { join as join5 } from "node:path";
+import { spawnSync as spawnSync5 } from "node:child_process";
+import { join as join6 } from "node:path";
 function runMaven(opts) {
   if (opts.targets.length === 0) return [];
-  const reportsDir = join5(opts.cwd, "target", "surefire-reports");
+  const reportsDir = join6(opts.cwd, "target", "surefire-reports");
   clearReports(reportsDir);
   const args = [
     "-q",
@@ -775,7 +957,7 @@ function runMaven(opts) {
     "test",
     `-Dtest=${buildSelector(opts.targets)}`
   ];
-  const proc = spawnSync4(opts.mvnBin ?? "mvn", args, {
+  const proc = spawnSync5(opts.mvnBin ?? "mvn", args, {
     cwd: opts.cwd,
     encoding: "utf8",
     maxBuffer: MAX_BUFFER
@@ -789,7 +971,7 @@ function runMaven(opts) {
 }
 function resolveMaven(opts) {
   if (opts.targets.length === 0) return [];
-  const proc = spawnSync4(opts.mvnBin ?? "mvn", ["-q", "test-compile"], {
+  const proc = spawnSync5(opts.mvnBin ?? "mvn", ["-q", "test-compile"], {
     cwd: opts.cwd,
     encoding: "utf8",
     maxBuffer: MAX_BUFFER
@@ -801,7 +983,10 @@ function resolveMaven(opts) {
 ${logTail(proc.stdout, proc.stderr)}`
     );
   }
-  const classpath = [join5(opts.cwd, "target", "classes"), join5(opts.cwd, "target", "test-classes")];
+  const classpath = assembleTestClasspath(
+    mavenTestOutputDirectories(opts.cwd, opts.mvnBin),
+    mavenDependencyClasspath({ cwd: opts.cwd, ...opts.mvnBin ? { mvnBin: opts.mvnBin } : {} })
+  );
   const classified = invokeResolve({
     jarPath: opts.jarPath,
     classpath,
@@ -813,7 +998,10 @@ ${logTail(proc.stdout, proc.stderr)}`
     if (r.classification !== "found") return { target: r.target, status: "missing" };
     const className = r.className ?? splitTarget(r.target).className;
     const targetFile = groundTargetFile({ root: opts.cwd, className, sourceRoots });
-    return { target: r.target, status: "found", ...targetFile ? { targetFile } : {} };
+    if (targetFile === void 0) {
+      throw new WireError(`resolved target cannot be grounded: ${r.target}`);
+    }
+    return { target: r.target, status: "found", targetFile };
   });
 }
 function buildSelector(targets) {
@@ -837,7 +1025,7 @@ function materializeHelperJar() {
   } };
   if (CRUCIBLE_EMBEDDED_HELPER_JAR.length === 0) {
     return {
-      path: join6(HERE, "..", "resolve-helper", "target", "resolve-helper.jar"),
+      path: join7(HERE, "..", "resolve-helper", "target", "resolve-helper.jar"),
       cleanup() {
       }
     };
@@ -847,13 +1035,13 @@ function materializeHelperJar() {
   if (actual !== CRUCIBLE_EMBEDDED_HELPER_SHA256) {
     throw new WireError("embedded resolve-helper jar failed its sha256 self-check");
   }
-  const scratch = mkdtempSync2(join6(tmpdir2(), "crucible-java-junit-"));
-  const path = join6(scratch, "resolve-helper.jar");
-  writeFileSync2(path, bytes, { mode: 384 });
+  const scratch = mkdtempSync3(join7(tmpdir3(), "crucible-java-junit-"));
+  const path = join7(scratch, "resolve-helper.jar");
+  writeFileSync3(path, bytes, { mode: 384 });
   return {
     path,
     cleanup() {
-      rmSync3(scratch, { recursive: true, force: true });
+      rmSync4(scratch, { recursive: true, force: true });
     }
   };
 }
@@ -867,15 +1055,15 @@ function parseVerb(argv) {
 }
 function readStdin() {
   try {
-    return readFileSync4(0, "utf8");
+    return readFileSync5(0, "utf8");
   } catch (err) {
     throw new WireError(`could not read stdin: ${err.message}`);
   }
 }
 function detectDeps(cwd) {
   return {
-    fileExists: (name) => existsSync3(join6(cwd, name)),
-    hasJdk: () => spawnSync5("java", ["-version"], { encoding: "utf8" }).status === 0
+    fileExists: (name) => existsSync4(join7(cwd, name)),
+    hasJdk: () => spawnSync6("java", ["-version"], { encoding: "utf8" }).status === 0
   };
 }
 function main() {
@@ -892,7 +1080,7 @@ function main() {
   return 0;
 }
 function resolveBuildTool(cwd) {
-  const buildTool = detectBuildTool((name) => existsSync3(join6(cwd, name)));
+  const buildTool = detectBuildTool((name) => existsSync4(join7(cwd, name)));
   if (buildTool === void 0) {
     throw new WireError(
       "no pom.xml or build.gradle(.kts) found in the working directory \u2014 nothing to drive"

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { WireError } from './wire.js';
-import { findElements, parseXml, textOf } from './xml.js';
+import { findElements, parseXml, textOf, type XmlElement } from './xml.js';
 
 const ROOT_PREFIX = 'CRUCIBLE_TEST_SOURCE_ROOT=';
 
@@ -45,6 +45,41 @@ export function mavenTestSourceRoots(cwd: string, mvnBin = 'mvn'): string[] {
       roots.push(...findElements(execution, 'source').map((el) => textOf(el).trim()));
     }
     return normalizeRoots(cwd, roots);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/** Return Maven's evaluated test/main output directories in test-runtime order. */
+export function mavenTestOutputDirectories(cwd: string, mvnBin = 'mvn'): string[] {
+  const scratch = mkdtempSync(join(tmpdir(), 'crucible-maven-output-model-'));
+  const effectivePom = join(scratch, 'effective-pom.xml');
+  try {
+    const proc = spawnSync(
+      mvnBin,
+      ['-q', 'help:effective-pom', `-Doutput=${effectivePom}`, '-Dverbose=false'],
+      { cwd, encoding: 'utf8' },
+    );
+    if (proc.error) throw new WireError(`could not spawn \`${mvnBin}\`: ${proc.error.message}`);
+    if (proc.status !== 0) {
+      throw new WireError(
+        `\`mvn help:effective-pom\` failed (exit ${String(proc.status)}); cannot derive test output directories`,
+      );
+    }
+    let root: XmlElement;
+    try {
+      root = parseXml(readFileSync(effectivePom, 'utf8'));
+    } catch (error) {
+      throw new WireError(`could not parse Maven's effective model: ${messageOf(error)}`);
+    }
+    const build = directElements(root, 'build');
+    if (build.length !== 1) {
+      throw new WireError('Maven effective model must contain exactly one project build section');
+    }
+    return [
+      resolve(cwd, requiredDirectText(build[0]!, 'testOutputDirectory')),
+      resolve(cwd, requiredDirectText(build[0]!, 'outputDirectory')),
+    ];
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -98,6 +133,20 @@ function normalizeRoots(cwd: string, roots: readonly string[]): string[] {
   return [
     ...new Set(roots.filter((root) => root.length > 0).map((root) => resolve(cwd, root))),
   ].sort();
+}
+
+function directElements(root: XmlElement, name: string): XmlElement[] {
+  return root.children.filter(
+    (child): child is XmlElement => child.type === 'element' && child.name === name,
+  );
+}
+
+function requiredDirectText(root: XmlElement, name: string): string {
+  const values = directElements(root, name).map((element) => textOf(element).trim());
+  if (values.length !== 1 || values[0]!.length === 0) {
+    throw new WireError(`Maven effective model must contain one non-empty <${name}>`);
+  }
+  return values[0]!;
 }
 
 function messageOf(error: unknown): string {

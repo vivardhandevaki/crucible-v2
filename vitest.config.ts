@@ -6,5 +6,10 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     projects: ['core', 'adapters/stub', 'adapters/java-junit', 'fixtures', 'ci-templates'],
+    // Several JVM integration files use blocking build-tool subprocesses. On
+    // two-core GitHub runners, default cross-project parallelism can starve
+    // Vitest's progress RPC long enough for its fixed 60-second timeout.
+    // Serialize files so CI reports every completed test deterministically.
+    fileParallelism: false,
   },
 });
