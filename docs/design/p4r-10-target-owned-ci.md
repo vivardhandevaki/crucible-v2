@@ -1,8 +1,7 @@
 # P4R-10 Target-Owned Deterministic CI
 
-**Status:** P4R-10A ratified; executable boundary tests intentionally red until
-the P4R-10A implementation commit. Transport implementation is gated on those
-tests becoming green without weakening this contract.
+**Status:** P4R-10A ratified and executable boundary tests green. Transport
+implementation remains gated on preserving this contract.
 
 This design refines the logical target-branch law in
 [`phase-4r-reset.md`](phase-4r-reset.md#10-trusted-ci-and-target-branch-law).
