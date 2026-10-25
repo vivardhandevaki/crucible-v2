@@ -188,3 +188,32 @@ the required template.
 An absent, modified, or partially installed local workflow is unhealthy, but a
 perfect installation remains grade `advisory`. A green local check never
 upgrades it. P4R-10D makes that distinction machine-readable.
+
+## P4R-10D: `doctor --ci` evidence model
+
+`crucible doctor --ci` is read-only. With no external observation it inspects
+the checked-out `.github/workflows/crucible.yml` and can prove at most a valid
+`advisory` installation. It hashes the exact shipped workflow, checks its event
+set, and reports that a green/failed/missing latest local check cannot change
+the grade.
+
+An operator or API integration may pass a strict GitHub observation with
+`--ci-observation <json>`. The observation records the target and observed SHAs,
+ruleset source and enforcement state, bypass count, source/target repository
+IDs, workflow path/ref/SHA/content hash, events, and expected check name. The
+machine report distinguishes:
+
+- `valid` enforcement-grade required workflow;
+- `valid` advisory local workflow;
+- `absent`, `inaccessible`, `partial`, `stale`, `spoofable`, `malformed`, and
+  `unsupported` states, all grade `none`.
+
+The selected Phase 4R offering makes a GitHub App observation `unsupported`
+rather than guessing that its source/binding is safe. Identical observations
+produce byte-identical JSON. Capability evidence and remediation never contain
+credentials; the schema accepts none.
+
+The expected required workflow content hash is computed from the shipped
+template, so changed action pins, events, permissions, job source, or transport
+bytes cannot retain enforcement grade. Repository-local status remains advisory
+even when its last check says `success`.
