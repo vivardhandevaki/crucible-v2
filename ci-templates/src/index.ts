@@ -14,8 +14,8 @@ import { fileURLToPath } from 'node:url';
 /** Filename of the reusable Crucible CI workflow shipped from this workspace. */
 export const CI_TEMPLATE_FILE = 'crucible.yml';
 
-/** JVM variant: the same enforcement gate plus JDK and Docker readiness. */
-export const JAVA_JUNIT_CI_TEMPLATE_FILE = 'crucible-java-junit.yml';
+/** Compatibility alias: the advisory template now provisions supported Node and Java runtimes. */
+export const JAVA_JUNIT_CI_TEMPLATE_FILE = CI_TEMPLATE_FILE;
 
 /** Organization/enterprise ruleset workflow; install only in a separately trusted repo. */
 export const REQUIRED_CI_TEMPLATE_FILE = 'crucible-required.yml';
@@ -30,12 +30,13 @@ const workspaceRoot = existsSync(join(moduleDir, 'assets', 'ci-templates', CI_TE
 export const CI_TEMPLATE_PATH = join(workspaceRoot, CI_TEMPLATE_FILE);
 
 /** Absolute path to the JVM/Testcontainers-ready enforcement workflow. */
-export const JAVA_JUNIT_CI_TEMPLATE_PATH = join(workspaceRoot, JAVA_JUNIT_CI_TEMPLATE_FILE);
+export const JAVA_JUNIT_CI_TEMPLATE_PATH = CI_TEMPLATE_PATH;
 
 /** Absolute path to the separately trusted required-workflow template. */
 export const REQUIRED_CI_TEMPLATE_PATH = join(workspaceRoot, REQUIRED_CI_TEMPLATE_FILE);
 
 /** Select the shipped workflow from the enforcement adapter, never convenience config. */
 export function ciTemplatePathForAdapter(adapter: string): string {
-  return adapter === 'java-junit' ? JAVA_JUNIT_CI_TEMPLATE_PATH : CI_TEMPLATE_PATH;
+  void adapter;
+  return CI_TEMPLATE_PATH;
 }

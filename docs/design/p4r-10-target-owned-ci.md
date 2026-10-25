@@ -154,9 +154,37 @@ seal paths without rewriting approval evidence, and then runs deterministic
 verify. H edits to base historical archives or trust files are ignored for the
 current result.
 
-## P4R-10C decision gate
+## P4R-10C: non-organization offering decision
 
-The required-workflow proof above establishes the enforcement-grade reference.
-The non-organization offering tradeoff and selection are recorded in the next
-implementation step; no repository-local check inherits the grade merely by
-sharing its display name or deterministic verifier.
+### Tradeoff record
+
+An expected-source GitHub App could post a ruleset-required check from a source
+the candidate cannot spoof, including for repositories that lack organization
+required workflows. It would also add a hosted service, App credentials,
+webhook delivery/replay state, installation permissions, check-run publishing,
+availability obligations, and a new identity/commit-binding proof. That expands
+the P4R-10A trust model and is not the minimum thin-lifecycle offering.
+
+A repository-local workflow needs no service, credential, or new operational
+control plane. It can run the same deterministic B/H verification for useful
+feedback, but the candidate can edit or delete the workflow that produces the
+check. A repository status-check rule cannot turn those candidate-controlled
+bytes into an expected source merely because the display name matches.
+
+### Decision
+
+Phase 4R ships the **explicitly advisory repository-local workflow**. A GitHub
+App is not selected. This avoids a design amendment and keeps App implementation
+outside P4R-10.
+
+`crucible init` installs `.github/workflows/crucible.yml`; both the workflow
+name and its only job say `advisory` and `not a merge authority`. The generic
+and Java/JUnit paths intentionally use one template because it provisions the
+pinned supported Node and Java runtimes before calling the base-owned verifier.
+The workflow uses `pull_request` and `merge_group`, never
+`pull_request_target`, and retains the no-secret/read-only/ephemeral controls of
+the required template.
+
+An absent, modified, or partially installed local workflow is unhealthy, but a
+perfect installation remains grade `advisory`. A green local check never
+upgrades it. P4R-10D makes that distinction machine-readable.

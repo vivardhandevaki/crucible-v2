@@ -48,7 +48,7 @@ try {
       !path.includes('/dist') && !path.endsWith('.ts') && !path.endsWith('vitest.config.ts'),
   });
   mkdirSync(join(prepared, 'assets', 'ci-templates'), { recursive: true });
-  for (const name of ['crucible.yml', 'crucible-java-junit.yml', 'crucible-required.yml']) {
+  for (const name of ['crucible.yml', 'crucible-required.yml']) {
     copyFileSync(
       join(repositoryRoot, 'ci-templates', name),
       join(prepared, 'assets', 'ci-templates', name),
