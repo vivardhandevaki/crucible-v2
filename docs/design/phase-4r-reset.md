@@ -269,6 +269,10 @@ Phase 4R must also choose an honest offering for repositories without required-
 workflow support: a GitHub App, or a clearly labeled advisory repository-local
 workflow.  `doctor --ci` must report the actual protection grade.
 
+P4R-10's exact identities, attacker model, input-origin table, and transport
+evidence are maintained in
+[`p4r-10-target-owned-ci.md`](p4r-10-target-owned-ci.md).
+
 ## 11. Optional AI review
 
 AI review is a separate check and has three strict modes:
