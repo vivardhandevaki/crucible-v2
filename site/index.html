@@ -361,11 +361,35 @@
           <span class="chip">one human gate</span><span class="chip">oracles before implementation</span>
           <span class="chip">no agent self-attestation</span><span class="chip">no API key required</span>
           <span class="chip">OpenSpec layer, not fork</span>
+          <span class="chip">AI review off by default</span>
         </div>
         <div class="hero-links">
           <a class="button primary" href="#example">See one feature, end to end</a>
           <a class="button" href="#how">Understand the workflow</a>
+          <a class="button" href="#status">See what is built</a>
         </div>
+        <div class="status-strip">
+          <span class="badge">P4R · in progress</span>
+          <div>
+            <strong>Refreshed 6 November 2026:</strong> P4R-00 through P4R-10 are complete.
+            Optional AI review (P4R-11) is next; maintenance and final consumer qualification follow.
+            This page explains the P4R contract; the <a href="#status">build status</a> distinguishes
+            completed work from planned behavior. Phase 5 remains blocked.
+          </div>
+        </div>
+        <details class="insight" open>
+          <summary><span class="insight-kind">ELI5</span>Your one-minute refresher</summary>
+          <div class="insight-body">
+            <ol>
+              <li>The coding agent writes down the promise and real tests that prove it.</li>
+              <li>You review and lock that promise in a separate terminal.</li>
+              <li>The agent writes the code. The required checker runs the locked tests and existing regression tests.</li>
+              <li>The complete change is archived on the same branch, then submitted in one PR. Trusted CI checks it again.</li>
+              <li>An AI reviewer is an optional second reader. Its default is <strong>off</strong>; the normal workflow needs no AI-review API key.</li>
+            </ol>
+            <p>P4R keeps this loop small: one intent-approval gate, artifact-derived state, and deterministic evidence. Skills guide the agent; the CLI judges the files.</p>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -513,7 +537,7 @@
               <tr><td><code>approve</code></td><td>A terminal-minted approval with SHA-256 hashes of the schema-derived bundle and grounded tests</td><td>Complete, valid, collected proposal bundle</td></tr>
               <tr><td><code>implement</code></td><td><code>tasks.md</code> as the first action, product code, and ordinary tests</td><td>Current valid seal</td></tr>
               <tr><td><code>verify</code></td><td>Byte-stable machine report and exit status</td><td>Valid seal and resolvable configured inputs</td></tr>
-              <tr><td><code>archive</code></td><td>Synced canonical specs and the entire archived change directory</td><td>Valid seal, green verify, and human confirmation</td></tr>
+              <tr><td><code>archive</code></td><td>Synced canonical specs and the entire archived change directory</td><td>Valid seal, green verify, and strict OpenSpec validation</td></tr>
             </tbody>
           </table>
         </div>
@@ -535,7 +559,7 @@ runner: junit
 target: com.acme.auth.LockoutTest#fifthFailureLocks
 &#96;&#96;&#96;</code></pre>
         <div class="lanes">
-          <div class="lane human"><h4>Human owns</h4><ul><li>Intent and acceptance of scope</li><li>The only approval and every amendment re-seal</li><li>Framework-maintenance confirmation</li></ul></div>
+          <div class="lane human"><h4>Human owns</h4><ul><li>Intent and acceptance of scope</li><li>The only approval and every amendment re-seal</li><li>Framework-maintenance confirmation (planned P4R-12)</li></ul></div>
           <div class="lane agent"><h4>Active agent session owns</h4><ul><li>Proposal and oracle drafts</li><li>Conventional test-file choice and binding</li><li>Implementation and ordinary tests</li></ul></div>
           <div class="lane machine"><h4>Deterministic core owns</h4><ul><li>Preconditions, validation, hashes, and status</li><li>Adapter resolution and test execution</li><li>Verify, archive, and CI verdicts</li></ul></div>
         </div>
@@ -584,7 +608,8 @@ target: com.acme.auth.LockoutTest#fifthFailureLocks
         <h2>“Expire inactive sessions automatically after 30 minutes.”</h2>
         <p class="subhead">
           One ordinary feature, followed all the way from a sentence in chat to a permanent,
-          target-branch-verified promise. This is Crucible V2 in concrete form.
+          target-branch-verified promise. This illustrative example explains the workflow;
+          it is not the executable consumer qualification still due in P4R-13 and P4R-14.
         </p>
 
         <div class="statement">
@@ -703,7 +728,7 @@ The service SHALL invalidate an expired session and return
           <article class="walk-step">
             <span class="step-meta">Approve · the one human gate</span>
             <h3>The person reviews the promise, not an implementation diff.</h3>
-            <pre><code>$ crucible approve automatic-session-expiry
+            <pre><code>$ .crucible/bin/crucible approve automatic-session-expiry
 
 ✓ proposal and spec delta valid
 ✓ security-review.md present (schema extension)
@@ -735,15 +760,12 @@ Seal this exact bundle? [y/N]</code></pre>
               injectable clock, an atomic “validate and touch” session-store operation, middleware expiry,
               and ordinary implementation tests.
             </p>
-            <pre><code>// Product code may change freely.
-Instant deadline = session.lastActivityAt().plus(Duration.ofMinutes(30));
-
-if (!clock.instant().isBefore(deadline)) {
-    sessionStore.invalidate(session.id());
+            <pre><code>// Illustrative product code: the store checks expiry, invalidates an
+// expired session, or refreshes a valid session in one atomic operation.
+if (!sessionStore.validateAndTouch(
+        session.id(), clock.instant(), Duration.ofMinutes(30))) {
     throw SessionExpired.INSTANCE;
-}
-
-sessionStore.touch(session.id(), clock.instant());</code></pre>
+}</code></pre>
             <p>
               Ordinary tests are the agent’s TDD scaffolding and carry no independent trust weight. The
               six approved oracle methods are different: editing, deleting, renaming, or skipping one
@@ -775,7 +797,7 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           <article class="walk-step">
             <span class="step-meta">Archive · still on the feature branch</span>
             <h3>The approved promise becomes permanent project memory.</h3>
-            <pre><code>$ crucible archive automatic-session-expiry
+            <pre><code>$ .crucible/bin/crucible archive automatic-session-expiry
 
 ✓ seal current
 ✓ deterministic verify green
@@ -802,7 +824,7 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
             <ul>
               <li>The candidate runs without secrets, write permission, persisted credentials, or privileged cache.</li>
               <li>Deterministic <code>verify</code> is the required merge authority and needs no LLM API key.</li>
-              <li>Optional <code>ai-review</code> remains separately <code>off</code>, <code>advisory</code>, or <code>required</code>.</li>
+              <li>The planned P4R-11 AI reviewer is separate and optional: <code>off</code> by default, with explicit <code>advisory</code> or <code>required</code> modes.</li>
               <li>A later authentication refactor must still pass these six session-expiry oracles automatically.</li>
             </ul>
           </article>
@@ -914,8 +936,9 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           <div class="insight-body">
             <p>
               Crucible asks, “Does this named check exist?” and “Did it pass?” An adapter translates those
-              two questions into the native language of JUnit, pytest, Cargo, or another test runner, then
-              translates the result back into one strict format.
+              two questions into the native language of the test runner, then translates the result back
+              into one strict format. Java/JUnit and the conformance stub are present today; pytest,
+              Cargo, and other ecosystems would need additional adapters.
             </p>
           </div>
         </details>
@@ -1010,8 +1033,23 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           <article class="card"><span class="num">EVENT BINDING</span><h4>Exact base and candidate commits</h4><p>The workflow handles same-repository heads, forks, and merge queues without confusing which bytes are trusted.</p></article>
           <article class="card"><span class="num">ISOLATION</span><h4>Restricted candidate execution</h4><p>Candidate code receives no secret, write token, persisted checkout credential, privileged cache, or persistent runner.</p></article>
           <article class="card"><span class="num">AUTHORITY</span><h4>A required check the candidate cannot spoof</h4><p>A same-name workflow in the pull request cannot replace the independently required verifier.</p></article>
-          <article class="card"><span class="num">HONESTY</span><h4>Protection grade is visible</h4><p><code>doctor --ci</code> distinguishes ruleset or App enforcement from a repository-local workflow that is only advisory.</p></article>
+          <article class="card"><span class="num">HONESTY</span><h4>Protection grade is visible</h4><p><code>doctor --ci</code> distinguishes valid organization-required workflow evidence from a repository-local workflow that is only advisory. A GitHub App is not a supported P4R offering.</p></article>
         </div>
+        <h3>What P4R-10 delivers today</h3>
+        <p class="reading">
+          <code>init</code> installs a repository-local workflow for <strong>advisory feedback</strong>.
+          Even a green local workflow is not merge authority: the PR can edit those workflow bytes.
+          Enforcement-grade protection requires an administrator to select the separately trusted
+          workflow in an active organization or enterprise ruleset. A GitHub App was deferred to keep
+          the reset small.
+        </p>
+        <p class="reading">
+          The trusted verifier checks exact base and candidate commits, rejects a stale base, and reads
+          policy, pins, and historical oracle inputs from the base. <code>doctor --ci</code> inspects local
+          protection; diagnosing remote enforcement requires an explicit GitHub observation. It does
+          not configure or repair remote rules automatically.
+          See the <a href="../docs/ci.md">CI setup guide</a> for the deployment contract.
+        </p>
 
         <details class="insight rationale">
           <summary><span class="insight-kind">Rationale</span>Why configuration comes from the target branch</summary>
@@ -1038,7 +1076,12 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           </div>
         </details>
 
-        <h3>Two checks, two different jobs</h3>
+        <h3 id="ai-review">Two checks, two different jobs</h3>
+        <p class="reading">
+          <strong>Implementation status:</strong> the following AI-review behavior is the ratified
+          P4R-11 contract, still pending implementation. It is not a configuration feature available
+          in the current reset CLI. Existing historical reviewer code does not establish P4R-11 completion.
+        </p>
         <div class="table-wrap">
           <table>
             <thead><tr><th></th><th><code>verify</code></th><th><code>ai-review</code></th></tr></thead>
@@ -1060,7 +1103,7 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
               </tr>
               <tr>
                 <td><strong>Merge authority</strong></td>
-                <td>The required baseline check. A red <code>verify</code> always blocks.</td>
+                <td>The required baseline in enforcement-grade CI. A red <code>verify</code> blocks there; the repository-local offering remains advisory.</td>
                 <td><code>off</code> does not run, <code>advisory</code> never blocks, and <code>required</code> must be green.</td>
               </tr>
               <tr>
@@ -1072,16 +1115,17 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           </table>
         </div>
         <div class="statement">
-          <strong><code>ai-review</code> never runs inside <code>verify</code>.</strong> A green AI review cannot
+          <strong>P4R-11 requires AI review to stay separate from <code>verify</code>.</strong> A green AI review cannot
           rescue a red deterministic verdict. Turning AI review on, off, advisory, or required does not
           change a single <code>verify</code> input, byte, or result.
         </div>
 
         <h3>AI review is separate, optional, and credential-aware</h3>
         <p class="reading">
-          <strong>An API key provides capability; it does not provide authority.</strong> Merely configuring
-          a key never turns AI review on and never makes it blocking. The target-owned
-          <code>ai-review</code> mode decides whether a model call is disabled, advisory, or required.
+          <strong>The intended default is off, even if a key exists.</strong> When P4R-11 is implemented,
+          only an explicitly selected target-owned review mode may enable the reviewer or make it
+          blocking. An API key by itself cannot change policy. The mode names below describe behavior,
+          not a currently supported configuration snippet.
         </p>
         <div class="table-wrap">
           <table>
@@ -1102,7 +1146,7 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
               <tr>
                 <td><code>required</code></td>
                 <td>The AI-review check is red because its required credential is missing.</td>
-                <td>AI review runs. Missing transport, malformed output, unknown rubric IDs, or valid blocking findings are red.</td>
+                <td>AI review runs. Missing transport, malformed or stale output, unknown rubric IDs, or valid blocking findings are red.</td>
                 <td>Runs identically; both required checks must be green.</td>
               </tr>
             </tbody>
@@ -1115,9 +1159,9 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
             <p><code>propose</code>, <code>approve</code>, <code>implement</code>, <code>verify</code>, archive, and trusted CI need no LLM credential. The default <code>off</code> mode makes no model call.</p>
           </article>
           <article class="card">
-            <span class="num">WITH A KEY</span>
-            <h4>The credential stays isolated</h4>
-            <p>The key is available only to the independent AI-review transport when policy enables it. Candidate code and deterministic <code>verify</code> never receive or depend on that secret.</p>
+            <span class="num">P4R-11 REQUIREMENT</span>
+            <h4>The credential must stay isolated</h4>
+            <p>The independent review transport must keep its key away from candidate code and deterministic <code>verify</code>. Its exact transport and isolation tests remain part of P4R-11 delivery.</p>
           </article>
         </div>
         <p class="reading">
@@ -1136,16 +1180,43 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
           belongs in the product. Phase 5 remains blocked until disposable generic and Spring consumers
           prove the reset lifecycle end to end.
         </p>
+        <p class="reading">
+          <strong>As of 6 November 2026, checked against main at <code>915faea</code>:</strong>
+          P4R-00 through P4R-10 are complete. P4R-11 is the next task and has not been implemented.
+          The reset is not yet release-qualified.
+        </p>
         <div class="roadmap">
           <article class="phase"><div class="phase-id">PHASES 0–1</div><div><strong>Foundation and tracer bullet</strong><p>TypeScript monorepo, pinned OpenSpec, artifact operations, seals, stub adapter, and the first thin lifecycle.</p></div><span class="badge done">complete</span></article>
           <article class="phase"><div class="phase-id">PHASE 2</div><div><strong>Deepened experimental loop</strong><p>Archive, richer traceability, approval UX, doctor, why, reviewer, and several policy experiments. Some are now parked rather than blindly ported.</p></div><span class="badge done">evidence retained</span></article>
           <article class="phase"><div class="phase-id">PHASE 3</div><div><strong>Real Java/JUnit adapter</strong><p>Maven and Gradle conformance, Spring flow evidence, content-hashed packaging, and Codex compatibility.</p></div><span class="badge done">complete</span></article>
           <article class="phase"><div class="phase-id">PHASE 4</div><div><strong>Consumer validation and reactive hardening experiment</strong><p>Validation exposed architectural failure. The final experiment is preserved at <code>p4-experimental-final-2026-08-24</code>, not used as the reset implementation base.</p></div><span class="badge halted">halted</span></article>
-          <article class="phase"><div class="phase-id">PHASE 4R</div><div><strong>Framework reset</strong><p>P4R-00/01 established the ratified design, archive, and baseline. P4R-02 through P4R-14 rebuild the local loop, distribution, adapter, trusted CI, optional review, maintenance, and consumer exit evidence.</p></div><span class="badge active">active</span></article>
+          <article class="phase"><div class="phase-id">PHASE 4R</div><div><strong>Framework reset</strong><p>P4R-00 through P4R-10 are complete: the local lifecycle, distribution, Java/JUnit work, and target-owned deterministic CI. Optional AI review, framework maintenance, and final consumer qualification remain.</p></div><span class="badge active">11 next</span></article>
           <article class="phase"><div class="phase-id">PHASE 5</div><div><strong>Fresh production consumer validation</strong><p>Begins only after the generic consumer, Spring/JUnit consumer, and manual Codex walkthrough are all green and non-skipped.</p></div><span class="badge blocked">blocked</span></article>
         </div>
+        <h3>The reset build, at a glance</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tasks</th><th>Delivered or remaining work</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>P4R-00–01</td><td>Ratified reset principles and preserved the Phase 4 experiment.</td><td>Complete</td></tr>
+              <tr><td>P4R-02–07</td><td>Active-session skills, proposal and bound-test validation, terminal approval, implementation preflight, amendment, and complete pre-PR archive.</td><td>Complete</td></tr>
+              <tr><td>P4R-08–09</td><td>Project-local pinned distribution and dependency-backed Java/JUnit discovery.</td><td>Complete</td></tr>
+              <tr><td>P4R-10A–E</td><td>Exact base/candidate trust partition, required organization workflow, advisory local offering, <code>doctor --ci</code>, and privileged candidate-execution guardrails.</td><td>Complete</td></tr>
+              <tr><td>P4R-11</td><td>Independent optional AI review, default off, with strict modes and validated verdicts.</td><td>Next · not implemented</td></tr>
+              <tr><td>P4R-12</td><td>Separate, explicitly confirmed framework-maintenance command.</td><td>Pending</td></tr>
+              <tr><td>P4R-13</td><td>Disposable generic consumer proving the full reset lifecycle, including trusted PR verification and regression on a second change.</td><td>Pending</td></tr>
+              <tr><td>P4R-14</td><td>Spring/JUnit consumer, manual Codex walkthrough, and the Phase 4R exit report.</td><td>Pending · blocks Phase 5</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="reading">
+          Use the <a href="../PHASES.md">phase ledger</a>,
+          <a href="../docs/tasks/phase-4r.md">task acceptance criteria</a>, and
+          <a href="../docs/design/phase-4r-reset.md">ratified reset design</a> as the source of truth.
+          Historical Phase 2 and Phase 4 code is not automatically part of the supported reset path.
+        </p>
         <div class="split-note">
-          <div class="list-panel"><h3 style="margin-top:0">Retained because it worked</h3><ul><li>OpenSpec custom-schema artifact model</li><li>Proposal-time scenarios plus real bound tests</li><li>Requirement ↔ oracle ↔ collected-test traceability</li><li>Terminal-only approval and SHA-256 sealing</li><li>Deterministic verify and strict adapter protocol</li><li>Project-local immutable distribution</li><li>Java/JUnit dependency-backed discovery</li><li>Target-branch enforcement as a logical contract</li></ul></div>
+          <div class="list-panel"><h3 style="margin-top:0">Retained because it worked</h3><ul><li>OpenSpec custom-schema artifact model</li><li>Proposal-time scenarios plus real bound tests</li><li>Requirement ↔ oracle ↔ collected-test traceability</li><li>Terminal-only approval and SHA-256 sealing</li><li>Deterministic verify and strict adapter protocol</li><li>Project-local immutable distribution</li><li>Java/JUnit dependency-backed discovery</li><li>Target-owned deterministic CI with explicit enforcement and advisory grades</li></ul></div>
           <div class="list-panel"><h3 style="margin-top:0">Removed or parked</h3><ul><li>CLI-spawned child agents and headless/session modes</li><li>Session checkpoints, migrations, and handoff state machines</li><li><code>candidateFile</code> and oracle-test path authorization</li><li>Authority manifests and archive-recovery lanes</li><li>Committed <code>state.yaml</code> as workflow authority</li><li>Tier ceremony, overrides, trajectory checks, mutation, routing, and automated ratchets until the thin loop is qualified</li></ul></div>
         </div>
         <div class="statement">
@@ -1163,18 +1234,18 @@ sessionStore.touch(session.id(), clock.instant());</code></pre>
         <details><summary>Does Crucible’s CLI run Codex or Claude Code?</summary><div class="answer">No. Open Codex or Claude Code in the initialized project and use the generated Crucible skills or commands. Those surfaces guide the active session and call the pinned project-local CLI for deterministic validation; Crucible does not launch a child agent.</div></details>
         <details><summary>Who chooses the oracle test file and binding?</summary><div class="answer">The authoring agent chooses a conventional path and native target during <code>propose</code>. The CLI does not authorize a candidate path or pass a <code>candidateFile</code> handoff. It validates containment, uniqueness, collection, grounding, and red-on-base behavior where required.</div></details>
         <details><summary>Can the implementer change a bad oracle?</summary><div class="answer">Not directly. A sealed edit blocks implementation and verification. If the approved intent is wrong or incomplete, the agent uses <code>amend</code>; a human reviews the exact intent/test delta and mints a new seal. Ordinary code fixes need no amendment.</div></details>
-        <details><summary>What happens if I do or do not configure an LLM API key?</summary><div class="answer">The full deterministic lifecycle, including required <code>verify</code>, works without a key. In the default <code>off</code> mode, no model call occurs even if a key exists. In <code>advisory</code> mode, review runs only when a key exists and never blocks. In <code>required</code> mode, a missing key is red; with a key, the independent review must complete with a valid, non-blocking verdict. In every case, <code>verify</code> runs independently with identical inputs and results.</div></details>
-        <details><summary>Is local green authoritative?</summary><div class="answer">No. Local verification is fast feedback on an agent-controlled machine. Enforcement-grade merge authority requires target-owned CI. <code>doctor --ci</code> reports whether the repository actually has ruleset or App protection, or only an advisory local workflow.</div></details>
+        <details><summary>Is AI review optional, and is it off by default?</summary><div class="answer">Yes. P4R-11 specifies <code>off</code> as the default: no model call, no AI-review check, and no AI-review API key needed. That task is still pending. Its planned <code>advisory</code> mode runs only with credentials and never blocks; <code>required</code> must be explicitly enabled by target-owned policy and fails if credentials or a valid current non-blocking verdict are missing. Deterministic <code>verify</code> must produce identical bytes and results in all three modes. See the <a href="#ai-review">review contract</a> for details.</div></details>
+        <details><summary>Is local green authoritative?</summary><div class="answer">No. Local verification is fast feedback on an agent-controlled machine. P4R-10 supports an independently required organization/enterprise workflow for enforcement and a repository-local workflow for advisory feedback. <code>doctor --ci</code> reports the grade supported by the supplied evidence; a local inspection alone cannot prove remote enforcement. GitHub App protection is not a supported P4R offering.</div></details>
         <details><summary>Why not use <code>pull_request_target</code>?</summary><div class="answer">Because executing untrusted candidate code in its privileged context is not accepted as the default design. The preferred path is an organization-required workflow on ordinary restricted <code>pull_request</code>. Any future bounded use requires its own threat model and ratification.</div></details>
         <details><summary>What happens to custom OpenSpec artifacts during approval and archive?</summary><div class="answer">Schema-required pre-approval artifacts enter the approval candidate set and seal automatically. Archive preserves those extensions - and unknown extra files - alongside <code>oracles.md</code>, approvals, amendments, tasks, specs, and design. The archive is schema-complete, not a hard-coded shortlist.</div></details>
-        <details><summary>Is Crucible V2 ready to use in production today?</summary><div class="answer">Consult the <a href="#status">Status section</a> for current release readiness. The rest of this page describes the intended product contract so that the design remains understandable without mixing it with the build ledger.</div></details>
+        <details><summary>Is Crucible V2 ready to use in production today?</summary><div class="answer">It is not yet release-qualified. P4R-00 through P4R-10 are complete; P4R-11 through P4R-14 remain. Generic and Spring/JUnit consumer qualification plus a manual Codex walkthrough must pass before Phase 5 starts. This page explains the intended contract and marks pending capabilities; the <a href="#status">Status section</a> records the checked build snapshot.</div></details>
       </div>
     </section>
   </main>
   <footer>
     <div class="shell footer-row">
       <div><strong style="color:var(--ink)">Crucible V2</strong><br>Approve artifacts. Seal the judges. Prove the code.</div>
-      <div>Technical reference: <code>docs/charter.md</code> · <code>docs/design/architecture.md</code><br>Build readiness and phase history live in the <a href="#status">Status section</a>.</div>
+      <div>Technical reference: <a href="../docs/charter.md">charter</a> · <a href="../docs/design/architecture.md">architecture</a> · <a href="../docs/design/phase-4r-reset.md">P4R design</a><br>Snapshot: 6 November 2026 · <a href="#status">build readiness and phase history</a>.</div>
     </div>
   </footer>
   <script>
